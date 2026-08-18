@@ -1,10 +1,15 @@
 usage() {
   cat <<'EOF_HELP'
-Harr — local harness for MCP infrastructure
+Harr — global harness for token-efficient MCP infrastructure
 
-Usage:
+First install / takeover:
+  ./install.sh --clean
+
+CLI:
   harr install [all|leanctx|mcp]
   harr status
+  harr hosts apply
+  harr hosts status
   harr agents apply [all|codex|opencode]
   harr agents status
   harr secret set gitlab
@@ -20,12 +25,23 @@ Usage:
   harr mcp disable NAME|all
   harr mcp status [NAME]
   harr mcp logs NAME [-f|--follow]
+  harr uninstall
+
+Ownership:
+  Harr owns its GLOBAL harness policy/configuration after --clean.
+  Project-level AGENTS/config/skills are never touched.
+  Third-party OpenCode MCPs/plugins/providers/agents/skills are preserved unless
+  they are known retired opencode-workflow components replaced by Harr.
 
 Managed stack:
   LeanCTX 3.9.15
   @zereight/mcp-gitlab (long-lived HTTP service)
   CodeGraph (installed by Harr, spawned by LeanCTX over stdio)
-  Compact host-specific AGENTS policy + diagnostic skills for Codex/OpenCode
+  compact host-specific global AGENTS policy
+  diagnostic Harr/LeanCTX skills
+
+Rollback:
+  harr uninstall restores the exact pre-Harr global snapshot.
 EOF_HELP
 }
 
