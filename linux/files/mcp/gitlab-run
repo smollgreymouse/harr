@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${HARR_MCP_GITLAB_BIN:?HARR_MCP_GITLAB_BIN is not set}"
+: "${HOST:=127.0.0.1}"
+: "${PORT:=3334}"
+: "${GITLAB_API_URL:?GITLAB_API_URL is not set}"
+: "${GITLAB_PERMISSION_MODE:=readonly}"
+
+export HOST PORT GITLAB_API_URL GITLAB_PERMISSION_MODE
+export STREAMABLE_HTTP="${STREAMABLE_HTTP:-true}"
+export SSE="${SSE:-false}"
+export REMOTE_AUTHORIZATION="${REMOTE_AUTHORIZATION:-true}"
+export GITLAB_DISABLE_VERSION_CHECK="${GITLAB_DISABLE_VERSION_CHECK:-true}"
+export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
+
+[[ -x "$HARR_MCP_GITLAB_BIN" ]] || {
+  printf 'GitLab MCP binary is not executable: %s\n' "$HARR_MCP_GITLAB_BIN" >&2
+  exit 127
+}
+
+exec "$HARR_MCP_GITLAB_BIN"
