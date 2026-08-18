@@ -19,6 +19,6 @@ jobs:
           bash -n linux/files/mcp/gitlab-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
           for f in linux/files/harr-cli/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile linux/files/hosts/opencode-config.py
+        run: python3 -m py_compile linux/files/hosts/opencode-config.py linux/files/hosts/codex-config.py
       - name: Clean takeover and rollback
         run: bash tests/clean-harness.sh
