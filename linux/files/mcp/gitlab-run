@@ -5,7 +5,7 @@ set -Eeuo pipefail
 : "${HOST:=127.0.0.1}"
 : "${PORT:=3334}"
 : "${GITLAB_API_URL:?GITLAB_API_URL is not set}"
-: "${GITLAB_PERMISSION_MODE:=readonly}"
+: "${GITLAB_PERMISSION_MODE:=full}"
 
 export HOST PORT GITLAB_API_URL GITLAB_PERMISSION_MODE
 export STREAMABLE_HTTP="${STREAMABLE_HTTP:-true}"
