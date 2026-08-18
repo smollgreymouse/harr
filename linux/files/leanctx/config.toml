@@ -96,6 +96,21 @@ url = ""
 
 [gateway.servers.headers]
 
+# The official reference Git MCP remains stdio behind LeanCTX. It is started
+# without --repository, so Harr has no machine-global project binding. Git tools
+# receive repo_path per call; use the current workspace/repository path.
+[[gateway.servers]]
+name = "git-mcp"
+transport = "stdio"
+enabled = true
+command = "mcp-server-git"
+args = []
+url = ""
+
+[gateway.servers.env]
+
+[gateway.servers.headers]
+
 # GitLab MCP runs natively as Streamable HTTP under Harr.
 [[gateway.servers]]
 name = "gitlab"
