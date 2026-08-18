@@ -62,7 +62,7 @@ The installer is user-level; do not use `sudo`.
 
 Harr owns and regenerates:
 
-- global Codex `AGENTS.md` and Harr/LeanCTX diagnostic skills;
+- global Codex `AGENTS.md`, Harr/LeanCTX diagnostic skills, and the Harr-owned `mcp_servers.lean-ctx` entry in `config.toml`;
 - global OpenCode `AGENTS.md`, Harr/LeanCTX diagnostic skills, and the active global OpenCode harness config;
 - Harr LeanCTX binary/wrapper/config;
 - Harr CodeGraph wrapper/private package;
@@ -83,7 +83,27 @@ The OpenCode clean takeover recognizes and removes the retired workflow pieces f
 
 It preserves unrelated providers, plugins, MCPs, agents and third-party skill directories. The old `opencode-workflow` repository itself is not used by Harr and may be removed independently.
 
-Codex `config.toml` is currently preserved rather than rewritten; Harr owns Codex policy/skills and expects LeanCTX to be the Harr-managed normal route. A versioned Codex MCP-registry writer can be added later rather than guessing its config format.
+### Codex MCP registration
+
+Codex uses `${CODEX_HOME:-~/.codex}/config.toml`. Harr owns only this entry:
+
+```toml
+[mcp_servers.lean-ctx]
+command = "/home/<user>/.local/bin/lean-ctx"
+enabled = true
+```
+
+The absolute launcher path is intentional: desktop/IDE hosts do not have to inherit `~/.local/bin` in `PATH`.
+
+When a `codex` CLI is available, Harr uses the official writer equivalent to:
+
+```bash
+codex mcp add lean-ctx -- ~/.local/bin/lean-ctx
+```
+
+The Codex CLI loads the existing MCP registry, replaces/adds only `lean-ctx`, and preserves the other configured MCP servers. If the host does not expose a `codex` CLI in `PATH`, Harr uses a narrow TOML fallback that rewrites only the `mcp_servers.lean-ctx` table and validates the complete resulting file with Python `tomllib`.
+
+All unrelated Codex settings and MCPs remain in place. The entire pre-Harr `config.toml` is part of the clean rollback snapshot.
 
 ## Rollback / uninstall
 
@@ -247,4 +267,14 @@ The installer enables the GitLab user service but does not start/restart it unle
   secrets/gitlab-pat
 ~/.config/lean-ctx/config.toml
 ~/.config/systemd/user/harr-mcp-gitlab.service
+
+${CODEX_HOME:-~/.codex}/
+  config.toml                 # Harr owns only mcp_servers.lean-ctx
+  AGENTS.md
+  skills/{harr,lean-ctx}/
+
+${XDG_CONFIG_HOME:-~/.config}/opencode/
+  opencode.jsonc
+  AGENTS.md
+  skills/{harr,lean-ctx}/
 ```
