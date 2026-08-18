@@ -77,10 +77,10 @@ render_agent_policy() {
   [[ -r "$HARR_POLICY_TEMPLATE" ]] || die "Harr policy template missing: $HARR_POLICY_TEMPLATE"
   [[ -r "$adapter" ]] || die "Harr host adapter missing: $adapter"
 
-  local CTX_READ='' CTX_SHELL='' CTX_SEARCH='' CTX_GLOB='' CTX_TOOLS='' CTX_CALL=''
+  local CTX_READ='' CTX_SHELL='' CTX_SEARCH='' CTX_GLOB='' CTX_TOOLS='' CTX_CALL='' HOST_NATIVE_POLICY=''
   # shellcheck disable=SC1090
   source "$adapter"
-  [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" ]] || \
+  [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" && -n "$HOST_NATIVE_POLICY" ]] || \
     die "incomplete Harr host adapter: $adapter"
 
   sed \
@@ -90,6 +90,7 @@ render_agent_policy() {
     -e "s|{{CTX_GLOB}}|${CTX_GLOB}|g" \
     -e "s|{{CTX_TOOLS}}|${CTX_TOOLS}|g" \
     -e "s|{{CTX_CALL}}|${CTX_CALL}|g" \
+    -e "s|{{HOST_NATIVE_POLICY}}|${HOST_NATIVE_POLICY}|g" \
     "$HARR_POLICY_TEMPLATE" >"$output"
 }
 
