@@ -12,7 +12,8 @@ readonly LEANCTX_LIB_DIR="${LIBEXEC_DIR}/leanctx"
 readonly SKILLS_LIB_DIR="${LIBEXEC_DIR}/skills"
 readonly POLICY_LIB_DIR="${LIBEXEC_DIR}/policy"
 readonly HOSTS_LIB_DIR="${LIBEXEC_DIR}/hosts"
-readonly CONFIG_HOME="${HOME}/.config"
+readonly STATE_LIB_DIR="${LIBEXEC_DIR}/state"
+readonly CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly HARR_CONFIG_DIR="${CONFIG_HOME}/harr"
 readonly MCP_CONFIG_DIR="${HARR_CONFIG_DIR}/mcp"
 readonly SECRETS_DIR="${HARR_CONFIG_DIR}/secrets"
@@ -20,9 +21,11 @@ readonly SYSTEMD_USER_DIR="${CONFIG_HOME}/systemd/user"
 readonly GITLAB_ENV="${MCP_CONFIG_DIR}/gitlab.env"
 readonly GITLAB_UNIT="harr-mcp-gitlab.service"
 readonly LEGACY_CODEGRAPH_UNIT="harr-mcp-codegraph.service"
+readonly CLEAN_STATE_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
 
 start_now=0
 harr_only=0
+clean_takeover=0
 
 die() {
   printf 'Error: %s\n' "$*" >&2
@@ -34,33 +37,44 @@ show_help() {
 Harr installer
 
 Usage:
-  ./install.sh [--start] [--harr-only]
+  ./install.sh --clean [--start] [--harr-only]   # first takeover
+  ./install.sh [--start] [--harr-only]           # later updates
 
-Default installation bootstraps Harr and installs the complete pinned stack:
+Harr is a global harness, not a patch layered into another harness.
+On the first installation, --clean is required. Harr snapshots the current
+GLOBAL harness state and then owns its global AGENTS policy, Harr/LeanCTX skills,
+LeanCTX config, and OpenCode harness configuration. Project-level files are never
+touched.
+
+The OpenCode clean takeover removes the retired opencode-workflow pieces
+(flow/wf-* agents, triage plugin, direct CodeGraph route, workflow commands),
+while preserving unrelated providers/plugins/MCPs/agents and third-party skills.
+
+Managed stack:
   LeanCTX 3.9.15
   GitLab MCP
   CodeGraph
-  compact Harr tool-routing policy + diagnostic skills for Codex and OpenCode
-
-CodeGraph is installed by Harr but remains a stdio downstream spawned by LeanCTX,
-so it automatically inherits the agent/project working directory.
+  compact host-specific Harr routing policy
+  diagnostic Harr/LeanCTX skills
 
 Options:
+  --clean      Required for the first install. Capture exact pre-Harr global state.
   --start      Start/restart Harr long-lived MCP services after installation.
-  --harr-only  Install/update Harr, routing policy, and managed skills but do not download stack components.
+  --harr-only  Install/update Harr + global policy/config/skills; skip stack downloads.
   -h, --help   Show this help.
 
-The installation is user-level. Do not run it with sudo.
-Existing Harr GitLab env is preserved and migrated where required.
-Existing non-Harr LeanCTX config is backed up before Harr takes ownership.
-Existing global AGENTS.md files are preserved; Harr owns only its marked policy block.
-Existing non-Harr lean-ctx/harr skills are backed up before Harr takes ownership.
+Rollback:
+  harr uninstall
+
+Uninstall takes a safety snapshot of the current Harr state, restores the exact
+pre-Harr global snapshot, removes Harr-private files, and never touches projects.
 EOF_HELP
 }
 
 parse_arguments() {
   while (($#)); do
     case "$1" in
+      --clean) clean_takeover=1 ;;
       --start) start_now=1 ;;
       --harr-only) harr_only=1 ;;
       -h|--help) show_help; exit 0 ;;
@@ -68,6 +82,18 @@ parse_arguments() {
     esac
     shift
   done
+}
+
+prepare_clean_ownership() {
+  local state_source="${FILES_DIR}/state/harr-state"
+  [[ -r "$state_source" ]] || die "missing Harr state helper: $state_source"
+  if [[ -f "$CLEAN_STATE_MARKER" ]]; then
+    ((clean_takeover)) && printf 'Clean ownership already initialized; preserving original pre-Harr snapshot.\n'
+    return
+  fi
+  ((clean_takeover)) || \
+    die 'first Harr installation requires --clean; Harr will not merge itself into an existing global harness'
+  bash "$state_source" snapshot
 }
 
 install_skill_sources() {
@@ -88,12 +114,14 @@ install_policy_sources() {
   [[ -r "${FILES_DIR}/policy/tool-routing.template.md" ]] || die 'missing Harr routing policy template'
   [[ -r "${FILES_DIR}/hosts/codex.env" ]] || die 'missing Harr Codex host adapter'
   [[ -r "${FILES_DIR}/hosts/opencode.env" ]] || die 'missing Harr OpenCode host adapter'
+  [[ -r "${FILES_DIR}/hosts/opencode-config.py" ]] || die 'missing Harr OpenCode config helper'
 
   rm -rf -- "$POLICY_LIB_DIR" "$HOSTS_LIB_DIR"
   install -d -m 0755 "$POLICY_LIB_DIR" "$HOSTS_LIB_DIR"
   install -m 0644 "${FILES_DIR}/policy/tool-routing.template.md" "${POLICY_LIB_DIR}/tool-routing.template.md"
   install -m 0644 "${FILES_DIR}/hosts/codex.env" "${HOSTS_LIB_DIR}/codex.env"
   install -m 0644 "${FILES_DIR}/hosts/opencode.env" "${HOSTS_LIB_DIR}/opencode.env"
+  install -m 0755 "${FILES_DIR}/hosts/opencode-config.py" "${HOSTS_LIB_DIR}/opencode-config.py"
 }
 
 install_runtime_files() {
@@ -103,6 +131,9 @@ install_runtime_files() {
     "$MCP_LIB_DIR" \
     "$LEANCTX_LIB_DIR" \
     "$SKILLS_LIB_DIR" \
+    "$POLICY_LIB_DIR" \
+    "$HOSTS_LIB_DIR" \
+    "$STATE_LIB_DIR" \
     "$MCP_CONFIG_DIR" \
     "$SYSTEMD_USER_DIR"
   install -d -m 0700 "$SECRETS_DIR"
@@ -111,11 +142,14 @@ install_runtime_files() {
   install -m 0644 "${FILES_DIR}/harr-cli/common.sh" "${CLI_LIB_DIR}/common.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/help.sh" "${CLI_LIB_DIR}/help.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/agents.sh" "${CLI_LIB_DIR}/agents.sh"
+  install -m 0644 "${FILES_DIR}/harr-cli/hosts.sh" "${CLI_LIB_DIR}/hosts.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/components.sh" "${CLI_LIB_DIR}/components.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/secret.sh" "${CLI_LIB_DIR}/secret.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/leanctx.sh" "${CLI_LIB_DIR}/leanctx.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/mcp.sh" "${CLI_LIB_DIR}/mcp.sh"
+  install -m 0644 "${FILES_DIR}/harr-cli/uninstall.sh" "${CLI_LIB_DIR}/uninstall.sh"
 
+  install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
   install -m 0755 "${FILES_DIR}/mcp/gitlab-run" "${MCP_LIB_DIR}/gitlab-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${MCP_LIB_DIR}/codegraph-cli"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
@@ -148,7 +182,7 @@ install_mcp_config() {
     install -m 0600 "${FILES_DIR}/mcp/gitlab.env.example" "$GITLAB_ENV"
     printf 'Created config: %s\n' "$GITLAB_ENV"
   else
-    printf 'Preserving existing config: %s\n' "$GITLAB_ENV"
+    printf 'Preserving existing Harr config: %s\n' "$GITLAB_ENV"
   fi
   set_env_key "$GITLAB_ENV" GITLAB_PERMISSION_MODE full
   set_env_key "$GITLAB_ENV" GITLAB_TOOLSETS all
@@ -160,7 +194,7 @@ remove_legacy_codegraph_service() {
     systemctl --user disable --now "$LEGACY_CODEGRAPH_UNIT" >/dev/null 2>&1 || true
     rm -f -- "$legacy_path"
     rm -f -- "${MCP_CONFIG_DIR}/codegraph.env"
-    printf 'Removed obsolete Harr CodeGraph HTTP bridge service; CodeGraph now runs via LeanCTX stdio.\n'
+    printf 'Removed obsolete Harr CodeGraph HTTP bridge service; CodeGraph runs via LeanCTX stdio.\n'
   fi
 }
 
@@ -176,6 +210,10 @@ configure_systemd() {
 main() {
   [[ "$EUID" -ne 0 ]] || die 'run Harr installer as your normal user, without sudo'
   parse_arguments "$@"
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for clean OpenCode global config management'
+
+  # This must happen before Harr writes any global file.
+  prepare_clean_ownership
 
   install_runtime_files
   install_mcp_config
@@ -184,6 +222,7 @@ main() {
   if (( ! harr_only )); then
     "${BIN_DIR}/harr" install all
   else
+    "${BIN_DIR}/harr" hosts apply
     "${BIN_DIR}/harr" agents apply all
   fi
 
@@ -191,14 +230,14 @@ main() {
     "${BIN_DIR}/harr" mcp restart all
   fi
 
-  printf '\nHarr installed.\n'
+  printf '\nHarr installed in clean global-harness mode.\n'
   printf 'CLI: %s\n' "${BIN_DIR}/harr"
+  printf 'Project-level configs/files were not touched.\n'
   if ((harr_only)); then
     printf 'Stack components were skipped (--harr-only). Install later with: harr install all\n'
   else
-    printf 'Stack components installed and LeanCTX config applied.\n'
+    printf 'Pinned stack installed and LeanCTX/OpenCode/global agent policy applied.\n'
   fi
-  printf 'Compact Harr tool policy and diagnostic skills applied for Codex and OpenCode.\n'
   printf 'GitLab MCP service is enabled for user startup.\n'
   printf 'CodeGraph is spawned on demand by LeanCTX and is not a systemd service.\n'
 
@@ -207,7 +246,9 @@ main() {
     printf '  harr mcp start gitlab\n'
   fi
 
-  printf '\nCheck the complete stack with:\n  harr status\n'
+  printf '\nCheck the complete harness with:\n  harr status\n'
+  printf 'Rollback completely with:\n  harr uninstall\n'
+
   if [[ ! -s "${SECRETS_DIR}/gitlab-pat" ]]; then
     printf '\nGitLab PAT is not configured. If it was not migrated from the old LeanCTX config, run:\n'
     printf '  harr secret set gitlab\n'
