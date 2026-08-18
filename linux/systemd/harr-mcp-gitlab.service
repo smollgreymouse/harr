@@ -1,0 +1,17 @@
+[Unit]
+Description=Harr MCP - GitLab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/harr/mcp/gitlab.env
+ExecStart=%h/.local/libexec/harr/mcp/gitlab-run
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
