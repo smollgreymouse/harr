@@ -1,7 +1,5 @@
 [Unit]
 Description=Harr MCP - GitLab
-After=network-online.target
-Wants=network-online.target
 
 [Service]
 Type=simple
