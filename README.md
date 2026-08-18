@@ -10,7 +10,7 @@ The name is both an Odin reference and a phonetic joke on “harness”.
 
 Harr deliberately does **not** store the GitLab PAT. The GitLab MCP server runs with `REMOTE_AUTHORIZATION=true`; the MCP client/gateway supplies the token per request (for example LeanCTX via `Private-Token`).
 
-Harr also does not intentionally trim the GitLab MCP tool surface. The default is `GITLAB_PERMISSION_MODE=full`, so `tools/list` exposes read, create/update, and delete capabilities supported by the server. Effective authorization is still bounded by the GitLab token supplied by the client. If a stricter server-side policy is desired, set `modify` (hide/reject delete operations) or `readonly` in `~/.config/harr/mcp/gitlab.env`.
+Harr also does not intentionally trim the GitLab MCP tool surface. The defaults are `GITLAB_PERMISSION_MODE=full` and `GITLAB_TOOLSETS=all`, so `tools/list` exposes every enabled server category and read/create/update/delete capabilities. Effective authorization is still bounded by the GitLab token supplied by the client. If a stricter server-side policy is desired, set `modify` (hide/reject delete operations) or `readonly` in `~/.config/harr/mcp/gitlab.env`; `GITLAB_TOOLSETS` can also be narrowed to selected categories.
 
 ## Install
 
@@ -81,6 +81,7 @@ STREAMABLE_HTTP=true
 REMOTE_AUTHORIZATION=true
 GITLAB_API_URL=https://gitlab.sca.ad-tech.ru/api/v4
 GITLAB_PERMISSION_MODE=full
+GITLAB_TOOLSETS=all
 ```
 
 LeanCTX gateway entry:
