@@ -43,12 +43,13 @@ Usage:
 Harr is a global harness, not a patch layered into another harness.
 On the first installation, --clean is required. Harr snapshots the current
 GLOBAL harness state and then owns its global AGENTS policy, Harr/LeanCTX skills,
-LeanCTX config, and OpenCode harness configuration. Project-level files are never
-touched.
+LeanCTX config, and Harr-managed Codex/OpenCode host configuration. Project-level
+files are never touched.
 
 The OpenCode clean takeover removes the retired opencode-workflow pieces
 (flow/wf-* agents, triage plugin, direct CodeGraph route, workflow commands),
 while preserving unrelated providers/plugins/MCPs/agents and third-party skills.
+Codex preserves unrelated config and MCPs; Harr owns only its LeanCTX MCP entry.
 
 Managed stack:
   LeanCTX 3.9.15
@@ -114,6 +115,7 @@ install_policy_sources() {
   [[ -r "${FILES_DIR}/policy/tool-routing.template.md" ]] || die 'missing Harr routing policy template'
   [[ -r "${FILES_DIR}/hosts/codex.env" ]] || die 'missing Harr Codex host adapter'
   [[ -r "${FILES_DIR}/hosts/opencode.env" ]] || die 'missing Harr OpenCode host adapter'
+  [[ -r "${FILES_DIR}/hosts/codex-config.py" ]] || die 'missing Harr Codex config helper'
   [[ -r "${FILES_DIR}/hosts/opencode-config.py" ]] || die 'missing Harr OpenCode config helper'
 
   rm -rf -- "$POLICY_LIB_DIR" "$HOSTS_LIB_DIR"
@@ -121,6 +123,7 @@ install_policy_sources() {
   install -m 0644 "${FILES_DIR}/policy/tool-routing.template.md" "${POLICY_LIB_DIR}/tool-routing.template.md"
   install -m 0644 "${FILES_DIR}/hosts/codex.env" "${HOSTS_LIB_DIR}/codex.env"
   install -m 0644 "${FILES_DIR}/hosts/opencode.env" "${HOSTS_LIB_DIR}/opencode.env"
+  install -m 0755 "${FILES_DIR}/hosts/codex-config.py" "${HOSTS_LIB_DIR}/codex-config.py"
   install -m 0755 "${FILES_DIR}/hosts/opencode-config.py" "${HOSTS_LIB_DIR}/opencode-config.py"
 }
 
@@ -210,7 +213,7 @@ configure_systemd() {
 main() {
   [[ "$EUID" -ne 0 ]] || die 'run Harr installer as your normal user, without sudo'
   parse_arguments "$@"
-  command -v python3 >/dev/null 2>&1 || die 'python3 is required for clean OpenCode global config management'
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for Harr host configuration management'
 
   # This must happen before Harr writes any global file.
   prepare_clean_ownership
@@ -236,7 +239,7 @@ main() {
   if ((harr_only)); then
     printf 'Stack components were skipped (--harr-only). Install later with: harr install all\n'
   else
-    printf 'Pinned stack installed and LeanCTX/OpenCode/global agent policy applied.\n'
+    printf 'Pinned stack installed; LeanCTX registered in Codex/OpenCode; global agent policy applied.\n'
   fi
   printf 'GitLab MCP service is enabled for user startup.\n'
   printf 'CodeGraph is spawned on demand by LeanCTX and is not a systemd service.\n'
