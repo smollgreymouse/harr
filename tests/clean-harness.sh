@@ -11,6 +11,10 @@ export CODEX_HOME="${HOME}/.codex"
 # Force the self-contained TOML fallback so CI tests the path used when a
 # desktop/IDE Codex host does not expose the Codex CLI in PATH.
 export HARR_CODEX_DISABLE_CLI=1
+mkdir -p "${TMP}/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' >"${TMP}/bin/systemctl"
+chmod 0755 "${TMP}/bin/systemctl"
+export PATH="${TMP}/bin:${PATH}"
 mkdir -p "$CODEX_HOME" "$XDG_CONFIG_HOME/opencode/commands" "$XDG_CONFIG_HOME/opencode/skills/external"
 
 cat >"${CODEX_HOME}/AGENTS.md" <<'EOF'
@@ -127,6 +131,11 @@ PY
 
 "${ROOT}/linux/harr" agents status
 "${ROOT}/linux/harr" hosts status
+
+# A later --harr-only update must keep working after clean ownership exists.
+"${ROOT}/linux/install.sh" --harr-only
+grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
+! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 
 # Install only the rollback helper where the installed CLI expects it. This is
 # intentionally after the pre-Harr snapshot.

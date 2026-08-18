@@ -89,7 +89,9 @@ prepare_clean_ownership() {
   local state_source="${FILES_DIR}/state/harr-state"
   [[ -r "$state_source" ]] || die "missing Harr state helper: $state_source"
   if [[ -f "$CLEAN_STATE_MARKER" ]]; then
-    ((clean_takeover)) && printf 'Clean ownership already initialized; preserving original pre-Harr snapshot.\n'
+    if ((clean_takeover)); then
+      printf 'Clean ownership already initialized; preserving original pre-Harr snapshot.\n'
+    fi
     return
   fi
   ((clean_takeover)) || \

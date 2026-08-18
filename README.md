@@ -29,6 +29,22 @@ Unrelated third-party MCPs/skills may coexist beside this stack.
 
 Direct Harr-managed CodeGraph/GitLab registrations are not part of the normal profile; they are diagnostic/on-demand bypasses only.
 
+## Measured gateway effect
+
+The gateway reduces the **permanently advertised tool surface**, not the amount of work or data a requested tool returns. The following is a reproducible example from the Harr reference stack on 2026-08-18:
+
+| Measurement | Result | Meaning |
+| --- | ---: | --- |
+| GitLab `tools/list` catalog | 216 tools | The full GitLab MCP catalog with `GITLAB_TOOLSETS=all`. |
+| Catalog response size | 177,710 B (173.5 KiB) | Streamable-HTTP `tools/list` payload, including the MCP response envelope. |
+| Gateway catalog | 217 tools | 216 GitLab tools plus CodeGraph. |
+| Permanently exposed host tools | 6 | `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_glob`, `ctx_tools`, and `ctx_call`. |
+| Hidden specialized tool names | 211 fewer (97.2%) | `(217 - 6) / 217`; specialized schemas stay behind `ctx_tools`. |
+
+This is intentionally **not** presented as a billed-token number. Host serialization, model tokenizer, provider formatting, enabled toolsets, and tool descriptions all change the actual context cost. The 173.5 KiB response is a useful order-of-magnitude proxy for the catalog that is no longer sent as direct host tool definitions on every turn; measure the actual host/model if a billing claim is needed.
+
+The trade-off is real. A direct MCP makes every operation immediately discoverable; the gateway adds a discovery/routing step and can make an underspecified request harder to map to the right specialized operation. `ctx_tools` is therefore best for a large, broad catalog such as GitLab. A small, frequently used, unambiguous toolset may be better exposed directly. Gateway availability, secret-memento configuration, and a project-local CodeGraph index are also quality dependencies: when any of them is unavailable, the agent must follow the fallback route rather than pretending the specialized capability exists.
+
 ## Quickstart
 
 Fresh install:
