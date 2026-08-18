@@ -29,6 +29,52 @@ Unrelated third-party MCPs/skills may coexist beside this stack.
 
 Direct Harr-managed CodeGraph/GitLab registrations are not part of the normal profile; they are diagnostic/on-demand bypasses only.
 
+## Quickstart
+
+Fresh install:
+
+```bash
+git clone https://github.com/smollgreymouse/harr.git
+cd harr
+./install.sh --clean --start
+```
+
+Configure the GitLab PAT once:
+
+```bash
+harr secret set gitlab
+```
+
+Check the whole harness:
+
+```bash
+harr status
+```
+
+Expected normal routing after restarting/reopening Codex or OpenCode:
+
+```text
+Codex / OpenCode -> LeanCTX
+                    +-> CodeGraph   (stdio, per-project cwd)
+                    +-> GitLab MCP  (HTTP, Harr user service)
+```
+
+For later Harr updates:
+
+```bash
+cd harr
+git pull
+./install.sh
+```
+
+Rollback the entire global Harr takeover:
+
+```bash
+harr uninstall
+```
+
+If a foreground test instance of `mcp-gitlab` is already using port `3334`, stop it before the first `--start` install.
+
 ## First install
 
 ```bash
