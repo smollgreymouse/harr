@@ -133,18 +133,6 @@ Harr owns and regenerates:
 
 Harr does **not** touch project-level `AGENTS.md`, `.opencode`, skills, CodeGraph indexes, or other repository files.
 
-### Replacing `opencode-workflow`
-
-The OpenCode clean takeover recognizes and removes the retired workflow pieces from the active global OpenCode config:
-
-- `flow`, `wf-design`, `wf-build`, reviewer/explorer and old adapter agents;
-- `opencode-mcp-triage`;
-- direct `codegraph` and `gitlab` registrations managed by the old/Harr stack;
-- old workflow-wide tool/permission overrides;
-- old workflow commands (`quick`, `safe`, `review`, `validate`, `build-*`).
-
-It preserves unrelated providers, plugins, MCPs, agents and third-party skill directories. The old `opencode-workflow` repository itself is not used by Harr and may be removed independently.
-
 ### Codex MCP registration
 
 Codex uses `${CODEX_HOME:-~/.codex}/config.toml`. Harr owns only this entry:
