@@ -123,7 +123,7 @@ cmd_status() {
   cmd_components_status
   printf '\n== LeanCTX ==\n\n'
   cmd_leanctx_status
-  printf '\n== Agent skills ==\n\n'
+  printf '\n== Agent policy / diagnostic skills ==\n\n'
   cmd_agents_status
   printf '\n== MCP services ==\n\n'
   cmd_mcp_status_all
