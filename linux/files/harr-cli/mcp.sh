@@ -123,6 +123,8 @@ cmd_status() {
   cmd_components_status
   printf '\n== LeanCTX ==\n\n'
   cmd_leanctx_status
+  printf '\n== Global hosts ==\n\n'
+  cmd_hosts_status
   printf '\n== Agent policy / diagnostic skills ==\n\n'
   cmd_agents_status
   printf '\n== MCP services ==\n\n'
