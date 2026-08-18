@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# HARR_LEANCTX_WRAPPER=1
+set -Eeuo pipefail
+
+readonly HARR_LEANCTX_VERSION="3.9.15"
+readonly REAL="${HARR_LEANCTX_REAL:-${HOME}/.local/libexec/harr/vendor/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx}"
+readonly SECRET_FILE="${HARR_GITLAB_SECRET_FILE:-${HOME}/.config/harr/secrets/gitlab-pat}"
+
+[[ -x "$REAL" ]] || {
+  printf 'Harr LeanCTX binary is missing: %s\nRun: harr install leanctx\n' "$REAL" >&2
+  exit 127
+}
+
+if [[ -r "$SECRET_FILE" ]]; then
+  secret=''
+  IFS= read -r secret <"$SECRET_FILE" || true
+  if [[ -n "$secret" ]]; then
+    export LEAN_CTX_SECRET_6D63702F6769746C61622F64656661756C74="$secret"
+  fi
+fi
+
+exec "$REAL" "$@"

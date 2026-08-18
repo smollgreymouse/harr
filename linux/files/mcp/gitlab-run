@@ -1,29 +1,25 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-: "${HARR_MCP_GITLAB_BIN:?HARR_MCP_GITLAB_BIN is not set}"
-: "${HOST:=127.0.0.1}"
-: "${PORT:=3334}"
+: "${HARR_NODE_BIN_DIR:?HARR_NODE_BIN_DIR is not set}"
+: "${HARR_NPM_BIN_DIR:?HARR_NPM_BIN_DIR is not set}"
 : "${GITLAB_API_URL:?GITLAB_API_URL is not set}"
-: "${GITLAB_PERMISSION_MODE:=full}"
-: "${GITLAB_TOOLSETS:=all}"
 
-export HOST PORT GITLAB_API_URL GITLAB_PERMISSION_MODE GITLAB_TOOLSETS
+export PATH="${HARR_NODE_BIN_DIR}:${HARR_NPM_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+export HOST="${HOST:-127.0.0.1}"
+export PORT="${PORT:-3334}"
 export STREAMABLE_HTTP="${STREAMABLE_HTTP:-true}"
 export SSE="${SSE:-false}"
 export REMOTE_AUTHORIZATION="${REMOTE_AUTHORIZATION:-true}"
+export GITLAB_PERMISSION_MODE="${GITLAB_PERMISSION_MODE:-full}"
+export GITLAB_TOOLSETS="${GITLAB_TOOLSETS:-all}"
 export GITLAB_DISABLE_VERSION_CHECK="${GITLAB_DISABLE_VERSION_CHECK:-true}"
 export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
 
-[[ -x "$HARR_MCP_GITLAB_BIN" ]] || {
-  printf 'GitLab MCP binary is not executable: %s\n' "$HARR_MCP_GITLAB_BIN" >&2
+launcher="${HARR_NPM_BIN_DIR}/zereight-mcp-gitlab"
+[[ -x "$launcher" ]] || {
+  printf 'GitLab MCP is not installed in Harr runtime: %s\n' "$launcher" >&2
   exit 127
 }
 
-# npm/NVM launchers commonly use `#!/usr/bin/env node`. Keep the launcher's
-# bin directory first so a user systemd manager resolves the matching Node even
-# when it did not inherit the interactive shell's NVM PATH.
-HARR_MCP_GITLAB_BIN_DIR="$(cd -- "$(dirname -- "$HARR_MCP_GITLAB_BIN")" && pwd)"
-export PATH="${HARR_MCP_GITLAB_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
-
-exec "$HARR_MCP_GITLAB_BIN"
+exec "$launcher"

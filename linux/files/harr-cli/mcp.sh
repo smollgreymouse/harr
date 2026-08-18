@@ -60,7 +60,7 @@ mcp_status_row() {
 }
 
 cmd_mcp_status_all() {
-  [[ $# -eq 0 ]] || die 'usage: harr status'
+  [[ $# -eq 0 ]] || die 'usage: harr mcp status'
   local -a names=()
   mapfile -t names < <(managed_mcp_names)
 
@@ -110,13 +110,21 @@ cmd_mcp_logs() {
   local -a args=(-u "$(mcp_unit "$name")" --no-pager -n 100)
   if (($#)); then
     case "$1" in
-      -f|--follow)
-        args=(-u "$(mcp_unit "$name")" -f -n 100)
-        ;;
+      -f|--follow) args=(-u "$(mcp_unit "$name")" -f -n 100) ;;
       *) die 'usage: harr mcp logs NAME [-f|--follow]' ;;
     esac
   fi
   journalctl --user "${args[@]}"
+}
+
+cmd_status() {
+  [[ $# -eq 0 ]] || die 'usage: harr status'
+  printf '== Components ==\n\n'
+  cmd_components_status
+  printf '\n== LeanCTX ==\n\n'
+  cmd_leanctx_status
+  printf '\n== MCP services ==\n\n'
+  cmd_mcp_status_all
 }
 
 cmd_mcp() {
@@ -132,17 +140,9 @@ cmd_mcp() {
       [[ $# -eq 1 ]] || die "usage: harr mcp $command NAME|all"
       cmd_mcp_lifecycle "$command" "$1"
       ;;
-    status)
-      cmd_mcp_status "$@"
-      ;;
-    logs)
-      cmd_mcp_logs "$@"
-      ;;
-    help|-h|--help)
-      mcp_usage
-      ;;
-    *)
-      die "unknown mcp command: $command (see harr mcp help)"
-      ;;
+    status) cmd_mcp_status "$@" ;;
+    logs) cmd_mcp_logs "$@" ;;
+    help|-h|--help) mcp_usage ;;
+    *) die "unknown mcp command: $command (see harr mcp help)" ;;
   esac
 }

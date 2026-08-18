@@ -1,11 +1,11 @@
 [Unit]
-Description=Harr MCP - GitLab
+Description=Harr MCP - CodeGraph HTTP bridge
 
 [Service]
 Type=simple
 EnvironmentFile=%h/.config/harr/runtime.env
-EnvironmentFile=%h/.config/harr/mcp/gitlab.env
-ExecStart=%h/.local/libexec/harr/mcp/gitlab-run
+EnvironmentFile=%h/.config/harr/mcp/codegraph.env
+ExecStart=%h/.local/libexec/harr/mcp/codegraph-run
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=10s

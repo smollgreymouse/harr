@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${HARR_NODE_BIN_DIR:?HARR_NODE_BIN_DIR is not set}"
+: "${HARR_NPM_BIN_DIR:?HARR_NPM_BIN_DIR is not set}"
+
+export PATH="${HARR_NODE_BIN_DIR}:${HARR_NPM_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+export CODEGRAPH_NO_UPDATE_CHECK="${CODEGRAPH_NO_UPDATE_CHECK:-1}"
+
+launcher="${HARR_NPM_BIN_DIR}/codegraph"
+[[ -x "$launcher" ]] || {
+  printf 'CodeGraph is not installed in Harr runtime: %s\n' "$launcher" >&2
+  exit 127
+}
+
+args=(serve --mcp)
+if [[ -n "${HARR_CODEGRAPH_PROJECT_ROOT:-}" ]]; then
+  [[ -d "$HARR_CODEGRAPH_PROJECT_ROOT" ]] || {
+    printf 'Configured CodeGraph project root does not exist: %s\n' "$HARR_CODEGRAPH_PROJECT_ROOT" >&2
+    exit 2
+  }
+  args+=(--path "$HARR_CODEGRAPH_PROJECT_ROOT")
+fi
+
+exec "$launcher" "${args[@]}"

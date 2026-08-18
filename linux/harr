@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly HARR_VERSION="0.1.0"
+readonly HARR_VERSION="0.2.0"
 readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
@@ -12,14 +12,20 @@ fi
 
 source "${CLI_LIB_DIR}/common.sh"
 source "${CLI_LIB_DIR}/help.sh"
+source "${CLI_LIB_DIR}/components.sh"
+source "${CLI_LIB_DIR}/secret.sh"
+source "${CLI_LIB_DIR}/leanctx.sh"
 source "${CLI_LIB_DIR}/mcp.sh"
 
 command="${1:-help}"
 shift || true
 
 case "$command" in
+  install) cmd_install_components "$@" ;;
+  secret) cmd_secret "$@" ;;
+  leanctx) cmd_leanctx "$@" ;;
   mcp) cmd_mcp "$@" ;;
-  status) cmd_mcp_status_all "$@" ;;
+  status) cmd_status "$@" ;;
   version|--version|-V) printf 'Harr %s\n' "$HARR_VERSION" ;;
   help|-h|--help) usage ;;
   *) die "unknown command: $command (see harr help)" ;;

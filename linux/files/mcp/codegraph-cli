@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# HARR_CODEGRAPH_WRAPPER=1
+set -Eeuo pipefail
+
+readonly RUNTIME_ENV="${HARR_RUNTIME_ENV:-${HOME}/.config/harr/runtime.env}"
+[[ -r "$RUNTIME_ENV" ]] || {
+  printf 'Harr runtime is not installed: %s\nRun: harr install mcp\n' "$RUNTIME_ENV" >&2
+  exit 127
+}
+# Harr owns this file; it contains only paths, no secrets.
+# shellcheck disable=SC1090
+source "$RUNTIME_ENV"
+: "${HARR_NODE_BIN_DIR:?HARR_NODE_BIN_DIR is not set}"
+: "${HARR_NPM_BIN_DIR:?HARR_NPM_BIN_DIR is not set}"
+
+export PATH="${HARR_NODE_BIN_DIR}:${HARR_NPM_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+launcher="${HARR_NPM_BIN_DIR}/codegraph"
+[[ -x "$launcher" ]] || {
+  printf 'CodeGraph is not installed in Harr runtime: %s\nRun: harr install mcp\n' "$launcher" >&2
+  exit 127
+}
+exec "$launcher" "$@"

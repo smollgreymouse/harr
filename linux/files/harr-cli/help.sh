@@ -1,9 +1,15 @@
 usage() {
-  cat <<'EOF'
-Harr — local harness supervisor for MCP servers
+  cat <<'EOF_HELP'
+Harr — local harness supervisor for MCP infrastructure
 
 Usage:
+  harr install [all|leanctx|mcp]
   harr status
+  harr secret set gitlab
+  harr secret status
+  harr secret unset gitlab
+  harr leanctx apply
+  harr leanctx status
   harr mcp list
   harr mcp start NAME|all
   harr mcp stop NAME|all
@@ -12,19 +18,17 @@ Usage:
   harr mcp disable NAME|all
   harr mcp status [NAME]
   harr mcp logs NAME [-f|--follow]
-  harr version
 
-Examples:
-  harr mcp start gitlab
-  harr mcp status gitlab
-  harr mcp status
-  harr status
-  harr mcp restart all
-EOF
+Managed stack:
+  LeanCTX 3.9.15
+  @zereight/mcp-gitlab
+  CodeGraph
+  Supergateway bridge for CodeGraph stdio -> Streamable HTTP
+EOF_HELP
 }
 
 mcp_usage() {
-  cat <<'EOF'
+  cat <<'EOF_HELP'
 Usage:
   harr mcp list
   harr mcp start NAME|all
@@ -34,5 +38,5 @@ Usage:
   harr mcp disable NAME|all
   harr mcp status [NAME]
   harr mcp logs NAME [-f|--follow]
-EOF
+EOF_HELP
 }

@@ -1,0 +1,102 @@
+# Managed by Harr.
+# LeanCTX profile pinned for Harr's MCP gateway stack.
+# Target: LeanCTX v3.9.15.
+
+shadow_mode = true
+permission_inheritance = "off"
+prefer_native_editor = true
+rules_injection = "off"
+rules_scope = "global"
+minimal_overhead = true
+bypass_hints = "off"
+
+tool_profile = ""
+tools_enabled = [
+    "ctx_read",
+    "ctx_shell",
+    "ctx_search",
+    "ctx_glob",
+    "ctx_tools",
+    "ctx_call",
+]
+disabled_tools = [
+    "ctx_edit",
+    "ctx_patch",
+]
+default_tool_categories = ["core"]
+
+cache_policy = "aggressive"
+read_dedup = "off"
+delta_explicit = true
+structure_first = true
+auto_mode_learning = false
+content_defined_chunking = true
+crush_verbatim_json = true
+
+compression_level = "standard"
+output_density = "terse"
+response_verbosity = "full"
+recovery_hints = "minimal"
+savings_footer = "never"
+reference_results = false
+
+enable_wakeup_ctx = false
+auto_capture = false
+buddy_enabled = false
+journal_enabled = false
+
+shell_activation = "off"
+shell_hook_disabled = true
+shell_allow_writes = false
+shell_security = "enforce"
+shell_strict_mode = false
+shell_allowlist_extra = [
+    "adb",
+    "sudo",
+    "apt-get",
+    "openssl",
+]
+
+[archive]
+enabled = true
+ephemeral = true
+ephemeral_min_tokens = 2000
+inline_max_bytes = 32768
+max_age_hours = 48
+max_disk_mb = 500
+raw_commands = [
+    "sqlite3",
+    "psql",
+    "duckdb",
+    "jq",
+]
+threshold_chars = 800
+
+[gateway]
+enabled = true
+cache_ttl_secs = 300
+call_timeout_secs = 120
+top_n = 1
+
+# CodeGraph is converted from stdio to Streamable HTTP by Harr/Supergateway.
+[[gateway.servers]]
+name = "codegraph"
+transport = "http"
+enabled = true
+url = "http://127.0.0.1:3333/mcp"
+
+[gateway.servers.headers]
+
+# GitLab MCP runs natively as Streamable HTTP under Harr.
+[[gateway.servers]]
+name = "gitlab"
+transport = "http"
+enabled = true
+url = "http://127.0.0.1:3334/mcp"
+
+[gateway.servers.headers]
+
+# PAT is restored at runtime by Harr's lean-ctx wrapper. It is never stored in
+# this config and never committed to the Harr repository.
+[gateway.servers.secret_headers]
+Private-Token = { id = "mcp/gitlab/default" }
