@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly HARR_VERSION="0.2.0"
+readonly HARR_VERSION="0.3.0"
 readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
@@ -12,6 +12,7 @@ fi
 
 source "${CLI_LIB_DIR}/common.sh"
 source "${CLI_LIB_DIR}/help.sh"
+source "${CLI_LIB_DIR}/agents.sh"
 source "${CLI_LIB_DIR}/components.sh"
 source "${CLI_LIB_DIR}/secret.sh"
 source "${CLI_LIB_DIR}/leanctx.sh"
@@ -22,6 +23,7 @@ shift || true
 
 case "$command" in
   install) cmd_install_components "$@" ;;
+  agents) cmd_agents "$@" ;;
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
   mcp) cmd_mcp "$@" ;;
