@@ -5,6 +5,7 @@ readonly XDG_CONFIG_HOME_REAL="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly CODEX_HOME_REAL="${CODEX_HOME:-${HOME}/.codex}"
 readonly STATE_ROOT="${HOME}/.local/share/harr/state"
 readonly PRE_HARR="${STATE_ROOT}/pre-harr"
+readonly UNINSTALL_BACKUP_ROOT="${HOME}/.local/share/harr-uninstall-backups"
 
 item_target() {
   case "$1" in
@@ -79,7 +80,7 @@ safety_snapshot() {
   [[ -f "${PRE_HARR}/complete" ]] || return 0
   local stamp root key
   stamp="$(date +%Y%m%d-%H%M%S)"
-  root="${STATE_ROOT}/pre-uninstall-${stamp}"
+  root="${UNINSTALL_BACKUP_ROOT}/${stamp}"
   mkdir -p "${root}/items"
   while IFS= read -r key; do
     snapshot_item "$root" "$key"
