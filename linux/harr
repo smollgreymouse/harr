@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly HARR_VERSION="0.3.0"
+readonly HARR_VERSION="0.4.0"
 readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
@@ -13,10 +13,12 @@ fi
 source "${CLI_LIB_DIR}/common.sh"
 source "${CLI_LIB_DIR}/help.sh"
 source "${CLI_LIB_DIR}/agents.sh"
+source "${CLI_LIB_DIR}/hosts.sh"
 source "${CLI_LIB_DIR}/components.sh"
 source "${CLI_LIB_DIR}/secret.sh"
 source "${CLI_LIB_DIR}/leanctx.sh"
 source "${CLI_LIB_DIR}/mcp.sh"
+source "${CLI_LIB_DIR}/uninstall.sh"
 
 command="${1:-help}"
 shift || true
@@ -26,14 +28,19 @@ case "$command" in
     install_target="${1:-all}"
     cmd_install_components "$@"
     case "$install_target" in
-      all|leanctx) cmd_agents_apply all ;;
+      all|leanctx)
+        cmd_hosts_apply
+        cmd_agents_apply all
+        ;;
     esac
     ;;
   agents) cmd_agents "$@" ;;
+  hosts) cmd_hosts "$@" ;;
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
   mcp) cmd_mcp "$@" ;;
   status) cmd_status "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
   version|--version|-V) printf 'Harr %s\n' "$HARR_VERSION" ;;
   help|-h|--help) usage ;;
   *) die "unknown command: $command (see harr help)" ;;
