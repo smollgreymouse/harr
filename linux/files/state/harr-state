@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly XDG_CONFIG_HOME_REAL="${XDG_CONFIG_HOME:-${HOME}/.config}"
+readonly CODEX_HOME_REAL="${CODEX_HOME:-${HOME}/.codex}"
+readonly STATE_ROOT="${HOME}/.local/share/harr/state"
+readonly PRE_HARR="${STATE_ROOT}/pre-harr"
+
+item_target() {
+  case "$1" in
+    codex-agents) printf '%s\n' "${CODEX_HOME_REAL}/AGENTS.md" ;;
+    opencode-agents) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/AGENTS.md" ;;
+    opencode-jsonc) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.jsonc" ;;
+    opencode-json) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.json" ;;
+    codex-skill-harr) printf '%s\n' "${CODEX_HOME_REAL}/skills/harr" ;;
+    codex-skill-leanctx) printf '%s\n' "${CODEX_HOME_REAL}/skills/lean-ctx" ;;
+    opencode-skill-harr) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/harr" ;;
+    opencode-skill-leanctx) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/lean-ctx" ;;
+    leanctx-config) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/lean-ctx/config.toml" ;;
+    leanctx-launcher) printf '%s\n' "${HOME}/.local/bin/lean-ctx" ;;
+    codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
+    harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
+    gitlab-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp-gitlab.service" ;;
+    gitlab-env) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr/mcp/gitlab.env" ;;
+    ocwf-command-build-log) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/build-log.md" ;;
+    ocwf-command-build-ok) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/build-ok.md" ;;
+    ocwf-command-quick) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/quick.md" ;;
+    ocwf-command-review) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/review.md" ;;
+    ocwf-command-safe) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/safe.md" ;;
+    ocwf-command-validate) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/validate.md" ;;
+    *) printf 'unknown state item: %s\n' "$1" >&2; exit 2 ;;
+  esac
+}
+
+all_items() {
+  printf '%s\n' \
+    codex-agents opencode-agents opencode-jsonc opencode-json \
+    codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
+    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit gitlab-env \
+    ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
+    ocwf-command-review ocwf-command-safe ocwf-command-validate
+}
+
+snapshot_item() {
+  local root="$1" key="$2" target dir
+  target="$(item_target "$key")"
+  dir="${root}/items/${key}"
+  mkdir -p "$dir"
+  printf '%s\n' "$target" >"${dir}/target"
+  if [[ -e "$target" || -L "$target" ]]; then
+    printf '1\n' >"${dir}/existed"
+    rm -rf -- "${dir}/payload"
+    cp -a -- "$target" "${dir}/payload"
+  else
+    printf '0\n' >"${dir}/existed"
+  fi
+}
+
+snapshot_all() {
+  if [[ -f "${PRE_HARR}/complete" ]]; then
+    printf 'Pre-Harr snapshot already exists: %s\n' "$PRE_HARR"
+    return
+  fi
+  local tmp="${STATE_ROOT}/.pre-harr.$$" key
+  rm -rf -- "$tmp"
+  mkdir -p "${tmp}/items"
+  while IFS= read -r key; do
+    snapshot_item "$tmp" "$key"
+  done < <(all_items)
+  date --iso-8601=seconds >"${tmp}/created-at" 2>/dev/null || date >"${tmp}/created-at"
+  printf 'clean\n' >"${tmp}/mode"
+  printf 'ok\n' >"${tmp}/complete"
+  mkdir -p "$STATE_ROOT"
+  mv "$tmp" "$PRE_HARR"
+  printf 'Captured pre-Harr global harness snapshot: %s\n' "$PRE_HARR"
+}
+
+safety_snapshot() {
+  [[ -f "${PRE_HARR}/complete" ]] || return 0
+  local stamp root key
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  root="${STATE_ROOT}/pre-uninstall-${stamp}"
+  mkdir -p "${root}/items"
+  while IFS= read -r key; do
+    snapshot_item "$root" "$key"
+  done < <(all_items)
+  printf 'ok\n' >"${root}/complete"
+  printf '%s\n' "$root"
+}
+
+restore_all() {
+  [[ -f "${PRE_HARR}/complete" ]] || {
+    printf 'No pre-Harr snapshot found: %s\n' "$PRE_HARR" >&2
+    exit 3
+  }
+  local key dir target existed parent
+  while IFS= read -r key; do
+    dir="${PRE_HARR}/items/${key}"
+    [[ -r "${dir}/target" && -r "${dir}/existed" ]] || continue
+    target="$(cat "${dir}/target")"
+    existed="$(cat "${dir}/existed")"
+    rm -rf -- "$target"
+    if [[ "$existed" == 1 ]]; then
+      parent="$(dirname -- "$target")"
+      mkdir -p "$parent"
+      cp -a -- "${dir}/payload" "$target"
+      printf 'Restored %s\n' "$target"
+    else
+      printf 'Removed Harr-created %s\n' "$target"
+    fi
+  done < <(all_items)
+}
+
+case "${1:-}" in
+  snapshot) snapshot_all ;;
+  safety-snapshot) safety_snapshot ;;
+  restore) restore_all ;;
+  status)
+    if [[ -f "${PRE_HARR}/complete" ]]; then
+      printf 'clean-snapshot\tready\t%s\n' "$PRE_HARR"
+    else
+      printf 'clean-snapshot\tmissing\t%s\n' "$PRE_HARR"
+    fi
+    ;;
+  *)
+    printf 'usage: harr-state {snapshot|safety-snapshot|restore|status}\n' >&2
+    exit 2
+    ;;
+esac
