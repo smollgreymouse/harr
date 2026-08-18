@@ -67,14 +67,27 @@ parse_arguments() {
   done
 }
 
+install_skill_sources() {
+  local skill source target
+  for skill in lean-ctx harr; do
+    source="${FILES_DIR}/skills/${skill}"
+    target="${SKILLS_LIB_DIR}/${skill}"
+    [[ -r "${source}/SKILL.md" ]] || die "missing Harr skill source: ${source}/SKILL.md"
+    rm -rf -- "$target"
+    install -d -m 0755 "$target"
+    cp -a "${source}/." "$target/"
+    find "$target" -type d -exec chmod 0755 {} +
+    find "$target" -type f -exec chmod 0644 {} +
+  done
+}
+
 install_runtime_files() {
   install -d -m 0755 \
     "$BIN_DIR" \
     "$CLI_LIB_DIR" \
     "$MCP_LIB_DIR" \
     "$LEANCTX_LIB_DIR" \
-    "${SKILLS_LIB_DIR}/lean-ctx" \
-    "${SKILLS_LIB_DIR}/harr" \
+    "$SKILLS_LIB_DIR" \
     "$MCP_CONFIG_DIR" \
     "$SYSTEMD_USER_DIR"
   install -d -m 0700 "$SECRETS_DIR"
@@ -92,8 +105,7 @@ install_runtime_files() {
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${MCP_LIB_DIR}/codegraph-cli"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0600 "${FILES_DIR}/leanctx/config.toml" "${LEANCTX_LIB_DIR}/config.toml"
-  install -m 0644 "${FILES_DIR}/skills/lean-ctx/SKILL.md" "${SKILLS_LIB_DIR}/lean-ctx/SKILL.md"
-  install -m 0644 "${FILES_DIR}/skills/harr/SKILL.md" "${SKILLS_LIB_DIR}/harr/SKILL.md"
+  install_skill_sources
 
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${GITLAB_UNIT}" "${SYSTEMD_USER_DIR}/${GITLAB_UNIT}"
 }
