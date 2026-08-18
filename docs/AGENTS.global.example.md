@@ -1,22 +1,22 @@
-# Working agreements
+# Harr global AGENTS example
 
-## Global skills
+Harr now injects this policy automatically with `harr agents apply`; this file is documentation only.
 
-- Не загружай все skills на старте; читай только нужный `SKILL.md` и только необходимые ему references.
-- Глобальные skills вне активного репозитория читай нативно; не используй для них CodeGraph/LeanCTX.
-- Skill `harr` загружай только для установки/диагностики harness, а не для обычной работы с кодом.
+For Codex the rendered block is:
 
-## Repository tool routing
+<!-- harr-tool-policy:start -->
+## Harr tool routing
 
-- Нормальный MCP surface агента — **только LeanCTX**; специализированные MCP вызываются через gateway, чтобы не держать их schemas в контексте.
-- Структура кода, символы, references/callers, архитектура, зависимости, blast radius → **CodeGraph first** через `ctx_tools`; не перечитывай сразу то, что CodeGraph уже вернул.
-- Git status/branches/history/remotes/fetch/pull/push/commits → **git-mcp через LeanCTX gateway**.
-- GitLab MR/pipeline/job/issue/project/server data → **gitlab через LeanCTX gateway**.
-- Известные файлы/диапазоны, exact-text search, glob, shell/tests → `ctx_read` / `ctx_search` / `ctx_glob` / `ctx_shell`.
-- Редактирование → native editor; `ctx_edit`/`ctx_patch` не использовать.
-- Direct CodeGraph/Git/GitLab MCP не держать в нормальном profile; подключать только временно для диагностики gateway.
-- Для редких LeanCTX-возможностей используй `ctx_call`, не расширяя постоянный MCP surface.
+- Investigation uses MCP; editing uses the native host editor.
+- Normal MCP surface is LeanCTX only; specialized MCPs stay behind its gateway.
+- Cross-file structure, flow, relationships, dependencies, architecture, impact, callers/references: FIRST investigation call MUST be `ctx_tools` with `action="call"`, `tool="codegraph::codegraph_explore"`, `arguments={"query":"<task or relevant symbols/files>"}`.
+- CodeGraph calls are sequential. Source returned by CodeGraph counts as already read; if another source-code area remains unresolved, make another targeted CodeGraph call before generic read/search/glob/shell.
+- Git repository state/history/branches/remotes/fetch/pull/push/commits: use `git-mcp` through `ctx_tools` when configured. GitLab MR/pipeline/job/issue/project/server data: use `gitlab` through `ctx_tools`.
+- Use `ctx_read` only for missing exact evidence; `ctx_search` only for a concrete unresolved text/symbol question; `ctx_glob` only for a narrowly scoped unknown path; `ctx_shell` only for runtime/command evidence not supplied by a specialized MCP.
+- Never do broad repository inventory after CodeGraph. Do not duplicate one investigation through gateway and a direct MCP; direct MCPs are diagnostic/on-demand bypasses only.
+- Use `ctx_call` for uncommon LeanCTX capabilities instead of expanding the permanent tool surface. Do not use native read/grep/glob/bash. Build/test only on explicit request.
+<!-- harr-tool-policy:end -->
 
-## Project binding
+OpenCode receives the same policy with the six LeanCTX ids rendered as `lean-ctx_ctx_*` names.
 
-- CodeGraph через LeanCTX запускается stdio-child и наследует cwd LeanCTX; при неверном root исправляй cwd, а не создавай per-project Harr config.
+Everything outside the marked block in the real global `AGENTS.md` remains user-owned.
