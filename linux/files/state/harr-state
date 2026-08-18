@@ -23,6 +23,7 @@ item_target() {
     codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
     harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
     gitlab-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp-gitlab.service" ;;
+    gitlab-enable-link) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/default.target.wants/harr-mcp-gitlab.service" ;;
     harr-config-root) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr" ;;
     harr-libexec-root) printf '%s\n' "${HOME}/.local/libexec/harr" ;;
     harr-share-root) printf '%s\n' "${HOME}/.local/share/harr" ;;
@@ -40,7 +41,7 @@ all_items() {
   printf '%s\n' \
     codex-agents opencode-agents opencode-jsonc opencode-json \
     codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
-    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit \
+    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit gitlab-enable-link \
     harr-config-root harr-libexec-root harr-share-root \
     ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
     ocwf-command-review ocwf-command-safe ocwf-command-validate
