@@ -22,7 +22,13 @@ command="${1:-help}"
 shift || true
 
 case "$command" in
-  install) cmd_install_components "$@" ;;
+  install)
+    install_target="${1:-all}"
+    cmd_install_components "$@"
+    case "$install_target" in
+      all|leanctx) cmd_agents_apply all ;;
+    esac
+    ;;
   agents) cmd_agents "$@" ;;
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
