@@ -3,7 +3,7 @@
 readonly HARR_LEANCTX_VERSION="3.9.15"
 readonly HARR_GITLAB_MCP_VERSION="2.1.48"
 readonly HARR_CODEGRAPH_VERSION="1.5.0"
-readonly HARR_GIT_MCP_VERSION="0.6.2"
+readonly HARR_GIT_MCP_VERSION="2026.7.10"
 
 write_runtime_env() {
   local node_bin="$1"
