@@ -1,7 +1,7 @@
 # Common Harr CLI helpers.
 
-readonly HARR_SYSTEMD_USER_DIR="${HARR_SYSTEMD_USER_DIR:-${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user}"
-readonly HARR_CONFIG_DIR="${HARR_CONFIG_DIR:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr}"
+readonly HARR_SYSTEMD_USER_DIR="${HARR_SYSTEMD_USER_DIR:-${HOME}/.config/systemd/user}"
+readonly HARR_CONFIG_DIR="${HARR_CONFIG_DIR:-${HOME}/.config/harr}"
 readonly HARR_MCP_CONFIG_DIR="${HARR_MCP_CONFIG_DIR:-${HARR_CONFIG_DIR}/mcp}"
 
 die() {
