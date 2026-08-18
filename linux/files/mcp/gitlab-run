@@ -19,4 +19,10 @@ export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
   exit 127
 }
 
+# npm/NVM launchers commonly use `#!/usr/bin/env node`. Keep the launcher's
+# bin directory first so a user systemd manager resolves the matching Node even
+# when it did not inherit the interactive shell's NVM PATH.
+HARR_MCP_GITLAB_BIN_DIR="$(cd -- "$(dirname -- "$HARR_MCP_GITLAB_BIN")" && pwd)"
+export PATH="${HARR_MCP_GITLAB_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+
 exec "$HARR_MCP_GITLAB_BIN"
