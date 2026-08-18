@@ -90,6 +90,9 @@ prepare_clean_ownership() {
   local state_source="${FILES_DIR}/state/harr-state"
   [[ -r "$state_source" ]] || die "missing Harr state helper: $state_source"
   if [[ -f "$CLEAN_STATE_MARKER" ]]; then
+    # Idempotent snapshot call also migrates older clean snapshots with newly
+    # managed global paths before this version touches them.
+    bash "$state_source" snapshot
     ((clean_takeover)) && printf 'Clean ownership already initialized; preserving original pre-Harr snapshot.\n'
     return
   fi
