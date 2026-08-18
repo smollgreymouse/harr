@@ -61,7 +61,7 @@ detect_gitlab_bin() {
   local candidate
   for candidate in mcp-gitlab zereight-mcp-gitlab; do
     if command -v "$candidate" >/dev/null 2>&1; then
-      readlink -f "$(command -v "$candidate")"
+      command -v "$candidate"
       return 0
     fi
   done
