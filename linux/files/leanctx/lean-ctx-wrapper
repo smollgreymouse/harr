@@ -11,6 +11,12 @@ readonly SECRET_FILE="${HARR_GITLAB_SECRET_FILE:-${HOME}/.config/harr/secrets/gi
   exit 127
 }
 
+# GUI/IDE launches often inherit a smaller PATH than an interactive shell.
+# LeanCTX spawns CodeGraph by command name, so make Harr's user launchers
+# resolvable without depending on shell startup files. Do not change cwd: the
+# inherited project working directory is what makes CodeGraph project-aware.
+export PATH="${HOME}/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+
 if [[ -r "$SECRET_FILE" ]]; then
   secret=''
   IFS= read -r secret <"$SECRET_FILE" || true
