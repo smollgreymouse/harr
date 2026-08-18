@@ -24,29 +24,33 @@ agent_targets() {
   esac
 }
 
-skill_source() {
-  printf '%s/%s/SKILL.md\n' "$HARR_SKILLS_SOURCE_DIR" "$1"
+skill_source_dir() {
+  printf '%s/%s\n' "$HARR_SKILLS_SOURCE_DIR" "$1"
 }
 
 install_one_skill() {
-  local agent="$1" skill="$2" root source target backup_dir backup
+  local agent="$1" skill="$2" root source_dir source target_dir target backup_dir backup
   root="$(agent_skill_root "$agent")"
-  source="$(skill_source "$skill")"
-  target="${root}/${skill}/SKILL.md"
+  source_dir="$(skill_source_dir "$skill")"
+  source="${source_dir}/SKILL.md"
+  target_dir="${root}/${skill}"
+  target="${target_dir}/SKILL.md"
   backup_dir="${HARR_LIBEXEC_DIR}/backup/skills/${agent}"
-  backup="${backup_dir}/${skill}.SKILL.md.pre-harr"
+  backup="${backup_dir}/${skill}.pre-harr"
 
   [[ -r "$source" ]] || die "Harr skill source missing: $source"
-  install -d -m 0755 "${root}/${skill}" "$backup_dir"
+  install -d -m 0755 "$root" "$backup_dir"
 
-  if [[ -e "$target" ]] && ! grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then
+  if [[ -e "$target_dir" ]] && { [[ ! -r "$target" ]] || ! grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; }; then
     if [[ ! -e "$backup" ]]; then
-      cp -a "$target" "$backup"
+      cp -a "$target_dir" "$backup"
       printf 'Backed up existing %s/%s skill to %s\n' "$agent" "$skill" "$backup"
     fi
   fi
 
-  install -m 0644 "$source" "$target"
+  rm -rf -- "$target_dir"
+  install -d -m 0755 "$target_dir"
+  cp -a "${source_dir}/." "$target_dir/"
 }
 
 cmd_agents_apply() {
@@ -62,16 +66,19 @@ cmd_agents_apply() {
 }
 
 skill_state() {
-  local agent="$1" skill="$2" source target
-  source="$(skill_source "$skill")"
-  target="$(agent_skill_root "$agent")/${skill}/SKILL.md"
-  if [[ ! -e "$target" ]]; then
+  local agent="$1" skill="$2" source_dir source target_dir target
+  source_dir="$(skill_source_dir "$skill")"
+  source="${source_dir}/SKILL.md"
+  target_dir="$(agent_skill_root "$agent")/${skill}"
+  target="${target_dir}/SKILL.md"
+
+  if [[ ! -e "$target_dir" ]]; then
     printf 'missing'
   elif [[ ! -r "$source" ]]; then
     printf 'source-missing'
-  elif cmp -s "$source" "$target"; then
+  elif diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1; then
     printf 'managed'
-  elif grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then
+  elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then
     printf 'stale'
   else
     printf 'external'
