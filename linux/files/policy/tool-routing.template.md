@@ -8,5 +8,5 @@
 - Git repository state/history/branches/remotes/fetch/pull/push/commits: use `git-mcp` through `{{CTX_TOOLS}}` when configured. GitLab MR/pipeline/job/issue/project/server data: use `gitlab` through `{{CTX_TOOLS}}`.
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence not supplied by a specialized MCP.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one investigation through gateway and a direct MCP; direct MCPs are diagnostic/on-demand bypasses only.
-- Use `{{CTX_CALL}}` for uncommon LeanCTX capabilities instead of expanding the permanent tool surface. Do not use native read/grep/glob/bash. Build/test only on explicit request.
+- Use `{{CTX_CALL}}` for uncommon LeanCTX capabilities instead of expanding the permanent tool surface. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
 <!-- harr-tool-policy:end -->
