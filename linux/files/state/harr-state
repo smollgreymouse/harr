@@ -70,6 +70,13 @@ write_runtime_marker() {
 
 snapshot_all() {
   if [[ -f "${PRE_HARR}/complete" ]]; then
+    # Harr versions before Codex MCP ownership already preserved config.toml
+    # untouched. If such an older clean snapshot exists, capture its current
+    # Codex config now, before this version starts managing mcp_servers.lean-ctx.
+    if [[ ! -d "${PRE_HARR}/items/codex-config" ]]; then
+      snapshot_item "$PRE_HARR" codex-config
+      printf 'Extended existing pre-Harr snapshot with untouched Codex config.toml.\n'
+    fi
     write_runtime_marker
     printf 'Pre-Harr snapshot already exists: %s\n' "$PRE_HARR"
     return
