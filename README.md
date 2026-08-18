@@ -1,6 +1,6 @@
 # Harr
 
-Harr is a small local harness for MCP infrastructure.
+Harr is a local harness for MCP/context-engineering infrastructure.
 
 The name is both an Odin reference and a phonetic joke on “harness”.
 
@@ -10,7 +10,8 @@ Harr pins and installs the stack it is built around:
 
 - LeanCTX `3.9.15` — MCP gateway used by the agent;
 - `@zereight/mcp-gitlab` `2.1.48` — native Streamable HTTP on `127.0.0.1:3334/mcp`;
-- CodeGraph `1.5.0` — installed by Harr, but spawned by LeanCTX over stdio per agent/project context.
+- CodeGraph `1.5.0` — installed by Harr, but spawned by LeanCTX over stdio per agent/project context;
+- Harr-aware `lean-ctx` and `harr` agent skills for Codex and OpenCode.
 
 The resulting topology is deliberately hybrid:
 
@@ -42,7 +43,7 @@ cd harr
 ./install.sh
 ```
 
-The default installer installs/updates Harr and the complete pinned stack. It does not start/restart the GitLab MCP service automatically, so an already-running foreground server cannot collide with port `3334`.
+The default installer installs/updates Harr, the complete pinned stack, and Harr-managed agent skills. It does not start/restart the GitLab MCP service automatically, so an already-running foreground server cannot collide with port `3334`.
 
 After stopping any foreground GitLab MCP test process:
 
@@ -57,7 +58,7 @@ To install and immediately restart managed services:
 ./install.sh --start
 ```
 
-To update only Harr itself without downloading components:
+To update only Harr itself and its managed skills without downloading components:
 
 ```bash
 ./install.sh --harr-only
@@ -75,6 +76,7 @@ Harr uses a private npm prefix under `~/.local/share/harr/npm`; it does not need
   cli/
   mcp/
   leanctx/
+  skills/
   vendor/lean-ctx/3.9.15/lean-ctx          # real pinned binary
 ~/.local/share/harr/npm/                    # private npm runtime
 ~/.config/harr/
@@ -84,9 +86,28 @@ Harr uses a private npm prefix under `~/.local/share/harr/npm`; it does not need
 ~/.config/lean-ctx/config.toml              # Harr-managed LeanCTX profile
 ~/.config/systemd/user/
   harr-mcp-gitlab.service
+~/.codex/skills/{lean-ctx,harr}/SKILL.md
+~/.config/opencode/skills/{lean-ctx,harr}/SKILL.md
 ```
 
-A pre-existing non-Harr LeanCTX config is backed up before Harr takes ownership. Existing non-Harr `lean-ctx` and `codegraph` launchers are also backed up once under `~/.local/libexec/harr/backup/` before Harr installs its wrappers.
+A pre-existing non-Harr LeanCTX config is backed up before Harr takes ownership. Existing non-Harr `lean-ctx` and `codegraph` launchers are also backed up once under `~/.local/libexec/harr/backup/`. Existing non-Harr `lean-ctx`/`harr` skills are backed up once under `~/.local/libexec/harr/backup/skills/` before Harr replaces them.
+
+## Agent guidance
+
+Harr owns the `lean-ctx` skill on a Harr-managed machine because the upstream skill's generic setup/update instructions are not appropriate for a pinned harness. The Harr version documents the actual topology, minimal direct tool surface, CodeGraph cwd inheritance, GitLab HTTP/secret routing, and diagnostics.
+
+Manage skill installation with:
+
+```bash
+harr agents apply
+harr agents apply codex
+harr agents apply opencode
+harr agents status
+```
+
+`harr install all` and `harr install leanctx` re-apply the managed skills.
+
+Harr deliberately does **not** overwrite a user's global `AGENTS.md`. A canonical Harr-aware example is versioned at [`docs/AGENTS.global.example.md`](docs/AGENTS.global.example.md); merge/copy that policy explicitly so personal working agreements remain user-owned.
 
 ## Why CodeGraph stays stdio
 
@@ -157,13 +178,13 @@ Actual GitLab permissions are still bounded by the PAT supplied to LeanCTX.
 
 ## Component installation
 
-Reinstall the complete pinned stack:
+Reinstall the complete pinned stack and re-apply agent skills:
 
 ```bash
 harr install all
 ```
 
-Or just LeanCTX:
+Or just LeanCTX plus its managed agent guidance:
 
 ```bash
 harr install leanctx
@@ -204,7 +225,7 @@ harr mcp disable all
 harr status
 ```
 
-shows pinned/installed component versions, LeanCTX config/secret state, and all long-lived Harr MCP service endpoints.
+shows pinned/installed component versions, LeanCTX config/secret state, Harr-managed agent-skill state, and all long-lived Harr MCP service endpoints.
 
 ## LeanCTX
 
