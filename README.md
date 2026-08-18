@@ -4,38 +4,36 @@ Harr is a local harness for MCP/context-engineering infrastructure.
 
 The name is both an Odin reference and a phonetic joke on “harness”.
 
-## Managed stack
+## Goal
 
-Harr pins and installs the stack it is built around:
-
-- LeanCTX `3.9.15` — MCP gateway used by the agent;
-- `@zereight/mcp-gitlab` `2.1.48` — native Streamable HTTP on `127.0.0.1:3334/mcp`;
-- CodeGraph `1.5.0` — installed by Harr, but spawned by LeanCTX over stdio per agent/project context;
-- Harr-aware `lean-ctx` and `harr` agent skills for Codex and OpenCode.
-
-The resulting topology is deliberately hybrid:
+Keep the normal agent tool surface small. The agent sees LeanCTX; specialized MCPs stay behind the LeanCTX gateway and are discovered/called only when needed.
 
 ```text
 Codex / OpenCode
       |
-      | stdio: lean-ctx
+      | normal MCP surface: LeanCTX only
       v
 LeanCTX 3.9.15
       |
-      +-- stdio spawn -------> CodeGraph
-      |                        inherits LeanCTX cwd
-      |                        -> project-local .codegraph resolution
+      +-- stdio -----------> CodeGraph 1.5.0
+      |                     inherits LeanCTX cwd
       |
-      +-- Streamable HTTP --> GitLab MCP :3334 --> GitLab API
+      +-- HTTP :3334 -----> GitLab MCP 2.1.48 -> GitLab API
+      |
+      +-- future MCPs ----> hidden behind the same gateway
 ```
 
-This is intentional. GitLab is long-lived HTTP because its stdio path was problematic in the affected LeanCTX setup. CodeGraph stays stdio because that preserves the caller/project working directory without any per-project Harr config.
+Direct registrations of CodeGraph/Git/GitLab may be useful as temporary diagnostics, but must not remain in the normal profile because their tool schemas defeat the context-saving purpose of the gateway.
 
-`node-repl` is intentionally not part of Harr or the LeanCTX gateway.
+## Managed stack
+
+- LeanCTX `3.9.15` — pinned MCP gateway;
+- `@zereight/mcp-gitlab` `2.1.48` — long-lived Streamable HTTP user service at `127.0.0.1:3334/mcp`;
+- CodeGraph `1.5.0` — installed by Harr, spawned by LeanCTX over stdio per agent/repository;
+- compact host-specific tool-routing policy for Codex and OpenCode;
+- diagnostic-only `harr` and `lean-ctx` skills.
 
 ## Install
-
-Linux user-level installation:
 
 ```bash
 git clone https://github.com/smollgreymouse/harr.git
@@ -43,60 +41,74 @@ cd harr
 ./install.sh
 ```
 
-The default installer installs/updates Harr, the complete pinned stack, and Harr-managed agent skills. It does not start/restart the GitLab MCP service automatically, so an already-running foreground server cannot collide with port `3334`.
+The installer is user-level; do not use `sudo`. It installs the pinned stack and applies the agent policy, but does not start/restart GitLab MCP automatically to avoid colliding with a foreground test process on port `3334`.
 
-After stopping any foreground GitLab MCP test process:
+After stopping any foreground GitLab MCP process:
 
 ```bash
 harr mcp start gitlab
 harr status
 ```
 
-To install and immediately restart managed services:
+Useful installer modes:
 
 ```bash
-./install.sh --start
+./install.sh --start      # install and restart long-lived MCP services
+./install.sh --harr-only  # update Harr + agent policy/skills only
 ```
 
-To update only Harr itself and its managed skills without downloading components:
+## Compact agent policy
 
-```bash
-./install.sh --harr-only
-```
-
-Harr uses a private npm prefix under `~/.local/share/harr/npm`; it does not need GitLab MCP or CodeGraph to be globally installed. A Node.js 20–24 runtime and npm must be available while installing/running the Node-based components.
-
-## What is installed
+The source of truth is one template:
 
 ```text
-~/.local/bin/harr
-~/.local/bin/lean-ctx                       # Harr wrapper
-~/.local/bin/codegraph                      # Harr wrapper
-~/.local/libexec/harr/
-  cli/
-  mcp/
-  leanctx/
-  skills/
-  vendor/lean-ctx/3.9.15/lean-ctx          # real pinned binary
-~/.local/share/harr/npm/                    # private npm runtime
-~/.config/harr/
-  runtime.env
-  mcp/gitlab.env
-  secrets/gitlab-pat
-~/.config/lean-ctx/config.toml              # Harr-managed LeanCTX profile
-~/.config/systemd/user/
-  harr-mcp-gitlab.service
-~/.codex/skills/{lean-ctx,harr}/SKILL.md
-~/.config/opencode/skills/{lean-ctx,harr}/SKILL.md
+linux/files/policy/tool-routing.template.md
 ```
 
-A pre-existing non-Harr LeanCTX config is backed up before Harr takes ownership. Existing non-Harr `lean-ctx` and `codegraph` launchers are also backed up once under `~/.local/libexec/harr/backup/`. Existing non-Harr `lean-ctx`/`harr` skills are backed up once under `~/.local/libexec/harr/backup/skills/` before Harr replaces them.
+Host adapters contain only LeanCTX tool ids:
 
-## Agent guidance
+```text
+linux/files/hosts/codex.env
+linux/files/hosts/opencode.env
+```
 
-Harr owns the `lean-ctx` skill on a Harr-managed machine because the upstream skill's generic setup/update instructions are not appropriate for a pinned harness. The Harr version documents the actual topology, minimal direct tool surface, CodeGraph cwd inheritance, GitLab HTTP/secret routing, and diagnostics.
+For example, Codex uses `ctx_tools`; OpenCode uses `lean-ctx_ctx_tools`. Harr renders the same policy with the correct host ids.
 
-Manage skill installation with:
+The permanent policy is intentionally small and is based on the OpenCode routing policy developed for this setup:
+
+- MCP for investigation; native host editor for edits;
+- normal MCP surface: LeanCTX only;
+- cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
+- CodeGraph calls sequentially; returned source counts as already read;
+- unresolved exact evidence -> narrowly targeted LeanCTX read/search/glob/shell;
+- Git operations -> `git-mcp` through the gateway when configured;
+- GitLab API data -> `gitlab` through the gateway;
+- uncommon LeanCTX capabilities -> `ctx_call`;
+- no broad repository inventory after CodeGraph and no duplicate direct+gateway investigation;
+- build/test only on explicit request.
+
+Harr injects only its marked block into existing global rules:
+
+```text
+~/.codex/AGENTS.md
+~/.config/opencode/AGENTS.md
+```
+
+Markers:
+
+```text
+<!-- harr-tool-policy:start -->
+...
+<!-- harr-tool-policy:end -->
+```
+
+Everything outside that block remains user-owned. The first pre-Harr version of each global AGENTS file is backed up under:
+
+```text
+~/.local/libexec/harr/backup/agents/
+```
+
+Apply/check policy and diagnostic skills:
 
 ```bash
 harr agents apply
@@ -105,17 +117,24 @@ harr agents apply opencode
 harr agents status
 ```
 
-`harr install all` and `harr install leanctx` re-apply the managed skills.
+`harr install all` and `harr install leanctx` also re-apply the agent policy.
 
-Harr deliberately does **not** overwrite a user's global `AGENTS.md`. A canonical Harr-aware example is versioned at [`docs/AGENTS.global.example.md`](docs/AGENTS.global.example.md); merge/copy that policy explicitly so personal working agreements remain user-owned.
+## Diagnostic skills
+
+The installed `harr` and `lean-ctx` skills are **not** the normal routing prompt. Their descriptions explicitly restrict them to stack/component diagnostics so ordinary coding tasks do not load them unnecessarily.
+
+```text
+~/.codex/skills/{harr,lean-ctx}/
+~/.config/opencode/skills/{harr,lean-ctx}/
+```
+
+Harr copies each whole skill directory, including lazy `references/` files. References should be loaded only when diagnosing the relevant component.
 
 ## Why CodeGraph stays stdio
 
-LeanCTX starts stdio downstream servers with a normal child process and does not override the child's working directory. The child therefore inherits the LeanCTX process cwd.
+LeanCTX spawns downstream stdio servers without overriding the child working directory. CodeGraph therefore inherits the agent/LeanCTX cwd and can resolve the nearest project-local `.codegraph` index without a Harr config file in every repository.
 
-CodeGraph's MCP session uses an explicit MCP root when one exists, otherwise falls back to its own `process.cwd()` and walks upward to find the nearest indexed `.codegraph` project. This is exactly the behavior wanted for Codex/OpenCode projects: no machine-global project path and no Harr file in every repository.
-
-The Harr LeanCTX config therefore uses:
+LeanCTX config:
 
 ```toml
 [[gateway.servers]]
@@ -123,41 +142,34 @@ name = "codegraph"
 transport = "stdio"
 enabled = true
 command = "codegraph"
-args = [
-    "serve",
-    "--mcp",
-]
+args = ["serve", "--mcp"]
 url = ""
 ```
 
-Harr installs `~/.local/bin/codegraph` as a wrapper around its pinned private CodeGraph package. The wrapper does not change directory, so the project cwd is preserved through the chain:
+If CodeGraph resolves the wrong project, fix the agent/LeanCTX cwd. Do not introduce a machine-global project root or per-project Harr config as a workaround.
+
+## GitLab
+
+GitLab MCP is a long-lived Harr user service because its native Streamable HTTP path is stable for this setup:
 
 ```text
-agent cwd -> LeanCTX cwd -> spawned codegraph cwd
+http://127.0.0.1:3334/mcp
 ```
 
-Each project still needs its normal CodeGraph index (`codegraph init`). No Harr project config is required.
+Harr exposes the complete GitLab MCP tool surface behind the gateway:
 
-## GitLab secret handling
+```text
+GITLAB_PERMISSION_MODE=full
+GITLAB_TOOLSETS=all
+```
 
-Harr does not put the GitLab PAT into the repository or into the LeanCTX TOML.
-
-The token is stored locally as:
+The PAT is not stored in Git or LeanCTX TOML. It lives locally at:
 
 ```text
 ~/.config/harr/secrets/gitlab-pat
 ```
 
-with mode `0600`. Harr's `lean-ctx` wrapper exports it using LeanCTX's secret-memento environment variable before executing the real LeanCTX binary. The generated gateway config contains only:
-
-```toml
-[gateway.servers.secret_headers]
-Private-Token = { id = "mcp/gitlab/default" }
-```
-
-If an existing LeanCTX config contains a literal `Private-Token`, `harr leanctx apply` migrates it to Harr secret storage before replacing the config.
-
-Manage the token with:
+with mode `0600`. Harr's `lean-ctx` wrapper restores it through LeanCTX secret-memento handling.
 
 ```bash
 harr secret set gitlab
@@ -165,40 +177,17 @@ harr secret status
 harr secret unset gitlab
 ```
 
-## GitLab tool surface
+## Commands
 
-Harr deliberately exposes the complete GitLab MCP tool surface:
-
-```text
-GITLAB_PERMISSION_MODE=full
-GITLAB_TOOLSETS=all
-```
-
-Actual GitLab permissions are still bounded by the PAT supplied to LeanCTX.
-
-## Component installation
-
-Reinstall the complete pinned stack and re-apply agent skills:
+Components:
 
 ```bash
 harr install all
-```
-
-Or just LeanCTX plus its managed agent guidance:
-
-```bash
 harr install leanctx
-```
-
-Or the Node-based components (GitLab MCP + CodeGraph):
-
-```bash
 harr install mcp
 ```
 
-## MCP service orchestration
-
-Only long-lived MCP daemons appear here. CodeGraph is intentionally not a service; LeanCTX starts it per downstream stdio session.
+Long-lived MCP services:
 
 ```bash
 harr mcp list
@@ -209,36 +198,38 @@ harr mcp status gitlab
 harr mcp logs gitlab -f
 ```
 
-`all` remains accepted for lifecycle commands, so future Harr-managed MCP daemons can be added without changing the command model:
+LeanCTX:
 
 ```bash
-harr mcp start all
-harr mcp restart all
-harr mcp stop all
-harr mcp enable all
-harr mcp disable all
+harr leanctx apply
+harr leanctx status
 ```
 
-## Status
+Everything together:
 
 ```bash
 harr status
 ```
 
-shows pinned/installed component versions, LeanCTX config/secret state, Harr-managed agent-skill state, and all long-lived Harr MCP service endpoints.
+## Installed layout
 
-## LeanCTX
-
-Reapply the Harr-managed profile:
-
-```bash
-harr leanctx apply
+```text
+~/.local/bin/harr
+~/.local/bin/lean-ctx
+~/.local/bin/codegraph
+~/.local/libexec/harr/
+  cli/
+  mcp/
+  leanctx/
+  policy/
+  hosts/
+  skills/
+  vendor/lean-ctx/3.9.15/lean-ctx
+~/.local/share/harr/npm/
+~/.config/harr/
+  runtime.env
+  mcp/gitlab.env
+  secrets/gitlab-pat
+~/.config/lean-ctx/config.toml
+~/.config/systemd/user/harr-mcp-gitlab.service
 ```
-
-Check ownership/config state:
-
-```bash
-harr leanctx status
-```
-
-The generated profile keeps the research/shell/archive policy from the original setup, pins LeanCTX `3.9.15`, uses stdio for project-sensitive CodeGraph, and HTTP for Harr-managed GitLab MCP.
