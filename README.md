@@ -1,6 +1,12 @@
 # Harr
 
-Harr is a global local harness for token-efficient MCP/context-engineering infrastructure.
+> *Herblindi ok Hár.*
+>
+> **Harr er reiði Hárs.**
+>
+> — *Grímnismál 46* / with apologies to the skalds
+
+A global harness for token-efficient MCP infrastructure.
 
 The name is both an Odin reference and a phonetic joke on “harness”.
 
