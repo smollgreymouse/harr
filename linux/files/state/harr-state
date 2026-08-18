@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 readonly XDG_CONFIG_HOME_REAL="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly CODEX_HOME_REAL="${CODEX_HOME:-${HOME}/.codex}"
-readonly STATE_ROOT="${HOME}/.local/share/harr/state"
+readonly STATE_ROOT="${HOME}/.local/share/harr-state"
 readonly PRE_HARR="${STATE_ROOT}/pre-harr"
 readonly UNINSTALL_BACKUP_ROOT="${HOME}/.local/share/harr-uninstall-backups"
 
@@ -22,7 +22,9 @@ item_target() {
     codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
     harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
     gitlab-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp-gitlab.service" ;;
-    gitlab-env) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr/mcp/gitlab.env" ;;
+    harr-config-root) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr" ;;
+    harr-libexec-root) printf '%s\n' "${HOME}/.local/libexec/harr" ;;
+    harr-share-root) printf '%s\n' "${HOME}/.local/share/harr" ;;
     ocwf-command-build-log) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/build-log.md" ;;
     ocwf-command-build-ok) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/build-ok.md" ;;
     ocwf-command-quick) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/quick.md" ;;
@@ -37,7 +39,8 @@ all_items() {
   printf '%s\n' \
     codex-agents opencode-agents opencode-jsonc opencode-json \
     codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
-    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit gitlab-env \
+    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit \
+    harr-config-root harr-libexec-root harr-share-root \
     ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
     ocwf-command-review ocwf-command-safe ocwf-command-validate
 }
@@ -71,7 +74,6 @@ snapshot_all() {
   date --iso-8601=seconds >"${tmp}/created-at" 2>/dev/null || date >"${tmp}/created-at"
   printf 'clean\n' >"${tmp}/mode"
   printf 'ok\n' >"${tmp}/complete"
-  mkdir -p "$STATE_ROOT"
   mv "$tmp" "$PRE_HARR"
   printf 'Captured pre-Harr global harness snapshot: %s\n' "$PRE_HARR"
 }
