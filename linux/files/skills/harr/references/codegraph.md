@@ -2,61 +2,33 @@
 
 CodeGraph is Harr's primary code-structure and relationship engine.
 
-## When to use it
+Use it **first** for symbols, references, callers/callees, architecture, dependencies and blast radius. For a known file/range or exact text lookup, use LeanCTX directly instead.
 
-Use CodeGraph **first** for:
+## Normal route
 
-- symbol discovery;
-- references and callers/callees;
-- architectural exploration;
-- dependency tracing;
-- change impact / blast radius;
-- locating the relevant implementation before reading files broadly.
+```text
+agent -> LeanCTX -> ctx_tools -> CodeGraph
+```
 
-Do not use CodeGraph merely to read a known file or exact line range; use LeanCTX for that.
+LeanCTX spawns `codegraph serve --mcp` over stdio. The child inherits LeanCTX's cwd, so project binding follows the current agent/repository cwd and nearest `.codegraph` index. Harr needs no per-project config.
 
-## Routes
+A direct CodeGraph MCP may also be installed/registered by Harr as a **diagnostic bypass**. It is not the normal route because exposing specialized MCPs directly defeats the gateway's tool-surface/context savings.
 
-Harr may expose the same CodeGraph capability through more than one route:
-
-1. **Direct CodeGraph MCP** — preferred when the agent host has it registered.
-2. **CodeGraph through LeanCTX gateway** — compatibility/fallback route.
-
-These are two transports to the same logical capability, not two independent sources that should both be queried.
-
-### Route preference
-
-Prefer direct CodeGraph when available because it removes one gateway hop and lets the agent host provide its normal MCP root/workspace context directly.
-
-If direct CodeGraph is unavailable, use the LeanCTX gateway route. Harr keeps that route functional by having LeanCTX spawn `codegraph serve --mcp` as a stdio child; the child inherits LeanCTX's cwd and resolves the nearest `.codegraph` index.
-
-Never call both routes for the same question just to compare answers. Use the secondary route only when the primary route is unavailable, fails, or is being diagnosed.
+Never query gateway CodeGraph and direct CodeGraph for the same investigation unless diagnosing the gateway.
 
 ## Interaction with LeanCTX
 
-Normal code-investigation sequence:
-
 ```text
 CodeGraph first
-    -> identify symbols/files/relationships
-LeanCTX second
-    -> read exact implementation/config/text that CodeGraph did not already return
+  -> identify relevant symbols/files/relationships
+LeanCTX
+  -> only missing exact reads/searches
 native editor
-    -> edit
-Git MCP
-    -> repository state/history/network Git operations when needed
+  -> edit
+Git MCP through gateway
+  -> Git operations when needed
 ```
 
-Source text already returned by CodeGraph counts as read. Do not immediately repeat the same material through `ctx_read`/`ctx_search`.
+Source text already returned by CodeGraph counts as read; do not immediately fetch it again.
 
-For an exact known text lookup where graph reasoning adds no value, skip CodeGraph and use LeanCTX directly.
-
-## Project binding
-
-CodeGraph indexes remain project-local (`.codegraph`). Harr does not require a Harr config file inside each repository.
-
-For the LeanCTX-gateway route, project binding follows the agent/LeanCTX cwd because the stdio CodeGraph child inherits that cwd.
-
-For the direct route, use the project/workspace root supplied by the agent host.
-
-If CodeGraph resolves the wrong project, diagnose the route's root/cwd instead of creating a machine-global project setting.
+If the gateway CodeGraph route resolves the wrong project, diagnose agent/LeanCTX cwd instead of adding machine-global or per-project Harr root configuration.
