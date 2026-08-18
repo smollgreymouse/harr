@@ -1,24 +1,21 @@
-# Direct Git MCP in Harr
+# Git MCP in Harr
 
-A direct Git MCP is the preferred route for repository-state and Git transport operations when Harr exposes one to the agent host.
+Git MCP is the specialized route for repository-state and Git transport operations.
 
-## Use it for
+## Normal route
 
-- status and working-tree state;
-- branches and checkout/switch operations;
-- local history and commits;
-- remotes;
-- fetch/pull/push;
-- other Git-native operations.
+Use Git MCP **through the LeanCTX gateway** so its tool catalog stays hidden behind `ctx_tools` until needed.
 
-Do not send these operations through GitLab MCP merely because the repository is hosted in GitLab. GitLab MCP answers GitLab API questions; Git MCP operates the repository and Git protocol.
+Use it for status/working-tree state, branches and checkout/switch, history/commits, remotes, fetch/pull/push and other Git-native operations.
 
-## Interaction with code investigation
+A direct Git MCP registration, if Harr provides one, is only a diagnostic bypass when the gateway route is broken.
 
-Git MCP is not the first tool for understanding code structure. For a coding task:
+Do not use GitLab MCP for local Git operations merely because the repository is hosted in GitLab: GitLab MCP answers GitLab API questions; Git MCP operates the repository/Git protocol.
+
+For a normal coding task:
 
 ```text
-CodeGraph -> LeanCTX as needed -> native edit -> Git MCP as needed
+CodeGraph -> missing LeanCTX reads -> native edit -> Git MCP as needed
 ```
 
-Use Git history earlier only when the task specifically depends on why/when code changed, blame/history, branch state, or a remote change.
+Use Git history earlier only when the task specifically depends on why/when code changed, blame/history, branch state or a remote change.
