@@ -1,6 +1,6 @@
 # Common Harr CLI helpers.
 
-readonly HARR_CONFIG_HOME="${HOME}/.config"
+readonly HARR_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly HARR_CONFIG_DIR="${HARR_CONFIG_DIR:-${HARR_CONFIG_HOME}/harr}"
 readonly HARR_MCP_CONFIG_DIR="${HARR_MCP_CONFIG_DIR:-${HARR_CONFIG_DIR}/mcp}"
 readonly HARR_SECRETS_DIR="${HARR_SECRETS_DIR:-${HARR_CONFIG_DIR}/secrets}"
