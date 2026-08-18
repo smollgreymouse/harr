@@ -8,10 +8,24 @@ trap 'rm -rf "$TMP"' EXIT
 export HOME="${TMP}/home"
 export XDG_CONFIG_HOME="${HOME}/.config"
 export CODEX_HOME="${HOME}/.codex"
+# Force the self-contained TOML fallback so CI tests the path used when a
+# desktop/IDE Codex host does not expose the Codex CLI in PATH.
+export HARR_CODEX_DISABLE_CLI=1
 mkdir -p "$CODEX_HOME" "$XDG_CONFIG_HOME/opencode/commands" "$XDG_CONFIG_HOME/opencode/skills/external"
 
 cat >"${CODEX_HOME}/AGENTS.md" <<'EOF'
 OLD CODEX POLICY
+EOF
+cat >"${CODEX_HOME}/config.toml" <<'EOF'
+model = "keep-model"
+
+[mcp_servers.external-mcp]
+url = "https://example.invalid/codex-mcp"
+enabled = true
+
+[mcp_servers.lean-ctx]
+command = "old-lean-ctx"
+enabled = false
 EOF
 cat >"${XDG_CONFIG_HOME}/opencode/AGENTS.md" <<'EOF'
 OLD OPENCODE POLICY
@@ -44,7 +58,8 @@ printf '# external skill\n' >"${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.
 mkdir -p "${XDG_CONFIG_HOME}/lean-ctx"
 printf 'OLD LEANCTX CONFIG\n' >"${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
-cp "${CODEX_HOME}/AGENTS.md" "${TMP}/codex.before"
+cp "${CODEX_HOME}/AGENTS.md" "${TMP}/codex-agents.before"
+cp "${CODEX_HOME}/config.toml" "${TMP}/codex-config.before"
 cp "${XDG_CONFIG_HOME}/opencode/AGENTS.md" "${TMP}/opencode-agents.before"
 cp "${XDG_CONFIG_HOME}/opencode/opencode.jsonc" "${TMP}/opencode-config.before"
 cp "${XDG_CONFIG_HOME}/lean-ctx/config.toml" "${TMP}/leanctx.before"
@@ -64,8 +79,23 @@ grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 
 python3 - <<'PY'
-import json, os
+import json, os, tomllib
 from pathlib import Path
+
+home = Path(os.environ['HOME'])
+
+codex_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
+codex = tomllib.loads(codex_path.read_text())
+assert codex['model'] == 'keep-model'
+assert codex['mcp_servers']['external-mcp'] == {
+    'url': 'https://example.invalid/codex-mcp',
+    'enabled': True,
+}
+assert codex['mcp_servers']['lean-ctx'] == {
+    'command': str(home / '.local' / 'bin' / 'lean-ctx'),
+    'enabled': True,
+}
+
 p = Path(os.environ['XDG_CONFIG_HOME']) / 'opencode' / 'opencode.jsonc'
 cfg = json.loads(p.read_text())
 assert cfg['provider']['external-provider']['api'] == 'keep'
@@ -102,7 +132,8 @@ install -m 0755 "${ROOT}/linux/files/state/harr-state" "${HOME}/.local/libexec/h
 
 "${ROOT}/linux/harr" uninstall
 
-cmp -s "${TMP}/codex.before" "${CODEX_HOME}/AGENTS.md"
+cmp -s "${TMP}/codex-agents.before" "${CODEX_HOME}/AGENTS.md"
+cmp -s "${TMP}/codex-config.before" "${CODEX_HOME}/config.toml"
 cmp -s "${TMP}/opencode-agents.before" "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 cmp -s "${TMP}/opencode-config.before" "${XDG_CONFIG_HOME}/opencode/opencode.jsonc"
 cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
