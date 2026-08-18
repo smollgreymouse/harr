@@ -5,6 +5,7 @@ readonly XDG_CONFIG_HOME_REAL="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly CODEX_HOME_REAL="${CODEX_HOME:-${HOME}/.codex}"
 readonly STATE_ROOT="${HOME}/.local/share/harr-state"
 readonly PRE_HARR="${STATE_ROOT}/pre-harr"
+readonly RUNTIME_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
 readonly UNINSTALL_BACKUP_ROOT="${HOME}/.local/share/harr-uninstall-backups"
 
 item_target() {
@@ -60,8 +61,14 @@ snapshot_item() {
   fi
 }
 
+write_runtime_marker() {
+  mkdir -p "$(dirname -- "$RUNTIME_MARKER")"
+  printf 'ok\n' >"$RUNTIME_MARKER"
+}
+
 snapshot_all() {
   if [[ -f "${PRE_HARR}/complete" ]]; then
+    write_runtime_marker
     printf 'Pre-Harr snapshot already exists: %s\n' "$PRE_HARR"
     return
   fi
@@ -75,6 +82,7 @@ snapshot_all() {
   printf 'clean\n' >"${tmp}/mode"
   printf 'ok\n' >"${tmp}/complete"
   mv "$tmp" "$PRE_HARR"
+  write_runtime_marker
   printf 'Captured pre-Harr global harness snapshot: %s\n' "$PRE_HARR"
 }
 
