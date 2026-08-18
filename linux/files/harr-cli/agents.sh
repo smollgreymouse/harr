@@ -1,4 +1,4 @@
-# Harr-managed agent policy and diagnostic skills.
+# Harr-owned global agent policy and diagnostic skills.
 
 if [[ -d "${SELF_DIR:-}/files/skills" ]]; then
   readonly HARR_SKILLS_SOURCE_DIR="${SELF_DIR}/files/skills"
@@ -11,12 +11,17 @@ else
 fi
 readonly HARR_SKILL_MARKER='<!-- harr-managed-skill-v1 -->'
 readonly HARR_POLICY_START='<!-- harr-tool-policy:start -->'
-readonly HARR_POLICY_END='<!-- harr-tool-policy:end -->'
+readonly HARR_CLEAN_SNAPSHOT="${HOME}/.local/share/harr/state/pre-harr/complete"
+
+require_clean_ownership() {
+  [[ -f "$HARR_CLEAN_SNAPSHOT" ]] || \
+    die 'Harr has not taken clean ownership of the global harness; run the repository installer with --clean first'
+}
 
 agent_skill_root() {
   case "$1" in
     codex) printf '%s\n' "${CODEX_HOME:-${HOME}/.codex}/skills" ;;
-    opencode) printf '%s\n' "${HOME}/.config/opencode/skills" ;;
+    opencode) printf '%s\n' "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills" ;;
     *) die "unknown agent: $1" ;;
   esac
 }
@@ -24,7 +29,7 @@ agent_skill_root() {
 agent_policy_target() {
   case "$1" in
     codex) printf '%s\n' "${CODEX_HOME:-${HOME}/.codex}/AGENTS.md" ;;
-    opencode) printf '%s\n' "${HOME}/.config/opencode/AGENTS.md" ;;
+    opencode) printf '%s\n' "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/AGENTS.md" ;;
     *) die "unknown agent: $1" ;;
   esac
 }
@@ -47,25 +52,13 @@ skill_source_dir() {
 }
 
 install_one_skill() {
-  local agent="$1" skill="$2" root source_dir source target_dir target backup_dir backup
+  local agent="$1" skill="$2" root source_dir target_dir
   root="$(agent_skill_root "$agent")"
   source_dir="$(skill_source_dir "$skill")"
-  source="${source_dir}/SKILL.md"
   target_dir="${root}/${skill}"
-  target="${target_dir}/SKILL.md"
-  backup_dir="${HARR_LIBEXEC_DIR}/backup/skills/${agent}"
-  backup="${backup_dir}/${skill}.pre-harr"
 
-  [[ -r "$source" ]] || die "Harr skill source missing: $source"
-  install -d -m 0755 "$root" "$backup_dir"
-
-  if [[ -e "$target_dir" ]] && { [[ ! -r "$target" ]] || ! grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; }; then
-    if [[ ! -e "$backup" ]]; then
-      cp -a "$target_dir" "$backup"
-      printf 'Backed up existing %s/%s skill to %s\n' "$agent" "$skill" "$backup"
-    fi
-  fi
-
+  [[ -r "${source_dir}/SKILL.md" ]] || die "Harr skill source missing: ${source_dir}/SKILL.md"
+  install -d -m 0755 "$root"
   rm -rf -- "$target_dir"
   install -d -m 0755 "$target_dir"
   cp -a "${source_dir}/." "$target_dir/"
@@ -94,82 +87,35 @@ render_agent_policy() {
     "$HARR_POLICY_TEMPLATE" >"$output"
 }
 
-extract_policy_block() {
-  local file="$1"
-  awk -v start="$HARR_POLICY_START" -v end="$HARR_POLICY_END" '
-    $0 == start { inside=1 }
-    inside { print }
-    inside && $0 == end { exit }
-  ' "$file"
-}
-
 install_agent_policy() {
-  local agent="$1" target target_dir backup_dir backup rendered tmp has_start=0 has_end=0
+  local agent="$1" target rendered
   target="$(agent_policy_target "$agent")"
-  target_dir="$(dirname -- "$target")"
-  backup_dir="${HARR_LIBEXEC_DIR}/backup/agents"
-  backup="${backup_dir}/${agent}.AGENTS.md.pre-harr"
-  install -d -m 0755 "$target_dir" "$backup_dir"
-
+  install -d -m 0755 "$(dirname -- "$target")"
   rendered="$(mktemp)"
-  tmp="$(mktemp)"
   render_agent_policy "$agent" "$rendered"
-
-  if [[ -e "$target" ]]; then
-    grep -qF "$HARR_POLICY_START" "$target" && has_start=1 || true
-    grep -qF "$HARR_POLICY_END" "$target" && has_end=1 || true
-    ((has_start == has_end)) || die "malformed Harr policy markers in $target"
-
-    if [[ ! -e "$backup" ]]; then
-      cp -a "$target" "$backup"
-      printf 'Backed up existing %s global AGENTS.md to %s\n' "$agent" "$backup"
-    fi
-
-    if ((has_start)); then
-      awk -v start="$HARR_POLICY_START" -v end="$HARR_POLICY_END" -v block="$rendered" '
-        BEGIN {
-          while ((getline line < block) > 0) rendered = rendered line ORS
-          close(block)
-        }
-        $0 == start { printf "%s", rendered; inside=1; next }
-        inside && $0 == end { inside=0; next }
-        !inside { print }
-      ' "$target" >"$tmp"
-    else
-      cat "$target" >"$tmp"
-      [[ ! -s "$target" ]] || printf '\n' >>"$tmp"
-      cat "$rendered" >>"$tmp"
-    fi
-  else
-    cat "$rendered" >"$tmp"
-  fi
-
-  chmod 0644 "$tmp"
-  mv -f "$tmp" "$target"
+  install -m 0644 "$rendered" "$target"
   rm -f -- "$rendered"
-  printf 'Applied compact Harr tool policy for %s: %s\n' "$agent" "$target"
+  printf 'Applied Harr-owned global policy for %s: %s\n' "$agent" "$target"
 }
 
 policy_state() {
-  local agent="$1" target rendered current
+  local agent="$1" target rendered
   target="$(agent_policy_target "$agent")"
   [[ -r "$target" ]] || { printf 'missing'; return; }
-  grep -qF "$HARR_POLICY_START" "$target" || { printf 'missing'; return; }
-  grep -qF "$HARR_POLICY_END" "$target" || { printf 'malformed'; return; }
-
   rendered="$(mktemp)"
-  current="$(mktemp)"
   render_agent_policy "$agent" "$rendered"
-  extract_policy_block "$target" >"$current"
-  if cmp -s "$rendered" "$current"; then
+  if cmp -s "$rendered" "$target"; then
     printf 'managed'
+  elif grep -qF "$HARR_POLICY_START" "$target" 2>/dev/null; then
+    printf 'modified'
   else
-    printf 'stale'
+    printf 'external'
   fi
-  rm -f -- "$rendered" "$current"
+  rm -f -- "$rendered"
 }
 
 cmd_agents_apply() {
+  require_clean_ownership
   local requested="${1:-all}"
   [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode]'
   local agent skill
@@ -182,20 +128,19 @@ cmd_agents_apply() {
 }
 
 skill_state() {
-  local agent="$1" skill="$2" source_dir source target_dir target
+  local agent="$1" skill="$2" source_dir target_dir target
   source_dir="$(skill_source_dir "$skill")"
-  source="${source_dir}/SKILL.md"
   target_dir="$(agent_skill_root "$agent")/${skill}"
   target="${target_dir}/SKILL.md"
 
   if [[ ! -e "$target_dir" ]]; then
     printf 'missing'
-  elif [[ ! -r "$source" ]]; then
+  elif [[ ! -r "${source_dir}/SKILL.md" ]]; then
     printf 'source-missing'
   elif diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1; then
     printf 'managed'
   elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then
-    printf 'stale'
+    printf 'modified'
   else
     printf 'external'
   fi
@@ -203,7 +148,10 @@ skill_state() {
 
 cmd_agents_status() {
   [[ $# -eq 0 ]] || die 'usage: harr agents status'
-  local agent
+  local agent ownership
+  ownership=missing
+  [[ -f "$HARR_CLEAN_SNAPSHOT" ]] && ownership=clean
+  printf 'ownership: %s\n' "$ownership"
   printf '%-12s %-12s %-16s %s\n' AGENT POLICY LEAN-CTX-SKILL HARR-SKILL
   for agent in codex opencode; do
     printf '%-12s %-12s %-16s %s\n' \
