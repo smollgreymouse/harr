@@ -93,7 +93,6 @@ args = [
 url = ""
 
 [gateway.servers.env]
-CODEGRAPH_NO_UPDATE_CHECK = "1"
 
 [gateway.servers.headers]
 
