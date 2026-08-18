@@ -10,6 +10,8 @@ readonly CLI_LIB_DIR="${LIBEXEC_DIR}/cli"
 readonly MCP_LIB_DIR="${LIBEXEC_DIR}/mcp"
 readonly LEANCTX_LIB_DIR="${LIBEXEC_DIR}/leanctx"
 readonly SKILLS_LIB_DIR="${LIBEXEC_DIR}/skills"
+readonly POLICY_LIB_DIR="${LIBEXEC_DIR}/policy"
+readonly HOSTS_LIB_DIR="${LIBEXEC_DIR}/hosts"
 readonly CONFIG_HOME="${HOME}/.config"
 readonly HARR_CONFIG_DIR="${CONFIG_HOME}/harr"
 readonly MCP_CONFIG_DIR="${HARR_CONFIG_DIR}/mcp"
@@ -38,19 +40,20 @@ Default installation bootstraps Harr and installs the complete pinned stack:
   LeanCTX 3.9.15
   GitLab MCP
   CodeGraph
-  Harr-aware agent skills for Codex and OpenCode
+  compact Harr tool-routing policy + diagnostic skills for Codex and OpenCode
 
 CodeGraph is installed by Harr but remains a stdio downstream spawned by LeanCTX,
 so it automatically inherits the agent/project working directory.
 
 Options:
   --start      Start/restart Harr long-lived MCP services after installation.
-  --harr-only  Install/update Harr itself and managed agent skills but do not download stack components.
+  --harr-only  Install/update Harr, routing policy, and managed skills but do not download stack components.
   -h, --help   Show this help.
 
 The installation is user-level. Do not run it with sudo.
 Existing Harr GitLab env is preserved and migrated where required.
 Existing non-Harr LeanCTX config is backed up before Harr takes ownership.
+Existing global AGENTS.md files are preserved; Harr owns only its marked policy block.
 Existing non-Harr lean-ctx/harr skills are backed up before Harr takes ownership.
 EOF_HELP
 }
@@ -81,6 +84,18 @@ install_skill_sources() {
   done
 }
 
+install_policy_sources() {
+  [[ -r "${FILES_DIR}/policy/tool-routing.template.md" ]] || die 'missing Harr routing policy template'
+  [[ -r "${FILES_DIR}/hosts/codex.env" ]] || die 'missing Harr Codex host adapter'
+  [[ -r "${FILES_DIR}/hosts/opencode.env" ]] || die 'missing Harr OpenCode host adapter'
+
+  rm -rf -- "$POLICY_LIB_DIR" "$HOSTS_LIB_DIR"
+  install -d -m 0755 "$POLICY_LIB_DIR" "$HOSTS_LIB_DIR"
+  install -m 0644 "${FILES_DIR}/policy/tool-routing.template.md" "${POLICY_LIB_DIR}/tool-routing.template.md"
+  install -m 0644 "${FILES_DIR}/hosts/codex.env" "${HOSTS_LIB_DIR}/codex.env"
+  install -m 0644 "${FILES_DIR}/hosts/opencode.env" "${HOSTS_LIB_DIR}/opencode.env"
+}
+
 install_runtime_files() {
   install -d -m 0755 \
     "$BIN_DIR" \
@@ -106,6 +121,7 @@ install_runtime_files() {
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0600 "${FILES_DIR}/leanctx/config.toml" "${LEANCTX_LIB_DIR}/config.toml"
   install_skill_sources
+  install_policy_sources
 
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${GITLAB_UNIT}" "${SYSTEMD_USER_DIR}/${GITLAB_UNIT}"
 }
@@ -182,7 +198,7 @@ main() {
   else
     printf 'Stack components installed and LeanCTX config applied.\n'
   fi
-  printf 'Harr-aware LeanCTX/Harr skills applied for Codex and OpenCode.\n'
+  printf 'Compact Harr tool policy and diagnostic skills applied for Codex and OpenCode.\n'
   printf 'GitLab MCP service is enabled for user startup.\n'
   printf 'CodeGraph is spawned on demand by LeanCTX and is not a systemd service.\n'
 
