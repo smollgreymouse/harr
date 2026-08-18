@@ -9,6 +9,7 @@ readonly LIBEXEC_DIR="${HOME}/.local/libexec/harr"
 readonly CLI_LIB_DIR="${LIBEXEC_DIR}/cli"
 readonly MCP_LIB_DIR="${LIBEXEC_DIR}/mcp"
 readonly LEANCTX_LIB_DIR="${LIBEXEC_DIR}/leanctx"
+readonly SKILLS_LIB_DIR="${LIBEXEC_DIR}/skills"
 readonly CONFIG_HOME="${HOME}/.config"
 readonly HARR_CONFIG_DIR="${CONFIG_HOME}/harr"
 readonly MCP_CONFIG_DIR="${HARR_CONFIG_DIR}/mcp"
@@ -37,18 +38,20 @@ Default installation bootstraps Harr and installs the complete pinned stack:
   LeanCTX 3.9.15
   GitLab MCP
   CodeGraph
+  Harr-aware agent skills for Codex and OpenCode
 
 CodeGraph is installed by Harr but remains a stdio downstream spawned by LeanCTX,
 so it automatically inherits the agent/project working directory.
 
 Options:
   --start      Start/restart Harr long-lived MCP services after installation.
-  --harr-only  Install/update Harr itself but do not download stack components.
+  --harr-only  Install/update Harr itself and managed agent skills but do not download stack components.
   -h, --help   Show this help.
 
 The installation is user-level. Do not run it with sudo.
 Existing Harr GitLab env is preserved and migrated where required.
 Existing non-Harr LeanCTX config is backed up before Harr takes ownership.
+Existing non-Harr lean-ctx/harr skills are backed up before Harr takes ownership.
 EOF_HELP
 }
 
@@ -70,6 +73,8 @@ install_runtime_files() {
     "$CLI_LIB_DIR" \
     "$MCP_LIB_DIR" \
     "$LEANCTX_LIB_DIR" \
+    "${SKILLS_LIB_DIR}/lean-ctx" \
+    "${SKILLS_LIB_DIR}/harr" \
     "$MCP_CONFIG_DIR" \
     "$SYSTEMD_USER_DIR"
   install -d -m 0700 "$SECRETS_DIR"
@@ -77,6 +82,7 @@ install_runtime_files() {
   install -m 0755 "${SOURCE_DIR}/harr" "${BIN_DIR}/harr"
   install -m 0644 "${FILES_DIR}/harr-cli/common.sh" "${CLI_LIB_DIR}/common.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/help.sh" "${CLI_LIB_DIR}/help.sh"
+  install -m 0644 "${FILES_DIR}/harr-cli/agents.sh" "${CLI_LIB_DIR}/agents.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/components.sh" "${CLI_LIB_DIR}/components.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/secret.sh" "${CLI_LIB_DIR}/secret.sh"
   install -m 0644 "${FILES_DIR}/harr-cli/leanctx.sh" "${CLI_LIB_DIR}/leanctx.sh"
@@ -86,6 +92,8 @@ install_runtime_files() {
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${MCP_LIB_DIR}/codegraph-cli"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0600 "${FILES_DIR}/leanctx/config.toml" "${LEANCTX_LIB_DIR}/config.toml"
+  install -m 0644 "${FILES_DIR}/skills/lean-ctx/SKILL.md" "${SKILLS_LIB_DIR}/lean-ctx/SKILL.md"
+  install -m 0644 "${FILES_DIR}/skills/harr/SKILL.md" "${SKILLS_LIB_DIR}/harr/SKILL.md"
 
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${GITLAB_UNIT}" "${SYSTEMD_USER_DIR}/${GITLAB_UNIT}"
 }
@@ -147,6 +155,8 @@ main() {
 
   if (( ! harr_only )); then
     "${BIN_DIR}/harr" install all
+  else
+    "${BIN_DIR}/harr" agents apply all
   fi
 
   if ((start_now)); then
@@ -160,6 +170,7 @@ main() {
   else
     printf 'Stack components installed and LeanCTX config applied.\n'
   fi
+  printf 'Harr-aware LeanCTX/Harr skills applied for Codex and OpenCode.\n'
   printf 'GitLab MCP service is enabled for user startup.\n'
   printf 'CodeGraph is spawned on demand by LeanCTX and is not a systemd service.\n'
 
