@@ -1,6 +1,6 @@
 usage() {
   cat <<'EOF_HELP'
-Harr — local harness supervisor for MCP infrastructure
+Harr — local harness for MCP infrastructure
 
 Usage:
   harr install [all|leanctx|mcp]
@@ -21,9 +21,8 @@ Usage:
 
 Managed stack:
   LeanCTX 3.9.15
-  @zereight/mcp-gitlab
-  CodeGraph
-  Supergateway bridge for CodeGraph stdio -> Streamable HTTP
+  @zereight/mcp-gitlab (long-lived HTTP service)
+  CodeGraph (installed by Harr, spawned by LeanCTX over stdio)
 EOF_HELP
 }
 

@@ -78,12 +78,22 @@ cache_ttl_secs = 300
 call_timeout_secs = 120
 top_n = 1
 
-# CodeGraph is converted from stdio to Streamable HTTP by Harr/Supergateway.
+# CodeGraph remains stdio intentionally. LeanCTX spawns it in its own current
+# working directory, so CodeGraph inherits the agent/project cwd and resolves
+# the nearest .codegraph index without any machine-global project setting.
 [[gateway.servers]]
 name = "codegraph"
-transport = "http"
+transport = "stdio"
 enabled = true
-url = "http://127.0.0.1:3333/mcp"
+command = "codegraph"
+args = [
+    "serve",
+    "--mcp",
+]
+url = ""
+
+[gateway.servers.env]
+CODEGRAPH_NO_UPDATE_CHECK = "1"
 
 [gateway.servers.headers]
 

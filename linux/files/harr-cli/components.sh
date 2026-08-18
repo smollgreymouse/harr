@@ -3,7 +3,6 @@
 readonly HARR_LEANCTX_VERSION="3.9.15"
 readonly HARR_GITLAB_MCP_VERSION="2.1.48"
 readonly HARR_CODEGRAPH_VERSION="1.5.0"
-readonly HARR_SUPERGATEWAY_VERSION="3.4.3"
 
 write_runtime_env() {
   local node_bin="$1"
@@ -49,27 +48,6 @@ install_codegraph_wrapper() {
   install -m 0755 "$wrapper_src" "$target"
 }
 
-patch_supergateway_loopback() {
-  local node_bin="$1"
-  local file="${HARR_NPM_PREFIX}/node_modules/supergateway/dist/gateways/stdioToStatefulStreamableHttp.js"
-  [[ -f "$file" ]] || die "Supergateway bridge file not found: $file"
-
-  "$node_bin" - "$file" <<'EOF_NODE'
-const fs = require('fs');
-const file = process.argv[2];
-let text = fs.readFileSync(file, 'utf8');
-const oldNeedle = 'app.listen(port, () => {';
-const newNeedle = "app.listen(port, '127.0.0.1', () => {";
-if (text.includes(newNeedle)) process.exit(0);
-if (!text.includes(oldNeedle)) {
-  console.error(`Harr refused to patch unknown Supergateway layout: ${file}`);
-  process.exit(1);
-}
-text = text.replace(oldNeedle, newNeedle);
-fs.writeFileSync(file, text);
-EOF_NODE
-}
-
 install_node_mcp_stack() {
   local node_bin
   node_bin="$(check_node_runtime)"
@@ -81,8 +59,7 @@ install_node_mcp_stack() {
   "private": true,
   "dependencies": {
     "@zereight/mcp-gitlab": "${HARR_GITLAB_MCP_VERSION}",
-    "@colbymchenry/codegraph": "${HARR_CODEGRAPH_VERSION}",
-    "supergateway": "${HARR_SUPERGATEWAY_VERSION}"
+    "@colbymchenry/codegraph": "${HARR_CODEGRAPH_VERSION}"
   }
 }
 EOF_PACKAGE
@@ -100,10 +77,7 @@ EOF_PACKAGE
     die 'GitLab MCP launcher was not installed'
   [[ -x "${HARR_NPM_BIN_DIR}/codegraph" ]] || \
     die 'CodeGraph launcher was not installed'
-  [[ -x "${HARR_NPM_BIN_DIR}/supergateway" ]] || \
-    die 'Supergateway launcher was not installed'
 
-  patch_supergateway_loopback "$node_bin"
   write_runtime_env "$node_bin"
   install_codegraph_wrapper
 }
@@ -232,7 +206,7 @@ component_status_word() {
 }
 
 cmd_components_status() {
-  local lean_actual='' gitlab_actual='' cg_actual='' sg_actual=''
+  local lean_actual='' gitlab_actual='' cg_actual=''
   local lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx"
 
   if [[ -x "$lean_real" ]]; then
@@ -240,11 +214,9 @@ cmd_components_status() {
   fi
   gitlab_actual="$(package_version "${HARR_NPM_PREFIX}/node_modules/@zereight/mcp-gitlab/package.json" 2>/dev/null || true)"
   cg_actual="$(package_version "${HARR_NPM_PREFIX}/node_modules/@colbymchenry/codegraph/package.json" 2>/dev/null || true)"
-  sg_actual="$(package_version "${HARR_NPM_PREFIX}/node_modules/supergateway/package.json" 2>/dev/null || true)"
 
   printf '%-16s %-10s %-12s %s\n' COMPONENT EXPECTED STATE INSTALLED
   printf '%-16s %-10s %-12s %s\n' leanctx "$HARR_LEANCTX_VERSION" "$(component_status_word "$lean_actual" "$HARR_LEANCTX_VERSION")" "${lean_actual:--}"
   printf '%-16s %-10s %-12s %s\n' gitlab-mcp "$HARR_GITLAB_MCP_VERSION" "$(component_status_word "$gitlab_actual" "$HARR_GITLAB_MCP_VERSION")" "${gitlab_actual:--}"
   printf '%-16s %-10s %-12s %s\n' codegraph "$HARR_CODEGRAPH_VERSION" "$(component_status_word "$cg_actual" "$HARR_CODEGRAPH_VERSION")" "${cg_actual:--}"
-  printf '%-16s %-10s %-12s %s\n' supergateway "$HARR_SUPERGATEWAY_VERSION" "$(component_status_word "$sg_actual" "$HARR_SUPERGATEWAY_VERSION")" "${sg_actual:--}"
 }

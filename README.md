@@ -1,6 +1,6 @@
 # Harr
 
-Harr is a small local harness supervisor for long-lived MCP infrastructure.
+Harr is a small local harness for MCP infrastructure.
 
 The name is both an Odin reference and a phonetic joke on “harness”.
 
@@ -10,10 +10,9 @@ Harr pins and installs the stack it is built around:
 
 - LeanCTX `3.9.15` — MCP gateway used by the agent;
 - `@zereight/mcp-gitlab` `2.1.48` — native Streamable HTTP on `127.0.0.1:3334/mcp`;
-- CodeGraph `1.5.0` — semantic code intelligence;
-- Supergateway `3.4.3` — stateful stdio → Streamable HTTP bridge for CodeGraph on `127.0.0.1:3333/mcp`.
+- CodeGraph `1.5.0` — installed by Harr, but spawned by LeanCTX over stdio per agent/project context.
 
-The resulting topology is:
+The resulting topology is deliberately hybrid:
 
 ```text
 Codex / OpenCode
@@ -22,10 +21,14 @@ Codex / OpenCode
       v
 LeanCTX 3.9.15
       |
-      +-- Streamable HTTP --> Harr CodeGraph bridge :3333 --> CodeGraph stdio
+      +-- stdio spawn -------> CodeGraph
+      |                        inherits LeanCTX cwd
+      |                        -> project-local .codegraph resolution
       |
       +-- Streamable HTTP --> GitLab MCP :3334 --> GitLab API
 ```
+
+This is intentional. GitLab is long-lived HTTP because its stdio path was problematic in the affected LeanCTX setup. CodeGraph stays stdio because that preserves the caller/project working directory without any per-project Harr config.
 
 `node-repl` is intentionally not part of Harr or the LeanCTX gateway.
 
@@ -39,12 +42,12 @@ cd harr
 ./install.sh
 ```
 
-The default installer installs/updates Harr and the complete pinned stack. It does not start/restart MCP services automatically, so an already-running foreground server cannot collide with ports `3333` or `3334`.
+The default installer installs/updates Harr and the complete pinned stack. It does not start/restart the GitLab MCP service automatically, so an already-running foreground server cannot collide with port `3334`.
 
-After stopping any foreground test processes:
+After stopping any foreground GitLab MCP test process:
 
 ```bash
-harr mcp start all
+harr mcp start gitlab
 harr status
 ```
 
@@ -60,7 +63,7 @@ To update only Harr itself without downloading components:
 ./install.sh --harr-only
 ```
 
-Harr uses a private npm prefix under `~/.local/share/harr/npm`; it does not need the GitLab MCP, CodeGraph, or Supergateway packages to be globally installed. A Node.js 20–24 runtime and npm must be available while installing/running the Node-based components.
+Harr uses a private npm prefix under `~/.local/share/harr/npm`; it does not need GitLab MCP or CodeGraph to be globally installed. A Node.js 20–24 runtime and npm must be available while installing/running the Node-based components.
 
 ## What is installed
 
@@ -77,15 +80,42 @@ Harr uses a private npm prefix under `~/.local/share/harr/npm`; it does not need
 ~/.config/harr/
   runtime.env
   mcp/gitlab.env
-  mcp/codegraph.env
   secrets/gitlab-pat
 ~/.config/lean-ctx/config.toml              # Harr-managed LeanCTX profile
 ~/.config/systemd/user/
   harr-mcp-gitlab.service
-  harr-mcp-codegraph.service
 ```
 
 A pre-existing non-Harr LeanCTX config is backed up before Harr takes ownership. Existing non-Harr `lean-ctx` and `codegraph` launchers are also backed up once under `~/.local/libexec/harr/backup/` before Harr installs its wrappers.
+
+## Why CodeGraph stays stdio
+
+LeanCTX starts stdio downstream servers with a normal child process and does not override the child's working directory. The child therefore inherits the LeanCTX process cwd.
+
+CodeGraph's MCP session uses an explicit MCP root when one exists, otherwise falls back to its own `process.cwd()` and walks upward to find the nearest indexed `.codegraph` project. This is exactly the behavior wanted for Codex/OpenCode projects: no machine-global project path and no Harr file in every repository.
+
+The Harr LeanCTX config therefore uses:
+
+```toml
+[[gateway.servers]]
+name = "codegraph"
+transport = "stdio"
+enabled = true
+command = "codegraph"
+args = [
+    "serve",
+    "--mcp",
+]
+url = ""
+```
+
+Harr installs `~/.local/bin/codegraph` as a wrapper around its pinned private CodeGraph package. The wrapper does not change directory, so the project cwd is preserved through the chain:
+
+```text
+agent cwd -> LeanCTX cwd -> spawned codegraph cwd
+```
+
+Each project still needs its normal CodeGraph index (`codegraph init`). No Harr project config is required.
 
 ## GitLab secret handling
 
@@ -125,25 +155,6 @@ GITLAB_TOOLSETS=all
 
 Actual GitLab permissions are still bounded by the PAT supplied to LeanCTX.
 
-## CodeGraph bridge
-
-CodeGraph currently speaks stdio MCP, so Harr runs it behind a stateful Supergateway bridge. Harr pins Supergateway and applies a checked patch to bind the Streamable HTTP listener to `127.0.0.1` rather than all interfaces.
-
-LeanCTX's downstream MCP client does not forward the parent client's workspace roots to CodeGraph. Therefore `~/.config/harr/mcp/codegraph.env` contains an optional fixed root:
-
-```text
-HARR_CODEGRAPH_PROJECT_ROOT=
-```
-
-Leave it empty for a global bridge and pass CodeGraph's `projectPath` tool argument, or set it to a project path and restart CodeGraph:
-
-```bash
-$EDITOR ~/.config/harr/mcp/codegraph.env
-harr mcp restart codegraph
-```
-
-Each project still needs a CodeGraph index (`codegraph init`) as usual. Harr installs a normal `~/.local/bin/codegraph` wrapper so the pinned private copy is available for CLI use.
-
 ## Component installation
 
 Reinstall the complete pinned stack:
@@ -152,19 +163,21 @@ Reinstall the complete pinned stack:
 harr install all
 ```
 
-Or just the LeanCTX side:
+Or just LeanCTX:
 
 ```bash
 harr install leanctx
 ```
 
-Or the Node-based MCP runtime (GitLab MCP + CodeGraph + bridge):
+Or the Node-based components (GitLab MCP + CodeGraph):
 
 ```bash
 harr install mcp
 ```
 
-## MCP orchestration
+## MCP service orchestration
+
+Only long-lived MCP daemons appear here. CodeGraph is intentionally not a service; LeanCTX starts it per downstream stdio session.
 
 ```bash
 harr mcp list
@@ -173,15 +186,9 @@ harr mcp stop gitlab
 harr mcp restart gitlab
 harr mcp status gitlab
 harr mcp logs gitlab -f
-
-harr mcp start codegraph
-harr mcp stop codegraph
-harr mcp restart codegraph
-harr mcp status codegraph
-harr mcp logs codegraph -f
 ```
 
-`all` is accepted by lifecycle commands:
+`all` remains accepted for lifecycle commands, so future Harr-managed MCP daemons can be added without changing the command model:
 
 ```bash
 harr mcp start all
@@ -197,7 +204,7 @@ harr mcp disable all
 harr status
 ```
 
-shows pinned/installed component versions, LeanCTX config/secret state, and all Harr-managed MCP service endpoints.
+shows pinned/installed component versions, LeanCTX config/secret state, and all long-lived Harr MCP service endpoints.
 
 ## LeanCTX
 
@@ -213,4 +220,4 @@ Check ownership/config state:
 harr leanctx status
 ```
 
-The generated profile keeps the research/shell/archive policy from the original setup, uses LeanCTX `3.9.15`, and routes downstream GitLab and CodeGraph through HTTP endpoints managed by Harr.
+The generated profile keeps the research/shell/archive policy from the original setup, pins LeanCTX `3.9.15`, uses stdio for project-sensitive CodeGraph, and HTTP for Harr-managed GitLab MCP.
