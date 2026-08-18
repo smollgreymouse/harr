@@ -1,56 +1,90 @@
 ---
 name: harr
-description: Manage and diagnose the Harr local harness: pinned LeanCTX, GitLab MCP HTTP service, CodeGraph dependency, agent skills, secrets, versions, and service lifecycle.
+description: Primary tool-routing and orchestration policy for repository work on a Harr-managed machine. Use first to decide which MCP/tool to call, route preference, fallback order, and when to load component references; also covers Harr stack diagnostics.
 ---
 <!-- harr-managed-skill-v1 -->
 
-# Harr local harness
+# Harr — harness routing policy
 
-Harr owns the local MCP/context-engineering stack. Use Harr commands rather than installing or upgrading managed components independently.
+Harr owns not only installation/lifecycle, but also the **interaction contract between tools**. For repository work, this skill is the source of truth for tool selection and ordering.
 
-## Stack
+Do not infer routing from an individual component skill. Component documentation explains that component; Harr decides **what comes first, which route is primary, and what is only a fallback**.
 
-- LeanCTX 3.9.15 — pinned and wrapped by Harr.
-- GitLab MCP — long-lived Streamable HTTP user service at `127.0.0.1:3334/mcp`.
-- CodeGraph — installed/pinned by Harr but spawned by LeanCTX over stdio per agent/repository; it is not a systemd service.
-- Harr-managed `lean-ctx` and `harr` agent skills for Codex and OpenCode.
+## Routing table
 
-## Primary commands
+| Intent | Primary | Fallback / next step |
+|---|---|---|
+| Understand symbols, references, callers, architecture, dependencies, blast radius | **CodeGraph first** | CodeGraph through alternate Harr route; then LeanCTX only for missing exact text/context |
+| Read a known file/range, exact text search, file discovery, repository shell/test command | **LeanCTX** | native host tool only if LeanCTX is unavailable/inapplicable |
+| GitLab MR/pipeline/job/issue/project/server state | **GitLab MCP** via normal Harr route | direct GitLab route only when configured/needed as fallback or diagnosis |
+| Git status, branches, checkout, history, remotes, fetch/pull/push/commits | **direct Git MCP** | native Git only if the MCP route is unavailable and policy permits it |
+| Edit files | **native host editor** | do not route edits through LeanCTX in the Harr profile |
+| Harness install/version/service/secret/config repair | **Harr CLI** | read `references/operations.md` |
 
-```bash
-harr status
-harr install all
-harr install leanctx
-harr install mcp
-harr leanctx apply
-harr leanctx status
-harr agents apply
-harr agents status
-harr secret set gitlab
-harr secret status
-harr mcp start gitlab
-harr mcp stop gitlab
-harr mcp restart gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
+## Prime rule: CodeGraph first
+
+For a normal code-understanding or implementation task, start with CodeGraph before broad repository reads/searches.
+
+Typical sequence:
+
+```text
+CodeGraph
+  -> identify relevant symbols/files/relationships
+LeanCTX
+  -> read/search only what CodeGraph did not already provide
+native editor
+  -> edit
+Git MCP
+  -> repository state/history/network operations when needed
 ```
 
-Use `harr install all` to restore the pinned component versions and re-apply the LeanCTX configuration and Harr-managed skills.
+Do **not** immediately repeat CodeGraph output through LeanCTX. Source text returned by CodeGraph counts as already read.
 
-## Lifecycle model
+Skip CodeGraph when the task is inherently an exact lookup with no graph reasoning value, e.g. "read this known config file" or "find this exact string".
 
-Only long-lived Harr MCP daemons appear under `harr mcp ...`. Currently that is GitLab MCP.
+## Routes are not separate truths
 
-CodeGraph must not be added as a global daemon just to simplify lifecycle. Its stdio child process intentionally inherits LeanCTX's cwd so each agent session binds naturally to its current repository.
+Harr may expose one logical MCP capability through multiple routes, for example CodeGraph directly and CodeGraph through the LeanCTX gateway.
 
-## Security
+Treat those as **primary/fallback transports to the same capability**. Do not call both for the same question unless the primary route failed or you are diagnosing routing.
 
-GitLab credentials belong in Harr's private secret storage, never in repository files or LeanCTX TOML. Do not print or inspect the PAT. Use `harr secret set gitlab` to replace it.
+For CodeGraph, prefer the **direct MCP route when Harr has registered it in the host**; use CodeGraph through LeanCTX as the compatibility/fallback route. Both remain CodeGraph-first relative to generic LeanCTX repository search/read.
 
-## Repair rules
+For GitLab, the normal route is currently through the LeanCTX gateway to Harr's long-lived HTTP GitLab MCP service; a direct GitLab registration may exist as a diagnostic/alternate route.
 
-- Wrong/missing managed versions: `harr install all`.
-- LeanCTX config drift: `harr leanctx apply`.
-- GitLab endpoint/service failure: `harr mcp status gitlab`, then `harr mcp logs gitlab`.
-- CodeGraph wrong project: diagnose the agent/LeanCTX cwd; do not create per-project Harr config or an HTTP bridge.
-- Do not run upstream `lean-ctx setup/update/onboard`, `codegraph install/upgrade`, or global npm installs for managed MCP packages on a Harr-managed machine.
+## Cross-tool workflows
+
+Choose the source closest to the question, then move into code analysis only when needed:
+
+- Pipeline/MR failure: GitLab MCP -> CodeGraph -> LeanCTX exact reads -> edit -> Git MCP.
+- Unknown code behavior: CodeGraph -> LeanCTX exact reads -> edit -> Git MCP.
+- Exact config/text question: LeanCTX directly.
+- Why/when a change happened: Git MCP history/blame first; CodeGraph only if structural impact must then be understood.
+
+## Progressive disclosure
+
+Read only the reference needed for the current task:
+
+- CodeGraph behavior, direct vs gateway, project binding: `references/codegraph.md`
+- LeanCTX surface/gateway semantics: `references/leanctx.md`
+- GitLab routing/auth/scope: `references/gitlab.md`
+- Git repository operations: `references/git-mcp.md`
+- Harr install/status/services/secrets/repair: `references/operations.md`
+
+Do not load all references by default.
+
+## Current managed topology
+
+```text
+agent host
+   |
+   +-- direct MCPs managed/registered by Harr (e.g. CodeGraph, Git MCP as added)
+   |
+   +-- LeanCTX 3.9.15
+          |
+          +-- stdio -> CodeGraph fallback/compat route
+          |
+          +-- HTTP -> GitLab MCP :3334 -> GitLab API
+```
+
+The inventory may grow. New MCPs belong in Harr's routing policy and references rather than being explained ad hoc in unrelated component skills.
