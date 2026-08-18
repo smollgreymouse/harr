@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# HARR_GIT_MCP_WRAPPER=1
+readonly PREFIX="${HARR_GIT_MCP_PREFIX:-${HOME}/.local/share/harr/python/git-mcp}"
+
+[[ -d "$PREFIX" ]] || {
+  printf 'Error: Harr git MCP runtime not installed: %s\n' "$PREFIX" >&2
+  exit 1
+}
+
+export PYTHONPATH="${PREFIX}${PYTHONPATH:+:${PYTHONPATH}}"
+exec python3 -m mcp_server_git "$@"
