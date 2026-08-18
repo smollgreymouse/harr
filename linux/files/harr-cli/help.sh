@@ -25,7 +25,7 @@ Managed stack:
   LeanCTX 3.9.15
   @zereight/mcp-gitlab (long-lived HTTP service)
   CodeGraph (installed by Harr, spawned by LeanCTX over stdio)
-  Harr-aware agent skills for Codex and OpenCode
+  Compact host-specific AGENTS policy + diagnostic skills for Codex/OpenCode
 EOF_HELP
 }
 
