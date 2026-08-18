@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly HARR_VERSION="0.1.0"
+readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
+  readonly CLI_LIB_DIR="${SELF_DIR}/files/harr-cli"
+else
+  readonly CLI_LIB_DIR="${HARR_LIBEXEC_DIR:-${HOME}/.local/libexec/harr/cli}"
+fi
+
+source "${CLI_LIB_DIR}/common.sh"
+source "${CLI_LIB_DIR}/help.sh"
+source "${CLI_LIB_DIR}/mcp.sh"
+
+command="${1:-help}"
+shift || true
+
+case "$command" in
+  mcp) cmd_mcp "$@" ;;
+  status) cmd_mcp_status_all "$@" ;;
+  version|--version|-V) printf 'Harr %s\n' "$HARR_VERSION" ;;
+  help|-h|--help) usage ;;
+  *) die "unknown command: $command (see harr help)" ;;
+esac
