@@ -1,6 +1,10 @@
 # Harr-managed agent skills.
 
-readonly HARR_SKILLS_SOURCE_DIR="${HARR_LIBEXEC_DIR}/skills"
+if [[ -d "${SELF_DIR:-}/files/skills" ]]; then
+  readonly HARR_SKILLS_SOURCE_DIR="${SELF_DIR}/files/skills"
+else
+  readonly HARR_SKILLS_SOURCE_DIR="${HARR_LIBEXEC_DIR}/skills"
+fi
 readonly HARR_SKILL_MARKER='<!-- harr-managed-skill-v1 -->'
 
 agent_skill_root() {
