@@ -20,9 +20,6 @@ LeanCTX 3.9.15
       +-- stdio -----------> CodeGraph 1.5.0
       |                     inherits LeanCTX cwd
       |
-      +-- stdio -----------> Git MCP 2026.7.10
-      |                     binds automatically to inherited Git root
-      |
       +-- HTTP :3334 -----> GitLab MCP 2.1.48 -> GitLab API
       |
       +-- future Harr MCPs -> gateway when appropriate
@@ -30,7 +27,7 @@ LeanCTX 3.9.15
 Unrelated third-party MCPs/skills may coexist beside this stack.
 ```
 
-Direct Harr-managed CodeGraph/Git/GitLab registrations are not part of the normal profile; they are diagnostic/on-demand bypasses only.
+Direct Harr-managed CodeGraph/GitLab registrations are not part of the normal profile; they are diagnostic/on-demand bypasses only.
 
 ## Quickstart
 
@@ -58,8 +55,7 @@ Expected normal routing after restarting/reopening Codex or OpenCode:
 
 ```text
 Codex / OpenCode -> LeanCTX
-                    +-> CodeGraph   (stdio, inherited project cwd)
-                    +-> Git MCP     (stdio, auto-bound Git root)
+                    +-> CodeGraph   (stdio, per-project cwd)
                     +-> GitLab MCP  (HTTP, Harr user service)
 ```
 
@@ -93,7 +89,7 @@ cd harr
 ~/.local/share/harr-state/pre-harr/
 ```
 
-Later updates do not replace that original snapshot; the snapshot is only extended when a newer Harr version begins managing a path older Harr versions never touched:
+Later updates do not replace that original snapshot:
 
 ```bash
 ./install.sh
@@ -116,7 +112,6 @@ Harr owns and regenerates:
 - global OpenCode `AGENTS.md`, Harr/LeanCTX diagnostic skills, and the active global OpenCode harness config;
 - Harr LeanCTX binary/wrapper/config;
 - Harr CodeGraph wrapper/private package;
-- Harr Git MCP wrapper/private Python package;
 - Harr GitLab MCP service/config/secret handling;
 - Harr-private runtime/state directories.
 
@@ -197,7 +192,7 @@ The permanent policy keeps the original token-saving OpenCode rules:
 - cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
-- Git repository operations -> `git-mcp` through the gateway with `repo_path="."`;
+- all Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`;
 - GitLab API data -> `gitlab` through the gateway;
 - uncommon LeanCTX capabilities -> `ctx_call`;
 - no broad repository inventory after CodeGraph;
@@ -242,21 +237,9 @@ LeanCTX does not override the child working directory, so CodeGraph inherits the
 
 If the wrong project is resolved, fix the host/LeanCTX cwd rather than adding per-project Harr configuration.
 
-## Git MCP project binding
+## Git
 
-Harr installs the official `mcp-server-git` release and keeps it behind LeanCTX:
-
-```toml
-[[gateway.servers]]
-name = "git-mcp"
-transport = "stdio"
-enabled = true
-command = "mcp-server-git"
-args = []
-url = ""
-```
-
-The Harr launcher inherits LeanCTX cwd, resolves the Git root with `git rev-parse --show-toplevel`, changes to that root and starts `mcp-server-git --repository <root>`. This gives repository isolation without any project-level Harr config, and Git tool calls can use `repo_path="."` even when the host originally started from a subdirectory.
+Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. GitLab MCP is reserved for GitLab API data such as merge requests, pipelines, jobs, issues and project/server metadata.
 
 ## GitLab
 
@@ -298,7 +281,6 @@ harr leanctx status
 harr install all
 harr install leanctx
 harr install mcp
-harr install git-mcp
 
 harr mcp list
 harr mcp start gitlab
@@ -310,7 +292,7 @@ harr mcp logs gitlab -f
 harr uninstall
 ```
 
-The installer enables the GitLab user service but does not start/restart it unless `--start` is supplied. CodeGraph and Git MCP are spawned on demand by LeanCTX and have no systemd services.
+The installer enables the GitLab user service but does not start/restart it unless `--start` is supplied. This avoids colliding with a foreground MCP test process already using port `3334`.
 
 ## Installed layout
 
@@ -318,7 +300,6 @@ The installer enables the GitLab user service but does not start/restart it unle
 ~/.local/bin/harr
 ~/.local/bin/lean-ctx
 ~/.local/bin/codegraph
-~/.local/bin/mcp-server-git
 ~/.local/libexec/harr/
   cli/
   hosts/
@@ -329,7 +310,6 @@ The installer enables the GitLab user service but does not start/restart it unle
   state/
   vendor/lean-ctx/3.9.15/lean-ctx
 ~/.local/share/harr/npm/
-~/.local/share/harr/python/git-mcp/
 ~/.local/share/harr-state/pre-harr/       # independent rollback state
 ~/.config/harr/
   runtime.env

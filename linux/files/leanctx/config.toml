@@ -96,21 +96,6 @@ url = ""
 
 [gateway.servers.headers]
 
-# The official reference Git MCP remains stdio behind LeanCTX. Harr's launcher
-# inherits LeanCTX cwd, resolves the nearest Git toplevel, cd's there and starts
-# mcp-server-git restricted to that repository. Tool calls can use repo_path=".".
-[[gateway.servers]]
-name = "git-mcp"
-transport = "stdio"
-enabled = true
-command = "mcp-server-git"
-args = []
-url = ""
-
-[gateway.servers.env]
-
-[gateway.servers.headers]
-
 # GitLab MCP runs natively as Streamable HTTP under Harr.
 [[gateway.servers]]
 name = "gitlab"

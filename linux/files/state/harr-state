@@ -22,7 +22,6 @@ item_target() {
     leanctx-config) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/lean-ctx/config.toml" ;;
     leanctx-launcher) printf '%s\n' "${HOME}/.local/bin/lean-ctx" ;;
     codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
-    git-mcp-launcher) printf '%s\n' "${HOME}/.local/bin/mcp-server-git" ;;
     harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
     gitlab-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp-gitlab.service" ;;
     gitlab-enable-link) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/default.target.wants/harr-mcp-gitlab.service" ;;
@@ -43,7 +42,7 @@ all_items() {
   printf '%s\n' \
     codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
     codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
-    leanctx-config leanctx-launcher codegraph-launcher git-mcp-launcher harr-launcher gitlab-unit gitlab-enable-link \
+    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit gitlab-enable-link \
     harr-config-root harr-libexec-root harr-share-root \
     ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
     ocwf-command-review ocwf-command-safe ocwf-command-validate
@@ -71,15 +70,12 @@ write_runtime_marker() {
 
 snapshot_all() {
   if [[ -f "${PRE_HARR}/complete" ]]; then
-    # Extend older Harr clean snapshots before this version begins managing new
-    # global paths that previous versions intentionally left untouched.
+    # Harr versions before Codex MCP ownership already preserved config.toml
+    # untouched. If such an older clean snapshot exists, capture its current
+    # Codex config now, before this version starts managing mcp_servers.lean-ctx.
     if [[ ! -d "${PRE_HARR}/items/codex-config" ]]; then
       snapshot_item "$PRE_HARR" codex-config
       printf 'Extended existing pre-Harr snapshot with untouched Codex config.toml.\n'
-    fi
-    if [[ ! -d "${PRE_HARR}/items/git-mcp-launcher" ]]; then
-      snapshot_item "$PRE_HARR" git-mcp-launcher
-      printf 'Extended existing pre-Harr snapshot with untouched mcp-server-git launcher.\n'
     fi
     write_runtime_marker
     printf 'Pre-Harr snapshot already exists: %s\n' "$PRE_HARR"

@@ -55,7 +55,6 @@ Managed stack:
   LeanCTX 3.9.15
   GitLab MCP
   CodeGraph
-  Git MCP
   compact host-specific Harr routing policy
   diagnostic Harr/LeanCTX skills
 
@@ -90,9 +89,6 @@ prepare_clean_ownership() {
   local state_source="${FILES_DIR}/state/harr-state"
   [[ -r "$state_source" ]] || die "missing Harr state helper: $state_source"
   if [[ -f "$CLEAN_STATE_MARKER" ]]; then
-    # Idempotent snapshot call also migrates older clean snapshots with newly
-    # managed global paths before this version touches them.
-    bash "$state_source" snapshot
     ((clean_takeover)) && printf 'Clean ownership already initialized; preserving original pre-Harr snapshot.\n'
     return
   fi
@@ -159,7 +155,6 @@ install_runtime_files() {
   install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
   install -m 0755 "${FILES_DIR}/mcp/gitlab-run" "${MCP_LIB_DIR}/gitlab-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${MCP_LIB_DIR}/codegraph-cli"
-  install -m 0755 "${FILES_DIR}/mcp/git-mcp-cli" "${MCP_LIB_DIR}/git-mcp-cli"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0600 "${FILES_DIR}/leanctx/config.toml" "${LEANCTX_LIB_DIR}/config.toml"
   install_skill_sources
@@ -247,7 +242,7 @@ main() {
     printf 'Pinned stack installed; LeanCTX registered in Codex/OpenCode; global agent policy applied.\n'
   fi
   printf 'GitLab MCP service is enabled for user startup.\n'
-  printf 'CodeGraph and Git MCP are spawned on demand by LeanCTX and are not systemd services.\n'
+  printf 'CodeGraph is spawned on demand by LeanCTX and is not a systemd service.\n'
 
   if (( ! start_now )); then
     printf 'GitLab service was not started/restarted. Stop any foreground server using port 3334, then run:\n'
