@@ -11,6 +11,7 @@ readonly UNINSTALL_BACKUP_ROOT="${HOME}/.local/share/harr-uninstall-backups"
 item_target() {
   case "$1" in
     codex-agents) printf '%s\n' "${CODEX_HOME_REAL}/AGENTS.md" ;;
+    codex-config) printf '%s\n' "${CODEX_HOME_REAL}/config.toml" ;;
     opencode-agents) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/AGENTS.md" ;;
     opencode-jsonc) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.jsonc" ;;
     opencode-json) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.json" ;;
@@ -39,7 +40,7 @@ item_target() {
 
 all_items() {
   printf '%s\n' \
-    codex-agents opencode-agents opencode-jsonc opencode-json \
+    codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
     codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
     leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit gitlab-enable-link \
     harr-config-root harr-libexec-root harr-share-root \
