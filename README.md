@@ -8,8 +8,6 @@
 
 A global harness for token-efficient MCP infrastructure.
 
-The name is both an Odin reference and a phonetic joke on “harness”.
-
 ## Design
 
 Harr is not merged into another global harness. On first installation it takes **clean ownership of its global layer**, after saving an exact rollback snapshot. Project-level configuration is deliberately out of scope.
