@@ -11,7 +11,7 @@ export CODEX_HOME="${HOME}/.codex"
 # Force the self-contained TOML fallback so CI tests the path used when a
 # desktop/IDE Codex host does not expose the Codex CLI in PATH.
 export HARR_CODEX_DISABLE_CLI=1
-mkdir -p "$CODEX_HOME" "$XDG_CONFIG_HOME/opencode/commands" "$XDG_CONFIG_HOME/opencode/skills/external"
+mkdir -p "$CODEX_HOME" "$HOME/.local/bin" "$XDG_CONFIG_HOME/opencode/commands" "$XDG_CONFIG_HOME/opencode/skills/external"
 
 cat >"${CODEX_HOME}/AGENTS.md" <<'EOF'
 OLD CODEX POLICY
@@ -57,6 +57,8 @@ printf 'external command\n' >"${XDG_CONFIG_HOME}/opencode/commands/custom.md"
 printf '# external skill\n' >"${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md"
 mkdir -p "${XDG_CONFIG_HOME}/lean-ctx"
 printf 'OLD LEANCTX CONFIG\n' >"${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+printf '#!/bin/sh\necho OLD GIT MCP\n' >"${HOME}/.local/bin/mcp-server-git"
+chmod 0755 "${HOME}/.local/bin/mcp-server-git"
 
 cp "${CODEX_HOME}/AGENTS.md" "${TMP}/codex-agents.before"
 cp "${CODEX_HOME}/config.toml" "${TMP}/codex-config.before"
@@ -64,6 +66,7 @@ cp "${XDG_CONFIG_HOME}/opencode/AGENTS.md" "${TMP}/opencode-agents.before"
 cp "${XDG_CONFIG_HOME}/opencode/opencode.jsonc" "${TMP}/opencode-config.before"
 cp "${XDG_CONFIG_HOME}/lean-ctx/config.toml" "${TMP}/leanctx.before"
 cp "${XDG_CONFIG_HOME}/opencode/commands/quick.md" "${TMP}/quick.before"
+cp "${HOME}/.local/bin/mcp-server-git" "${TMP}/git-mcp.before"
 
 bash "${ROOT}/linux/files/state/harr-state" snapshot
 
@@ -74,6 +77,7 @@ bash "${ROOT}/linux/files/state/harr-state" snapshot
 ! grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'OLD OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'codegraph::codegraph_explore' "${CODEX_HOME}/AGENTS.md"
+grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
@@ -138,6 +142,7 @@ cmp -s "${TMP}/opencode-agents.before" "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 cmp -s "${TMP}/opencode-config.before" "${XDG_CONFIG_HOME}/opencode/opencode.jsonc"
 cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 cmp -s "${TMP}/quick.before" "${XDG_CONFIG_HOME}/opencode/commands/quick.md"
+cmp -s "${TMP}/git-mcp.before" "${HOME}/.local/bin/mcp-server-git"
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ ! -e "${HOME}/.local/share/harr-state" ]]
