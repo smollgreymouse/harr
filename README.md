@@ -225,9 +225,13 @@ Codex uses `${CODEX_HOME:-~/.codex}/config.toml`. Harr owns only this entry:
 [mcp_servers.lean-ctx]
 command = "/home/<user>/.local/bin/lean-ctx"
 enabled = true
+default_tools_approval_mode = "auto"
 ```
 
 The absolute launcher path is intentional: desktop/IDE hosts do not have to inherit `~/.local/bin` in `PATH`.
+
+Harr auto-approves tools served by its trusted local LeanCTX gateway, avoiding
+per-call approval prompts for its compact `ctx_*` surface.
 
 When a `codex` CLI is available, Harr uses the official writer equivalent to:
 

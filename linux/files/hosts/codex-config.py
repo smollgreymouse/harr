@@ -13,12 +13,14 @@ import tomllib
 from typing import Any
 
 SERVER_NAME = "lean-ctx"
+DEFAULT_TOOLS_APPROVAL_MODE = "auto"
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser()
 CONFIG = CODEX_HOME / "config.toml"
 LEANCTX = Path.home() / ".local" / "bin" / "lean-ctx"
 
 _TABLE_RE = re.compile(r"^\s*\[(?!\[)(.*)\]\s*(?:#.*)?$")
 _ARRAY_TABLE_RE = re.compile(r"^\s*\[\[(.*)\]\]\s*(?:#.*)?$")
+_DEFAULT_TOOLS_APPROVAL_RE = re.compile(r"^\s*default_tools_approval_mode\s*=")
 
 
 def load_config_text() -> str:
@@ -43,6 +45,7 @@ def expected_entry() -> dict[str, Any]:
     return {
         "command": str(LEANCTX),
         "enabled": True,
+        "default_tools_approval_mode": DEFAULT_TOOLS_APPROVAL_MODE,
     }
 
 
@@ -57,7 +60,11 @@ def current_entry(config: dict[str, Any]) -> dict[str, Any] | None:
 def entry_is_managed(entry: dict[str, Any] | None) -> bool:
     if entry is None:
         return False
-    return entry.get("command") == str(LEANCTX) and entry.get("enabled", True) is True
+    return (
+        entry.get("command") == str(LEANCTX)
+        and entry.get("enabled", True) is True
+        and entry.get("default_tools_approval_mode") == DEFAULT_TOOLS_APPROVAL_MODE
+    )
 
 
 def codex_cli() -> str | None:
@@ -87,6 +94,7 @@ def apply_with_codex_cli(binary: str) -> None:
             f"official Codex MCP writer failed ({binary} mcp add): {output or f'exit {result.returncode}'}"
         )
 
+    ensure_default_tools_approval_mode()
     data = parse_config(load_config_text())
     if not entry_is_managed(current_entry(data)):
         raise RuntimeError("Codex CLI completed but LeanCTX MCP registration is not the expected Harr entry")
@@ -157,6 +165,56 @@ def toml_basic_string(value: str) -> str:
     return f'"{escaped}"'
 
 
+def write_config_text(text: str) -> None:
+    mode = stat.S_IMODE(CONFIG.stat().st_mode) if CONFIG.exists() else 0o600
+    fd, tmp_name = tempfile.mkstemp(prefix="config.toml.", dir=CODEX_HOME)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp_name, mode)
+        os.replace(tmp_name, CONFIG)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+
+
+def ensure_default_tools_approval_mode() -> None:
+    text = load_config_text()
+    lines = text.splitlines(keepends=True)
+    target_header = None
+
+    for index, line in enumerate(lines):
+        header = table_header(line)
+        if header == ("table", ["mcp_servers", SERVER_NAME]):
+            target_header = index
+            break
+
+    if target_header is None:
+        raise RuntimeError("Codex CLI did not create the LeanCTX MCP table")
+
+    table_end = len(lines)
+    for index in range(target_header + 1, len(lines)):
+        if table_header(lines[index]) is not None:
+            table_end = index
+            break
+
+    replacement = f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"\n'
+    for index in range(target_header + 1, table_end):
+        if _DEFAULT_TOOLS_APPROVAL_RE.match(lines[index]):
+            lines[index] = replacement
+            break
+    else:
+        lines.insert(table_end, replacement)
+
+    new_text = "".join(lines)
+    parse_config(new_text)
+    write_config_text(new_text)
+
+
 def apply_with_fallback() -> None:
     CODEX_HOME.mkdir(parents=True, exist_ok=True)
     old_text = load_config_text()
@@ -168,26 +226,14 @@ def apply_with_fallback() -> None:
         "[mcp_servers.lean-ctx]\n"
         f"command = {toml_basic_string(str(LEANCTX))}\n"
         "enabled = true\n"
+        f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"\n'
     )
     new_text = f"{base}\n\n{block}" if base else block
     data = parse_config(new_text)
     if not entry_is_managed(current_entry(data)):
         raise RuntimeError("generated Codex TOML did not contain the expected Harr LeanCTX MCP entry")
 
-    mode = stat.S_IMODE(CONFIG.stat().st_mode) if CONFIG.exists() else 0o600
-    fd, tmp_name = tempfile.mkstemp(prefix="config.toml.", dir=CODEX_HOME)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(new_text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(tmp_name, mode)
-        os.replace(tmp_name, CONFIG)
-    finally:
-        try:
-            os.unlink(tmp_name)
-        except FileNotFoundError:
-            pass
+    write_config_text(new_text)
 
     print(f"Applied Harr Codex MCP registration using validated TOML fallback: {CONFIG}")
 

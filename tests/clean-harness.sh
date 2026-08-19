@@ -101,6 +101,7 @@ assert codex['mcp_servers']['external-mcp'] == {
 assert codex['mcp_servers']['lean-ctx'] == {
     'command': str(home / '.local' / 'bin' / 'lean-ctx'),
     'enabled': True,
+    'default_tools_approval_mode': 'auto',
 }
 
 p = Path(os.environ['XDG_CONFIG_HOME']) / 'opencode' / 'opencode.jsonc'
@@ -122,6 +123,17 @@ assert 'task' not in cfg['permission'] and 'bash' not in cfg['permission']
 assert 'default_agent' not in cfg
 assert 'subagent_depth' not in cfg
 PY
+
+# The official Codex writer replaces the MCP table. Harr must restore its
+# approval setting after that writer removes it.
+cat >"${TMP}/bin/codex" <<'EOF'
+#!/usr/bin/env bash
+sed -i '/^default_tools_approval_mode = /d' "${CODEX_HOME}/config.toml"
+EOF
+chmod 0755 "${TMP}/bin/codex"
+HARR_CODEX_DISABLE_CLI=0 HARR_CODEX_CLI="${TMP}/bin/codex" \
+  python3 "${ROOT}/linux/files/hosts/codex-config.py" apply
+grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
 
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/commands/quick.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
