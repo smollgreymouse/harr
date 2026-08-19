@@ -14,19 +14,20 @@ cmd_uninstall() {
   [[ -n "$safety" ]] && printf 'Saved current Harr state before rollback: %s\n' "$safety"
 
   if command -v systemctl >/dev/null 2>&1; then
+    local name
+    while IFS= read -r name; do
+      [[ -n "$name" ]] || continue
+      systemctl --user disable --now "harr-mcp@${name}.service" >/dev/null 2>&1 || true
+    done < <(managed_mcp_names 2>/dev/null || true)
     systemctl --user disable --now harr-mcp-gitlab.service >/dev/null 2>&1 || true
   fi
 
-  # The snapshot itself records whether every shared/global target existed.
-  # It therefore removes Harr-created paths or restores old paths exactly.
   "$HARR_STATE_HELPER" restore
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload >/dev/null 2>&1 || true
   fi
 
-  # Rollback completed successfully; the independent uninstall safety snapshot
-  # remains outside this directory.
   rm -rf -- "$HARR_STATE_ROOT"
 
   printf '\nHarr uninstalled and the exact pre-Harr global harness state was restored.\n'

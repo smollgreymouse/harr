@@ -8,8 +8,6 @@ trap 'rm -rf "$TMP"' EXIT
 export HOME="${TMP}/home"
 export XDG_CONFIG_HOME="${HOME}/.config"
 export CODEX_HOME="${HOME}/.codex"
-# Force the self-contained TOML fallback so CI tests the path used when a
-# desktop/IDE Codex host does not expose the Codex CLI in PATH.
 export HARR_CODEX_DISABLE_CLI=1
 mkdir -p "${TMP}/bin"
 printf '#!/usr/bin/env bash\nexit 0\n' >"${TMP}/bin/systemctl"
@@ -74,7 +72,6 @@ bash "${ROOT}/linux/files/state/harr-state" snapshot
 "${ROOT}/linux/harr" agents apply all
 "${ROOT}/linux/harr" hosts apply
 
-# Harr owns the complete global AGENTS files; old policy must not survive.
 ! grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'OLD OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'codegraph::codegraph_explore' "${CODEX_HOME}/AGENTS.md"
@@ -90,6 +87,7 @@ import json, os, tomllib
 from pathlib import Path
 
 home = Path(os.environ['HOME'])
+lean = home / '.local' / 'bin' / 'lean-ctx'
 
 codex_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
 codex = tomllib.loads(codex_path.read_text())
@@ -99,7 +97,7 @@ assert codex['mcp_servers']['external-mcp'] == {
     'enabled': True,
 }
 assert codex['mcp_servers']['lean-ctx'] == {
-    'command': str(home / '.local' / 'bin' / 'lean-ctx'),
+    'command': str(lean),
     'enabled': True,
     'default_tools_approval_mode': 'auto',
 }
@@ -115,7 +113,7 @@ assert cfg['agent']['custom-agent']['description'] == 'keep'
 assert 'codegraph' not in cfg['mcp']
 assert 'gitlab' not in cfg['mcp']
 assert cfg['mcp']['external-mcp']['url'] == 'https://example.invalid/mcp'
-assert cfg['mcp']['lean-ctx'] == {'type': 'local', 'command': ['lean-ctx'], 'enabled': True}
+assert cfg['mcp']['lean-ctx'] == {'type': 'local', 'command': [str(lean)], 'enabled': True}
 assert cfg['tools']['external_tool'] is True
 assert 'bash' not in cfg['tools'] and 'read' not in cfg['tools']
 assert cfg['permission']['external_perm'] == 'allow'
@@ -124,15 +122,15 @@ assert 'default_agent' not in cfg
 assert 'subagent_depth' not in cfg
 PY
 
-# The official Codex writer replaces the MCP table. Harr must restore its
-# approval setting after that writer removes it.
+# The official Codex writer can replace the MCP table. Harr must restore its
+# trust setting after that writer removes it.
 cat >"${TMP}/bin/codex" <<'EOF'
 #!/usr/bin/env bash
 sed -i '/^default_tools_approval_mode = /d' "${CODEX_HOME}/config.toml"
 EOF
 chmod 0755 "${TMP}/bin/codex"
 HARR_CODEX_DISABLE_CLI=0 HARR_CODEX_CLI="${TMP}/bin/codex" \
-  python3 "${ROOT}/linux/files/hosts/codex-config.py" apply
+  python3 "${ROOT}/common/hosts/codex-config.py" apply
 grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
 
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/commands/quick.md" ]]
@@ -144,13 +142,11 @@ grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
 "${ROOT}/linux/harr" agents status
 "${ROOT}/linux/harr" hosts status
 
-# A later --harr-only update must keep working after clean ownership exists.
 "${ROOT}/linux/install.sh" --harr-only
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
+grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
 
-# Install only the rollback helper where the installed CLI expects it. This is
-# intentionally after the pre-Harr snapshot.
 mkdir -p "${HOME}/.local/libexec/harr/state"
 install -m 0755 "${ROOT}/linux/files/state/harr-state" "${HOME}/.local/libexec/harr/state/harr-state"
 

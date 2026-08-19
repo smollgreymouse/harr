@@ -1,0 +1,14 @@
+[Unit]
+Description=Harr MCP - %i
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/harr-mcp-run %i
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

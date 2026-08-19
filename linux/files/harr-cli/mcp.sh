@@ -15,7 +15,7 @@ mcp_targets() {
 
 mcp_endpoint() {
   local name="$1"
-  env_value "$(mcp_env_file "$name")" HARR_MCP_ENDPOINT 2>/dev/null || true
+  mcp_server_field "$name" url 2>/dev/null || true
 }
 
 mcp_endpoint_state() {
@@ -66,7 +66,7 @@ cmd_mcp_status_all() {
 
   printf '%-16s %-11s %-11s %-8s %-12s %s\n' MCP SERVICE STARTUP PID ENDPOINT URL
   if ((${#names[@]} == 0)); then
-    printf '%s\n' '(no Harr MCP services installed)'
+    printf '%s\n' '(no Harr service MCPs configured)'
     return
   fi
 
@@ -91,7 +91,7 @@ cmd_mcp_lifecycle() {
   local action="$1" target="$2"
   local -a names=()
   mapfile -t names < <(mcp_targets "$target")
-  ((${#names[@]} > 0)) || die 'no Harr MCP services installed'
+  ((${#names[@]} > 0)) || die 'no Harr service MCPs configured'
 
   local name unit
   for name in "${names[@]}"; do
@@ -138,7 +138,7 @@ cmd_mcp() {
   case "$command" in
     list)
       [[ $# -eq 0 ]] || die 'usage: harr mcp list'
-      managed_mcp_names
+      all_mcp_names
       ;;
     start|stop|restart|enable|disable)
       [[ $# -eq 1 ]] || die "usage: harr mcp $command NAME|all"

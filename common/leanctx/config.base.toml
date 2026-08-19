@@ -51,10 +51,7 @@ shell_allow_writes = false
 shell_security = "enforce"
 shell_strict_mode = false
 shell_allowlist_extra = [
-    "adb",
-    "sudo",
-    "apt-get",
-    "openssl",
+{{HARR_SHELL_ALLOWLIST_EXTRA}}
 ]
 
 [archive]
@@ -78,34 +75,5 @@ cache_ttl_secs = 300
 call_timeout_secs = 120
 top_n = 1
 
-# CodeGraph remains stdio intentionally. LeanCTX spawns it in its own current
-# working directory, so CodeGraph inherits the agent/project cwd and resolves
-# the nearest .codegraph index without any machine-global project setting.
-[[gateway.servers]]
-name = "codegraph"
-transport = "stdio"
-enabled = true
-command = "codegraph"
-args = [
-    "serve",
-    "--mcp",
-]
-url = ""
-
-[gateway.servers.env]
-
-[gateway.servers.headers]
-
-# GitLab MCP runs natively as Streamable HTTP under Harr.
-[[gateway.servers]]
-name = "gitlab"
-transport = "http"
-enabled = true
-url = "http://127.0.0.1:3334/mcp"
-
-[gateway.servers.headers]
-
-# PAT is restored at runtime by Harr's lean-ctx wrapper. It is never stored in
-# this config and never committed to the Harr repository.
-[gateway.servers.secret_headers]
-Private-Token = { id = "mcp/gitlab/default" }
+# Downstream servers are rendered from common/mcp/registry.json.
+# {{HARR_GATEWAY_SERVERS}}

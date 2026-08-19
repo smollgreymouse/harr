@@ -1,8 +1,6 @@
 # Harr component installation and version status.
 
 readonly HARR_LEANCTX_VERSION="3.9.15"
-readonly HARR_GITLAB_MCP_VERSION="2.1.48"
-readonly HARR_CODEGRAPH_VERSION="1.5.0"
 
 write_runtime_env() {
   local node_bin="$1"
@@ -27,44 +25,21 @@ check_node_runtime() {
   major="$(node -p 'Number(process.versions.node.split(".")[0])')"
   [[ "$major" =~ ^[0-9]+$ ]] || die 'could not determine Node.js major version'
   ((major >= 20 && major < 25)) || \
-    die "Node.js 20-24 is required by the pinned CodeGraph build; current: $(node --version)"
+    die "Node.js 20-24 is required by the Harr MCP runtime; current: $(node --version)"
 
   printf '%s\n' "$node_bin"
 }
 
-install_codegraph_wrapper() {
-  local wrapper_src="${HARR_LIBEXEC_DIR}/mcp/codegraph-cli"
-  local target="${HOME}/.local/bin/codegraph"
-  local backup_dir="${HARR_LIBEXEC_DIR}/backup"
-
-  [[ -x "$wrapper_src" ]] || die "CodeGraph wrapper missing: $wrapper_src"
-  install -d -m 0755 "${HOME}/.local/bin" "$backup_dir"
-  if [[ -e "$target" ]] && ! grep -q 'HARR_CODEGRAPH_WRAPPER=1' "$target" 2>/dev/null; then
-    if [[ ! -e "${backup_dir}/codegraph.pre-harr" ]]; then
-      cp -a "$target" "${backup_dir}/codegraph.pre-harr"
-      printf 'Backed up previous codegraph launcher to %s\n' "${backup_dir}/codegraph.pre-harr"
-    fi
-  fi
-  install -m 0755 "$wrapper_src" "$target"
-}
-
 install_node_mcp_stack() {
-  local node_bin
+  require_mcp_manager
+  local node_bin package_file
   node_bin="$(check_node_runtime)"
 
   install -d -m 0755 "$HARR_NPM_PREFIX"
-  cat >"${HARR_NPM_PREFIX}/package.json" <<EOF_PACKAGE
-{
-  "name": "harr-mcp-runtime",
-  "private": true,
-  "dependencies": {
-    "@zereight/mcp-gitlab": "${HARR_GITLAB_MCP_VERSION}",
-    "@colbymchenry/codegraph": "${HARR_CODEGRAPH_VERSION}"
-  }
-}
-EOF_PACKAGE
+  package_file="${HARR_NPM_PREFIX}/package.json"
+  python3 "$HARR_MCP_MANAGER" npm-package-json >"$package_file"
 
-  printf 'Installing Harr MCP runtime packages...\n'
+  printf 'Installing Harr npm MCP runtimes from registry...\n'
   PATH="$(dirname -- "$node_bin"):${PATH}" \
     npm install \
       --prefix "$HARR_NPM_PREFIX" \
@@ -73,13 +48,7 @@ EOF_PACKAGE
       --no-fund \
       --package-lock=false
 
-  [[ -x "${HARR_NPM_BIN_DIR}/zereight-mcp-gitlab" ]] || \
-    die 'GitLab MCP launcher was not installed'
-  [[ -x "${HARR_NPM_BIN_DIR}/codegraph" ]] || \
-    die 'CodeGraph launcher was not installed'
-
   write_runtime_env "$node_bin"
-  install_codegraph_wrapper
 }
 
 leanctx_target() {
@@ -183,7 +152,7 @@ cmd_install_components() {
       install_leanctx
       cmd_leanctx_apply
       ;;
-    mcp|gitlab|codegraph)
+    mcp)
       install_node_mcp_stack
       ;;
     leanctx)
@@ -194,29 +163,23 @@ cmd_install_components() {
   esac
 }
 
-component_status_word() {
-  local actual="$1" expected="$2"
-  if [[ -z "$actual" ]]; then
-    printf 'missing'
-  elif [[ "$actual" == "$expected" ]]; then
-    printf 'ok'
-  else
-    printf 'version-mismatch'
-  fi
-}
-
 cmd_components_status() {
-  local lean_actual='' gitlab_actual='' cg_actual=''
-  local lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx"
-
+  local lean_actual='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx"
   if [[ -x "$lean_real" ]]; then
     lean_actual="$("$lean_real" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
   fi
-  gitlab_actual="$(package_version "${HARR_NPM_PREFIX}/node_modules/@zereight/mcp-gitlab/package.json" 2>/dev/null || true)"
-  cg_actual="$(package_version "${HARR_NPM_PREFIX}/node_modules/@colbymchenry/codegraph/package.json" 2>/dev/null || true)"
 
-  printf '%-16s %-10s %-12s %s\n' COMPONENT EXPECTED STATE INSTALLED
-  printf '%-16s %-10s %-12s %s\n' leanctx "$HARR_LEANCTX_VERSION" "$(component_status_word "$lean_actual" "$HARR_LEANCTX_VERSION")" "${lean_actual:--}"
-  printf '%-16s %-10s %-12s %s\n' gitlab-mcp "$HARR_GITLAB_MCP_VERSION" "$(component_status_word "$gitlab_actual" "$HARR_GITLAB_MCP_VERSION")" "${gitlab_actual:--}"
-  printf '%-16s %-10s %-12s %s\n' codegraph "$HARR_CODEGRAPH_VERSION" "$(component_status_word "$cg_actual" "$HARR_CODEGRAPH_VERSION")" "${cg_actual:--}"
+  printf '%-16s %-18s %-16s %s\n' COMPONENT EXPECTED STATE INSTALLED
+  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then
+    printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" ok "$lean_actual"
+  elif [[ -n "$lean_actual" ]]; then
+    printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" version-mismatch "$lean_actual"
+  else
+    printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" missing '-'
+  fi
+
+  require_mcp_manager
+  while IFS=$'\t' read -r name expected state installed; do
+    printf '%-16s %-18s %-16s %s\n' "$name" "$expected" "$state" "$installed"
+  done < <(python3 "$HARR_MCP_MANAGER" components --npm-prefix "$HARR_NPM_PREFIX")
 }
