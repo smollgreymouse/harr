@@ -26,12 +26,14 @@ LeanCTX 3.9.15
       |
       +-- HTTP :3334 -----> GitLab MCP 2.1.48 -> GitLab API
       |
+      +-- stdio -----------> Grafana MCP -> uvx mcp-grafana
+      |
       +-- future MCPs -----> common registry -> platform runtime adapter
 
 Unrelated third-party MCPs/skills may coexist beside this stack.
 ```
 
-Direct Harr-managed CodeGraph/GitLab registrations are not part of the normal profile; they are diagnostic/on-demand bypasses only.
+Direct Harr-managed specialized MCP registrations are not part of the normal host profile; they stay behind LeanCTX.
 
 Platform-independent Harr assets have one source of truth under `common/`. In particular, `common/mcp/registry.json` declares Harr-managed downstream MCP transport, lifecycle, runtime/package, local env template and secret-memento routing. Linux and Windows consume that same registry; `linux/` and `windows/` contain platform-specific installation/lifecycle/path glue. `macos/` reserves the same boundary for a future launchd implementation; macOS installation is not implemented yet.
 
@@ -61,11 +63,14 @@ If local PowerShell policy blocks scripts, use a process-local bypass rather tha
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Clean -Start
 ```
 
-Configure the GitLab PAT once:
+Configure secrets as needed:
 
 ```text
 harr secret set gitlab
+harr secret set grafana
 ```
+
+Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
 
 Check the whole harness:
 
@@ -79,6 +84,7 @@ Expected normal routing after restarting/reopening Codex or OpenCode:
 Codex / OpenCode -> LeanCTX
                     +-> CodeGraph   (stdio, per-project cwd)
                     +-> GitLab MCP  (HTTP, Harr-managed user process)
+                    +-> Grafana MCP (stdio, uvx on demand)
 ```
 
 For later Harr updates:
@@ -231,9 +237,9 @@ Linux:
   harr-mcp-run
 
 ~/.local/libexec/harr/
-  common/                       # installed copy of common/
-  cli/                          # Linux CLI adapter
-  leanctx/                      # Linux launcher adapter
+  common/
+  cli/
+  leanctx/
   state/
   vendor/lean-ctx/3.9.15/lean-ctx
 
@@ -247,7 +253,7 @@ Linux:
 ~/.config/systemd/user/harr-mcp@.service
 
 ${CODEX_HOME:-~/.codex}/
-  config.toml                 # Harr owns only mcp_servers.lean-ctx
+  config.toml
   AGENTS.md
   skills/{harr,lean-ctx}/
 
@@ -311,12 +317,14 @@ harr mcp logs gitlab
 
 harr secret status
 harr secret set gitlab
+harr secret set grafana
 harr secret unset gitlab
+harr secret unset grafana
 
 harr uninstall
 ```
 
-`harr mcp list` includes both on-demand and service entries. Lifecycle commands apply only to registry entries with `lifecycle = service`; on-demand stdio MCPs are spawned by LeanCTX when called.
+`harr mcp list` includes both on-demand and service entries. Lifecycle commands apply only to registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph and Grafana are spawned by LeanCTX when called.
 
 The Linux installer enables every registry service MCP through the generic `systemd --user` template but does not start/restart them unless `--start` is supplied. The Windows installer registers their per-user logon tasks and starts/restarts them only when `-Start` is supplied.
 
@@ -395,23 +403,47 @@ GITLAB_TOOLSETS=all
 
 The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling.
 
-Linux path:
-
-```text
-~/.config/harr/secrets/gitlab-pat
-```
-
-Windows path:
-
-```text
-%USERPROFILE%\.config\harr\secrets\gitlab-pat
-```
-
 ```text
 harr secret set gitlab
 harr secret status
 harr secret unset gitlab
 ```
+
+
+
+### Grafana
+
+Grafana is declared as an on-demand stdio MCP. The generated LeanCTX route is equivalent to:
+
+```text
+LeanCTX -> harr-mcp-run grafana -> uvx mcp-grafana
+```
+
+`uvx` must be available in `PATH`. Harr creates the non-secret local config from `common/mcp/grafana.env.example`:
+
+```text
+GRAFANA_URL=http://localhost:3000
+```
+
+Edit the installed `mcp/grafana.env` for your self-hosted Grafana URL. Store the service-account token separately:
+
+```text
+harr secret set grafana
+harr secret status
+```
+
+The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` through LeanCTX secret-memento handling. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
+
+For dashboard edits, prefer the compact patch-first flow:
+
+```text
+search_dashboards
+  -> get_dashboard_summary
+  -> targeted property/panel-query reads
+  -> update_dashboard
+```
+
+Fetch a complete dashboard definition only when the targeted tools are insufficient.
 
 
 
@@ -444,6 +476,7 @@ The permanent policy keeps the original token-saving OpenCode rules:
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
 - all Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`;
 - GitLab API data -> `gitlab` through the gateway;
+- Grafana dashboard work -> `grafana` through the gateway, with targeted reads and patch `update_dashboard` preferred over complete dashboard JSON;
 - uncommon LeanCTX capabilities -> `ctx_call`;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;

@@ -39,6 +39,30 @@
         }
       ],
       "windows_task": "Harr GitLab MCP"
+    },
+    {
+      "name": "grafana",
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "path",
+        "command": "uvx",
+        "args": ["mcp-grafana"],
+        "install_hint": "uvx is required for Grafana MCP; install uv/uvx and rerun the Grafana tool"
+      },
+      "env_template": "grafana.env.example",
+      "secrets": [
+        {
+          "name": "grafana",
+          "file": "grafana-service-account-token",
+          "prompt": "Grafana service account token",
+          "memento_id": "mcp/grafana/default",
+          "target": {
+            "kind": "env",
+            "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"
+          }
+        }
+      ]
     }
   ]
 }
