@@ -49,9 +49,7 @@ cmd_hosts() {
   case "$command" in
     apply) cmd_hosts_apply "$@" ;;
     status) cmd_hosts_status "$@" ;;
-    help|-h|--help)
-      printf '%s\n' 'Usage:' '  harr hosts apply' '  harr hosts status'
-      ;;
+    help|-h|--help) printf '%s\n' 'Usage:' '  harr hosts apply' '  harr hosts status' ;;
     *) die "unknown hosts command: $command (see harr help)" ;;
   esac
 }
