@@ -2,11 +2,11 @@ name: selftest
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 jobs:
-  selftest:
+  linux-selftest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,9 +16,50 @@ jobs:
           set -e
           bash -n install.sh uninstall.sh linux/install.sh linux/harr tests/clean-harness.sh
           bash -n linux/files/state/harr-state
-          bash -n linux/files/mcp/gitlab-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
+          bash -n linux/files/mcp/harr-mcp-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
           for f in linux/files/harr-cli/*.sh; do bash -n "$f"; done
-      - name: Python syntax
-        run: python3 -m py_compile linux/files/hosts/opencode-config.py linux/files/hosts/codex-config.py
+      - name: Python syntax and registry render
+        run: |
+          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py
+          python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
+          python3 common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output /tmp/harr-leanctx.toml --platform linux
+          python3 - <<'PY'
+          import tomllib
+          with open('/tmp/harr-leanctx.toml','rb') as f:
+              tomllib.load(f)
+          PY
       - name: Clean takeover and rollback
         run: bash tests/clean-harness.sh
+
+  windows-selftest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'install.ps1', 'uninstall.ps1',
+            'windows/install.ps1', 'windows/uninstall.ps1', 'windows/harr.ps1',
+            'windows/files/state/harr-state.ps1',
+            'windows/files/leanctx/lean-ctx-wrapper.ps1',
+            'windows/files/mcp/harr-mcp-run.ps1',
+            'windows/files/harr-cli/common.ps1',
+            'windows/files/harr-cli/runtime.ps1',
+            'windows/files/harr-cli/mcp.ps1',
+            'tests/windows-clean-harness.ps1'
+          )
+          foreach ($file in $files) {
+            [void][scriptblock]::Create((Get-Content -Raw $file))
+          }
+      - name: Python syntax and registry render
+        shell: pwsh
+        run: |
+          python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py
+          python common/mcp/manager.py npm-package-json | Out-File -Encoding utf8 $env:RUNNER_TEMP\harr-package.json
+          python common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output $env:RUNNER_TEMP\harr-leanctx.toml --platform windows
+          python -c "import tomllib, pathlib; tomllib.loads(pathlib.Path(r'$env:RUNNER_TEMP\harr-leanctx.toml').read_text())"
+      - name: Clean takeover and rollback
+        shell: pwsh
+        run: ./tests/windows-clean-harness.ps1

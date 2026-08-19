@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "servers": [
+    {
+      "name": "codegraph",
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "npm",
+        "package": "@colbymchenry/codegraph",
+        "version": "1.5.0",
+        "command": "codegraph",
+        "args": ["serve", "--mcp"]
+      }
+    },
+    {
+      "name": "gitlab",
+      "transport": "http",
+      "lifecycle": "service",
+      "url": "http://127.0.0.1:3334/mcp",
+      "runtime": {
+        "kind": "npm",
+        "package": "@zereight/mcp-gitlab",
+        "version": "2.1.48",
+        "command": "zereight-mcp-gitlab",
+        "args": []
+      },
+      "env_template": "gitlab.env.example",
+      "secrets": [
+        {
+          "name": "gitlab",
+          "file": "gitlab-pat",
+          "prompt": "GitLab PAT",
+          "memento_id": "mcp/gitlab/default",
+          "target": {
+            "kind": "header",
+            "name": "Private-Token"
+          }
+        }
+      ],
+      "windows_task": "Harr GitLab MCP"
+    }
+  ]
+}

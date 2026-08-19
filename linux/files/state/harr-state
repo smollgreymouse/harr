@@ -22,7 +22,9 @@ item_target() {
     leanctx-config) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/lean-ctx/config.toml" ;;
     leanctx-launcher) printf '%s\n' "${HOME}/.local/bin/lean-ctx" ;;
     codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
+    mcp-runner) printf '%s\n' "${HOME}/.local/bin/harr-mcp-run" ;;
     harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
+    mcp-unit-template) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp@.service" ;;
     gitlab-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp-gitlab.service" ;;
     gitlab-enable-link) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/default.target.wants/harr-mcp-gitlab.service" ;;
     harr-config-root) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr" ;;
@@ -42,7 +44,8 @@ all_items() {
   printf '%s\n' \
     codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
     codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
-    leanctx-config leanctx-launcher codegraph-launcher harr-launcher gitlab-unit gitlab-enable-link \
+    leanctx-config leanctx-launcher codegraph-launcher mcp-runner harr-launcher \
+    mcp-unit-template gitlab-unit gitlab-enable-link \
     harr-config-root harr-libexec-root harr-share-root \
     ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
     ocwf-command-review ocwf-command-safe ocwf-command-validate
@@ -68,15 +71,19 @@ write_runtime_marker() {
   printf 'ok\n' >"$RUNTIME_MARKER"
 }
 
+extend_snapshot() {
+  local key
+  for key in codex-config mcp-runner mcp-unit-template; do
+    if [[ ! -d "${PRE_HARR}/items/${key}" ]]; then
+      snapshot_item "$PRE_HARR" "$key"
+      printf 'Extended existing pre-Harr snapshot with %s.\n' "$key"
+    fi
+  done
+}
+
 snapshot_all() {
   if [[ -f "${PRE_HARR}/complete" ]]; then
-    # Harr versions before Codex MCP ownership already preserved config.toml
-    # untouched. If such an older clean snapshot exists, capture its current
-    # Codex config now, before this version starts managing mcp_servers.lean-ctx.
-    if [[ ! -d "${PRE_HARR}/items/codex-config" ]]; then
-      snapshot_item "$PRE_HARR" codex-config
-      printf 'Extended existing pre-Harr snapshot with untouched Codex config.toml.\n'
-    fi
+    extend_snapshot
     write_runtime_marker
     printf 'Pre-Harr snapshot already exists: %s\n' "$PRE_HARR"
     return
@@ -144,6 +151,5 @@ case "${1:-}" in
     ;;
   *)
     printf 'usage: harr-state {snapshot|safety-snapshot|restore|status}\n' >&2
-    exit 2
-    ;;
+    exit 2 ;;
 esac

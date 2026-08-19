@@ -1,13 +1,13 @@
 # Harr-owned global agent policy and diagnostic skills.
 
-if [[ -d "${SELF_DIR:-}/files/skills" ]]; then
-  readonly HARR_SKILLS_SOURCE_DIR="${SELF_DIR}/files/skills"
-  readonly HARR_POLICY_TEMPLATE="${SELF_DIR}/files/policy/tool-routing.template.md"
-  readonly HARR_HOSTS_SOURCE_DIR="${SELF_DIR}/files/hosts"
+if [[ -d "${SELF_DIR:-}/../common/skills" ]]; then
+  readonly HARR_SKILLS_SOURCE_DIR="${SELF_DIR}/../common/skills"
+  readonly HARR_POLICY_TEMPLATE="${SELF_DIR}/../common/policy/tool-routing.template.md"
+  readonly HARR_HOSTS_SOURCE_DIR="${SELF_DIR}/../common/hosts"
 else
-  readonly HARR_SKILLS_SOURCE_DIR="${HARR_LIBEXEC_DIR}/skills"
-  readonly HARR_POLICY_TEMPLATE="${HARR_LIBEXEC_DIR}/policy/tool-routing.template.md"
-  readonly HARR_HOSTS_SOURCE_DIR="${HARR_LIBEXEC_DIR}/hosts"
+  readonly HARR_SKILLS_SOURCE_DIR="${HARR_COMMON_DIR}/skills"
+  readonly HARR_POLICY_TEMPLATE="${HARR_COMMON_DIR}/policy/tool-routing.template.md"
+  readonly HARR_HOSTS_SOURCE_DIR="${HARR_COMMON_DIR}/hosts"
 fi
 readonly HARR_SKILL_MARKER='<!-- harr-managed-skill-v1 -->'
 readonly HARR_POLICY_START='<!-- harr-tool-policy:start -->'
@@ -34,10 +34,7 @@ agent_policy_target() {
   esac
 }
 
-agent_adapter() {
-  printf '%s/%s.env\n' "$HARR_HOSTS_SOURCE_DIR" "$1"
-}
-
+agent_adapter() { printf '%s/%s.env\n' "$HARR_HOSTS_SOURCE_DIR" "$1"; }
 agent_targets() {
   local requested="${1:-all}"
   case "$requested" in
@@ -46,17 +43,13 @@ agent_targets() {
     *) die 'usage: harr agents apply [all|codex|opencode]' ;;
   esac
 }
-
-skill_source_dir() {
-  printf '%s/%s\n' "$HARR_SKILLS_SOURCE_DIR" "$1"
-}
+skill_source_dir() { printf '%s/%s\n' "$HARR_SKILLS_SOURCE_DIR" "$1"; }
 
 install_one_skill() {
   local agent="$1" skill="$2" root source_dir target_dir
   root="$(agent_skill_root "$agent")"
   source_dir="$(skill_source_dir "$skill")"
   target_dir="${root}/${skill}"
-
   [[ -r "${source_dir}/SKILL.md" ]] || die "Harr skill source missing: ${source_dir}/SKILL.md"
   install -d -m 0755 "$root"
   rm -rf -- "$target_dir"
@@ -69,13 +62,10 @@ render_agent_policy() {
   adapter="$(agent_adapter "$agent")"
   [[ -r "$HARR_POLICY_TEMPLATE" ]] || die "Harr policy template missing: $HARR_POLICY_TEMPLATE"
   [[ -r "$adapter" ]] || die "Harr host adapter missing: $adapter"
-
   local CTX_READ='' CTX_SHELL='' CTX_SEARCH='' CTX_GLOB='' CTX_TOOLS='' CTX_CALL='' HOST_NATIVE_POLICY=''
   # shellcheck disable=SC1090
   source "$adapter"
-  [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" && -n "$HOST_NATIVE_POLICY" ]] || \
-    die "incomplete Harr host adapter: $adapter"
-
+  [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" && -n "$HOST_NATIVE_POLICY" ]] || die "incomplete Harr host adapter: $adapter"
   sed \
     -e "s|{{CTX_READ}}|${CTX_READ}|g" \
     -e "s|{{CTX_SHELL}}|${CTX_SHELL}|g" \
@@ -104,13 +94,9 @@ policy_state() {
   [[ -r "$target" ]] || { printf 'missing'; return; }
   rendered="$(mktemp)"
   render_agent_policy "$agent" "$rendered"
-  if cmp -s "$rendered" "$target"; then
-    printf 'managed'
-  elif grep -qF "$HARR_POLICY_START" "$target" 2>/dev/null; then
-    printf 'modified'
-  else
-    printf 'external'
-  fi
+  if cmp -s "$rendered" "$target"; then printf 'managed';
+  elif grep -qF "$HARR_POLICY_START" "$target" 2>/dev/null; then printf 'modified';
+  else printf 'external'; fi
   rm -f -- "$rendered"
 }
 
@@ -121,9 +107,7 @@ cmd_agents_apply() {
   local agent skill
   while IFS= read -r agent; do
     install_agent_policy "$agent"
-    for skill in lean-ctx harr; do
-      install_one_skill "$agent" "$skill"
-    done
+    for skill in lean-ctx harr; do install_one_skill "$agent" "$skill"; done
   done < <(agent_targets "$requested")
 }
 
@@ -132,33 +116,21 @@ skill_state() {
   source_dir="$(skill_source_dir "$skill")"
   target_dir="$(agent_skill_root "$agent")/${skill}"
   target="${target_dir}/SKILL.md"
-
-  if [[ ! -e "$target_dir" ]]; then
-    printf 'missing'
-  elif [[ ! -r "${source_dir}/SKILL.md" ]]; then
-    printf 'source-missing'
-  elif diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1; then
-    printf 'managed'
-  elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then
-    printf 'modified'
-  else
-    printf 'external'
-  fi
+  if [[ ! -e "$target_dir" ]]; then printf 'missing';
+  elif [[ ! -r "${source_dir}/SKILL.md" ]]; then printf 'source-missing';
+  elif diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1; then printf 'managed';
+  elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then printf 'modified';
+  else printf 'external'; fi
 }
 
 cmd_agents_status() {
   [[ $# -eq 0 ]] || die 'usage: harr agents status'
-  local agent ownership
-  ownership=missing
+  local agent ownership=missing
   [[ -f "$HARR_CLEAN_SNAPSHOT" ]] && ownership=clean
   printf 'ownership: %s\n' "$ownership"
   printf '%-12s %-12s %-16s %s\n' AGENT POLICY LEAN-CTX-SKILL HARR-SKILL
   for agent in codex opencode; do
-    printf '%-12s %-12s %-16s %s\n' \
-      "$agent" \
-      "$(policy_state "$agent")" \
-      "$(skill_state "$agent" lean-ctx)" \
-      "$(skill_state "$agent" harr)"
+    printf '%-12s %-12s %-16s %s\n' "$agent" "$(policy_state "$agent")" "$(skill_state "$agent" lean-ctx)" "$(skill_state "$agent" harr)"
   done
 }
 
@@ -168,11 +140,7 @@ cmd_agents() {
   case "$command" in
     apply) cmd_agents_apply "$@" ;;
     status) cmd_agents_status "$@" ;;
-    help|-h|--help)
-      printf '%s\n' 'Usage:' \
-        '  harr agents apply [all|codex|opencode]' \
-        '  harr agents status'
-      ;;
+    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode]' '  harr agents status' ;;
     *) die "unknown agents command: $command (see harr help)" ;;
   esac
 }

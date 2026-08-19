@@ -16,17 +16,26 @@ SERVER_NAME = "lean-ctx"
 DEFAULT_TOOLS_APPROVAL_MODE = "auto"
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser()
 CONFIG = CODEX_HOME / "config.toml"
-LEANCTX = Path.home() / ".local" / "bin" / "lean-ctx"
 
+
+def default_leanctx_command() -> Path:
+    explicit = os.environ.get("HARR_LEANCTX_COMMAND")
+    if explicit:
+        return Path(explicit).expanduser()
+    if os.name == "nt":
+        local = Path(os.environ.get("HARR_LOCALAPPDATA") or os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+        return local / "Harr" / "bin" / "lean-ctx.cmd"
+    return Path.home() / ".local" / "bin" / "lean-ctx"
+
+
+LEANCTX = default_leanctx_command()
 _TABLE_RE = re.compile(r"^\s*\[(?!\[)(.*)\]\s*(?:#.*)?$")
 _ARRAY_TABLE_RE = re.compile(r"^\s*\[\[(.*)\]\]\s*(?:#.*)?$")
 _DEFAULT_TOOLS_APPROVAL_RE = re.compile(r"^\s*default_tools_approval_mode\s*=")
 
 
 def load_config_text() -> str:
-    if not CONFIG.exists():
-        return ""
-    return CONFIG.read_text(encoding="utf-8")
+    return CONFIG.read_text(encoding="utf-8") if CONFIG.exists() else ""
 
 
 def parse_config(text: str) -> dict[str, Any]:
@@ -71,9 +80,7 @@ def codex_cli() -> str | None:
     if os.environ.get("HARR_CODEX_DISABLE_CLI") == "1":
         return None
     explicit = os.environ.get("HARR_CODEX_CLI")
-    if explicit:
-        return explicit
-    return shutil.which("codex")
+    return explicit or shutil.which("codex")
 
 
 def apply_with_codex_cli(binary: str) -> None:
@@ -94,6 +101,8 @@ def apply_with_codex_cli(binary: str) -> None:
             f"official Codex MCP writer failed ({binary} mcp add): {output or f'exit {result.returncode}'}"
         )
 
+    # The official writer can replace this MCP table, so restore Harr's trust
+    # setting after it runs instead of relying on the writer to preserve it.
     ensure_default_tools_approval_mode()
     data = parse_config(load_config_text())
     if not entry_is_managed(current_entry(data)):
@@ -133,7 +142,6 @@ def remove_existing_target_tables(text: str, had_target: bool) -> str:
     lines = text.splitlines(keepends=True)
     remove = [False] * len(lines)
     found_target_table = False
-
     i = 0
     while i < len(lines):
         header = table_header(lines[i])
@@ -150,13 +158,11 @@ def remove_existing_target_tables(text: str, had_target: bool) -> str:
                 i += 1
             continue
         i += 1
-
     if had_target and not found_target_table:
         raise RuntimeError(
             "existing mcp_servers.lean-ctx is encoded as an inline/dotted value that Harr's fallback writer "
             "will not rewrite. Install/use the Codex CLI and rerun, or normalize that one MCP entry to a table."
         )
-
     return "".join(line for idx, line in enumerate(lines) if not remove[idx])
 
 
@@ -173,7 +179,11 @@ def write_config_text(text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(tmp_name, mode)
+        try:
+            os.chmod(tmp_name, mode)
+        except OSError:
+            # Windows ACLs, not POSIX mode bits, control the effective access.
+            pass
         os.replace(tmp_name, CONFIG)
     finally:
         try:
@@ -219,9 +229,7 @@ def apply_with_fallback() -> None:
     CODEX_HOME.mkdir(parents=True, exist_ok=True)
     old_text = load_config_text()
     old_config = parse_config(old_text)
-    had_target = current_entry(old_config) is not None
-    base = remove_existing_target_tables(old_text, had_target).rstrip()
-
+    base = remove_existing_target_tables(old_text, current_entry(old_config) is not None).rstrip()
     block = (
         "[mcp_servers.lean-ctx]\n"
         f"command = {toml_basic_string(str(LEANCTX))}\n"
@@ -232,18 +240,13 @@ def apply_with_fallback() -> None:
     data = parse_config(new_text)
     if not entry_is_managed(current_entry(data)):
         raise RuntimeError("generated Codex TOML did not contain the expected Harr LeanCTX MCP entry")
-
     write_config_text(new_text)
-
     print(f"Applied Harr Codex MCP registration using validated TOML fallback: {CONFIG}")
 
 
 def apply() -> None:
     binary = codex_cli()
-    if binary:
-        apply_with_codex_cli(binary)
-    else:
-        apply_with_fallback()
+    apply_with_codex_cli(binary) if binary else apply_with_fallback()
 
 
 def status() -> int:
@@ -264,7 +267,9 @@ def status() -> int:
         return 0
     print(
         "codex-config\tstale\t"
-        f"expected command={LEANCTX} enabled=true; got command={entry.get('command')!r} enabled={entry.get('enabled', True)!r}"
+        f"expected command={LEANCTX} enabled=true default_tools_approval_mode={DEFAULT_TOOLS_APPROVAL_MODE!r}; "
+        f"got command={entry.get('command')!r} enabled={entry.get('enabled', True)!r} "
+        f"default_tools_approval_mode={entry.get('default_tools_approval_mode')!r}"
     )
     return 1
 

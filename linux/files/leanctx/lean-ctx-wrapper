@@ -4,25 +4,20 @@ set -Eeuo pipefail
 
 readonly HARR_LEANCTX_VERSION="3.9.15"
 readonly REAL="${HARR_LEANCTX_REAL:-${HOME}/.local/libexec/harr/vendor/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx}"
-readonly SECRET_FILE="${HARR_GITLAB_SECRET_FILE:-${HOME}/.config/harr/secrets/gitlab-pat}"
+readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
 
 [[ -x "$REAL" ]] || {
   printf 'Harr LeanCTX binary is missing: %s\nRun: harr install leanctx\n' "$REAL" >&2
   exit 127
 }
+[[ -r "$MANAGER" ]] || {
+  printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2
+  exit 127
+}
 
-# GUI/IDE launches often inherit a smaller PATH than an interactive shell.
-# LeanCTX spawns CodeGraph by command name, so make Harr's user launchers
-# resolvable without depending on shell startup files. Do not change cwd: the
-# inherited project working directory is what makes CodeGraph project-aware.
-export PATH="${HOME}/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+# GUI/IDE launches often inherit a smaller PATH. Keep cwd unchanged so
+# CodeGraph and all other stdio MCPs inherit the current project directory.
+export PATH="${HOME}/.local/bin:${HOME}/.local/share/harr/npm/node_modules/.bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
+export HARR_NPM_BIN_DIR="${HARR_NPM_BIN_DIR:-${HOME}/.local/share/harr/npm/node_modules/.bin}"
 
-if [[ -r "$SECRET_FILE" ]]; then
-  secret=''
-  IFS= read -r secret <"$SECRET_FILE" || true
-  if [[ -n "$secret" ]]; then
-    export LEAN_CTX_SECRET_6D63702F6769746C61622F64656661756C74="$secret"
-  fi
-fi
-
-exec "$REAL" "$@"
+exec python3 "$MANAGER" exec-leanctx "$REAL" -- "$@"

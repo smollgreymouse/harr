@@ -7,43 +7,29 @@ from pathlib import Path
 import sys
 from typing import Any
 
-XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+
+def default_leanctx_command() -> Path:
+    explicit = os.environ.get("HARR_LEANCTX_COMMAND")
+    if explicit:
+        return Path(explicit).expanduser()
+    if os.name == "nt":
+        local = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+        return local / "Harr" / "bin" / "lean-ctx.cmd"
+    return Path.home() / ".local" / "bin" / "lean-ctx"
+
+
+XDG_CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
 OPENCODE_DIR = XDG_CONFIG_HOME / "opencode"
 JSONC = OPENCODE_DIR / "opencode.jsonc"
 JSON = OPENCODE_DIR / "opencode.json"
+LEANCTX = default_leanctx_command()
 
 OLD_AGENTS = {
-    "flow",
-    "wf-design",
-    "wf-build",
-    "reviewer",
-    "explorer",
-    "git",
-    "codegraph",
-    "lean-ctx",
-    "lean-ctx-edit",
-    "lean-ctx-shell",
-    "lean-ctx-git",
+    "flow", "wf-design", "wf-build", "reviewer", "explorer", "git", "codegraph",
+    "lean-ctx", "lean-ctx-edit", "lean-ctx-shell", "lean-ctx-git",
 }
-OLD_COMMANDS = {
-    "build-log.md",
-    "build-ok.md",
-    "quick.md",
-    "review.md",
-    "safe.md",
-    "validate.md",
-}
-OLD_TOOL_KEYS = {
-    "bash",
-    "grep",
-    "read",
-    "edit",
-    "write",
-    "glob",
-    "lean-ctx_*",
-    "ctx_*",
-    "codegraph_*",
-}
+OLD_COMMANDS = {"build-log.md", "build-ok.md", "quick.md", "review.md", "safe.md", "validate.md"}
+OLD_TOOL_KEYS = {"bash", "grep", "read", "edit", "write", "glob", "lean-ctx_*", "ctx_*", "codegraph_*"}
 OLD_PERMISSION_KEYS = OLD_TOOL_KEYS | {"task", "git_*"}
 
 
@@ -142,9 +128,12 @@ def clean_mapping(config: dict[str, Any], key: str, owned: set[str]) -> None:
         config.pop(key, None)
 
 
+def expected_leanctx_entry() -> dict[str, Any]:
+    return {"type": "local", "command": [str(LEANCTX)], "enabled": True}
+
+
 def build_harr_config(current: dict[str, Any]) -> dict[str, Any]:
     config = dict(current)
-
     plugins = config.get("plugin")
     if isinstance(plugins, str):
         plugins = [plugins]
@@ -171,38 +160,26 @@ def build_harr_config(current: dict[str, Any]) -> dict[str, Any]:
     clean_mapping(config, "permission", OLD_PERMISSION_KEYS)
 
     mcp = config.get("mcp")
-    if not isinstance(mcp, dict):
-        mcp = {}
-    else:
-        mcp = dict(mcp)
-    # Harr's normal OpenCode MCP surface is LeanCTX. Specialized Harr MCPs stay
-    # behind LeanCTX; unrelated third-party MCP registrations are preserved.
+    mcp = dict(mcp) if isinstance(mcp, dict) else {}
     mcp.pop("codegraph", None)
     mcp.pop("gitlab", None)
-    mcp["lean-ctx"] = {
-        "type": "local",
-        "command": ["lean-ctx"],
-        "enabled": True,
-    }
+    mcp["lean-ctx"] = expected_leanctx_entry()
     config["mcp"] = mcp
     config.setdefault("$schema", "https://opencode.ai/config.json")
     return config
 
 
 def apply() -> None:
-    current = load_active()
-    config = build_harr_config(current)
+    config = build_harr_config(load_active())
     OPENCODE_DIR.mkdir(parents=True, exist_ok=True)
     JSONC.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if JSON.exists():
         JSON.unlink()
-
     command_dir = OPENCODE_DIR / "commands"
     for name in OLD_COMMANDS:
         path = command_dir / name
         if path.exists() or path.is_symlink():
             path.unlink()
-
     print(f"Applied Harr OpenCode global harness config: {JSONC}")
 
 
@@ -219,7 +196,6 @@ def status() -> int:
         present = sorted(OLD_AGENTS.intersection(agents))
         if present:
             problems.append("legacy-agents=" + ",".join(present))
-
     plugins = config.get("plugin")
     if isinstance(plugins, str):
         plugins = [plugins]
@@ -227,12 +203,15 @@ def status() -> int:
         problems.append("legacy-triage-plugin")
 
     mcp = config.get("mcp")
-    if not isinstance(mcp, dict) or "lean-ctx" not in mcp:
+    if not isinstance(mcp, dict):
         problems.append("lean-ctx-missing")
-    if isinstance(mcp, dict) and "codegraph" in mcp:
-        problems.append("direct-codegraph-present")
-    if isinstance(mcp, dict) and "gitlab" in mcp:
-        problems.append("direct-gitlab-present")
+    else:
+        if mcp.get("lean-ctx") != expected_leanctx_entry():
+            problems.append("lean-ctx-stale")
+        if "codegraph" in mcp:
+            problems.append("direct-codegraph-present")
+        if "gitlab" in mcp:
+            problems.append("direct-gitlab-present")
 
     if problems:
         print("opencode-config\tstale\t" + ";".join(problems))

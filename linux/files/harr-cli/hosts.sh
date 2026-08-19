@@ -1,9 +1,9 @@
 # Harr-owned global host configuration. Project configuration is intentionally out of scope.
 
-if [[ -d "${SELF_DIR:-}/files/hosts" ]]; then
-  readonly HARR_HOST_HELPER_DIR="${SELF_DIR}/files/hosts"
+if [[ -d "${SELF_DIR:-}/../common/hosts" ]]; then
+  readonly HARR_HOST_HELPER_DIR="${SELF_DIR}/../common/hosts"
 else
-  readonly HARR_HOST_HELPER_DIR="${HARR_LIBEXEC_DIR}/hosts"
+  readonly HARR_HOST_HELPER_DIR="${HARR_COMMON_DIR}/hosts"
 fi
 readonly HARR_OPENCODE_HELPER="${HARR_HOST_HELPER_DIR}/opencode-config.py"
 readonly HARR_CODEX_HELPER="${HARR_HOST_HELPER_DIR}/codex-config.py"
@@ -50,9 +50,7 @@ cmd_hosts() {
     apply) cmd_hosts_apply "$@" ;;
     status) cmd_hosts_status "$@" ;;
     help|-h|--help)
-      printf '%s\n' 'Usage:' \
-        '  harr hosts apply' \
-        '  harr hosts status'
+      printf '%s\n' 'Usage:' '  harr hosts apply' '  harr hosts status'
       ;;
     *) die "unknown hosts command: $command (see harr help)" ;;
   esac
