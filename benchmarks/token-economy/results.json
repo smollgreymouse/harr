@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-19",
+  "tokenizer": {
+    "library": "tiktoken",
+    "version": "0.8.0",
+    "encoding": "o200k_base",
+    "billing_usage": false
+  },
+  "schema_context": {
+    "direct_gitlab_tools": 216,
+    "direct_gitlab_tokens": 39873,
+    "leanctx_core_tools": 6,
+    "reduction_tokens": 38545,
+    "reduction_percent": 96.7
+  },
+  "tool_result_pairs": {
+    "exact_installer_read": {
+      "native_tokens": 1934,
+      "leanctx_tokens": 2501,
+      "reduction_percent": -29.3,
+      "note": "Exact line-level ctx_read preserves source and adds line annotations."
+    },
+    "installer_symbol_search": {
+      "native_tokens": 490,
+      "leanctx_tokens": 271,
+      "reduction_percent": 44.7
+    }
+  },
+  "wide_audit_final_output": {
+    "native_tokens": 3089,
+    "leanctx_tokens": 3443,
+    "delta_tokens": 354,
+    "delta_percent": 11.5,
+    "condition": "Warm CodeGraph index; final prose only, not model usage telemetry."
+  }
+}
