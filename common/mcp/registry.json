@@ -3,6 +3,9 @@
   "servers": [
     {
       "name": "codegraph",
+      "label": "CodeGraph",
+      "description": "cross-file code structure and impact analysis",
+      "required": true,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
@@ -15,6 +18,9 @@
     },
     {
       "name": "gitlab",
+      "label": "GitLab",
+      "description": "GitLab API, merge requests, pipelines and issues",
+      "required": false,
       "transport": "http",
       "lifecycle": "service",
       "url": "http://127.0.0.1:3334/mcp",
@@ -26,22 +32,23 @@
         "args": []
       },
       "env_template": "gitlab.env.example",
+      "skill_reference": "gitlab.md",
       "secrets": [
         {
           "name": "gitlab",
           "file": "gitlab-pat",
           "prompt": "GitLab PAT",
           "memento_id": "mcp/gitlab/default",
-          "target": {
-            "kind": "header",
-            "name": "Private-Token"
-          }
+          "target": {"kind": "header", "name": "Private-Token"}
         }
       ],
       "windows_task": "Harr GitLab MCP"
     },
     {
       "name": "grafana",
+      "label": "Grafana",
+      "description": "Grafana dashboards and datasources",
+      "required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
@@ -51,16 +58,14 @@
         "install_hint": "uvx is required for Grafana MCP; install uv/uvx and rerun the Grafana tool"
       },
       "env_template": "grafana.env.example",
+      "skill_reference": "grafana.md",
       "secrets": [
         {
           "name": "grafana",
           "file": "grafana-service-account-token",
           "prompt": "Grafana service account token",
           "memento_id": "mcp/grafana/default",
-          "target": {
-            "kind": "env",
-            "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"
-          }
+          "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
         }
       ]
     }

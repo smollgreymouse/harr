@@ -1,5 +1,6 @@
 # Common Harr CLI helpers.
 
+readonly HARR_PLATFORM="linux"
 readonly HARR_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
 readonly HARR_CONFIG_DIR="${HARR_CONFIG_DIR:-${HARR_CONFIG_HOME}/harr}"
 readonly HARR_MCP_CONFIG_DIR="${HARR_MCP_CONFIG_DIR:-${HARR_CONFIG_DIR}/mcp}"
@@ -15,71 +16,22 @@ readonly HARR_NPM_BIN_DIR="${HARR_NPM_BIN_DIR:-${HARR_NPM_PREFIX}/node_modules/.
 readonly HARR_LEANCTX_CONFIG_DIR="${LEAN_CTX_CONFIG_DIR:-${HARR_CONFIG_HOME}/lean-ctx}"
 readonly HARR_LEANCTX_CONFIG="${HARR_LEANCTX_CONFIG_DIR}/config.toml"
 
-die() {
-  printf 'Error: %s\n' "$*" >&2
-  exit 1
-}
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'Warning: %s\n' "$*" >&2; }
+require_command() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
+ensure_private_dir() { install -d -m 0700 "$1"; }
+require_mcp_manager() { [[ -r "$HARR_MCP_MANAGER" ]] || die "Harr MCP manager missing: $HARR_MCP_MANAGER"; require_command python3; }
+validate_mcp_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "invalid MCP name: $1"; }
 
-warn() {
-  printf 'Warning: %s\n' "$*" >&2
-}
-
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
-}
-
-ensure_private_dir() {
-  install -d -m 0700 "$1"
-}
-
-require_mcp_manager() {
-  [[ -r "$HARR_MCP_MANAGER" ]] || die "Harr MCP manager missing: $HARR_MCP_MANAGER"
-  require_command python3
-}
-
-validate_mcp_name() {
-  local name="$1"
-  [[ "$name" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "invalid MCP name: $name"
-}
-
-mcp_unit() {
-  local name="$1"
-  validate_mcp_name "$name"
-  printf 'harr-mcp@%s.service\n' "$name"
-}
-
-mcp_unit_path() {
-  printf '%s/%s\n' "$HARR_SYSTEMD_USER_DIR" 'harr-mcp@.service'
-}
-
-managed_mcp_names() {
-  require_mcp_manager
-  python3 "$HARR_MCP_MANAGER" names --lifecycle service
-}
-
-all_mcp_names() {
-  require_mcp_manager
-  python3 "$HARR_MCP_MANAGER" names
-}
-
-mcp_exists() {
-  local name="$1"
-  managed_mcp_names | grep -Fxq -- "$name"
-}
-
-require_mcp() {
-  local name="$1"
-  mcp_exists "$name" || die "unknown or non-service Harr MCP: $name"
-}
-
-mcp_env_file() {
-  printf '%s/%s.env\n' "$HARR_MCP_CONFIG_DIR" "$1"
-}
-
-mcp_server_field() {
-  require_mcp_manager
-  python3 "$HARR_MCP_MANAGER" server-field "$1" "$2"
-}
+mcp_unit() { validate_mcp_name "$1"; printf 'harr-mcp@%s.service\n' "$1"; }
+mcp_unit_path() { printf '%s/%s\n' "$HARR_SYSTEMD_USER_DIR" 'harr-mcp@.service'; }
+managed_mcp_names() { mcp_manager names --lifecycle service; }
+all_mcp_names() { mcp_manager names; }
+catalog_service_mcp_names() { mcp_catalog_manager names --lifecycle service; }
+mcp_exists() { managed_mcp_names | grep -Fxq -- "$1"; }
+require_mcp() { mcp_exists "$1" || die "unknown or non-service enabled Harr MCP: $1"; }
+mcp_env_file() { printf '%s/%s.env\n' "$HARR_MCP_CONFIG_DIR" "$1"; }
+mcp_server_field() { mcp_manager server-field "$1" "$2"; }
 
 env_value() {
   local file="$1" key="$2" line
@@ -89,10 +41,7 @@ env_value() {
   printf '%s\n' "${line#*=}"
 }
 
-systemctl_user() {
-  systemctl --user "$@"
-}
-
+systemctl_user() { systemctl --user "$@"; }
 package_version() {
   local package_json="$1"
   [[ -r "$package_json" ]] || return 1

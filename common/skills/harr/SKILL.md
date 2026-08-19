@@ -15,13 +15,20 @@ harr agents status
 harr agents apply
 harr leanctx status
 harr leanctx apply
-harr secret status
-harr secret set gitlab
-harr secret set grafana
+harr mcp available
+harr mcp configure
 harr mcp list
+<!-- harr-mcp:gitlab:start -->
+harr secret set gitlab
 harr mcp status gitlab
 harr mcp logs gitlab
+<!-- harr-mcp:gitlab:end -->
+<!-- harr-mcp:grafana:start -->
+harr secret set grafana
+<!-- harr-mcp:grafana:end -->
 ```
+
+LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
 
 Harr owns managed versions/configuration. Do not independently run upstream LeanCTX setup/update, CodeGraph upgrades, or global installs of Harr-managed MCP packages.
 

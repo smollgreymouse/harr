@@ -10,8 +10,7 @@ write_secret_file() {
 
 secret_meta_field() {
   local name="$1" field="$2"
-  require_mcp_manager
-  python3 "$HARR_MCP_MANAGER" secret "$name" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(sys.argv[1], ""))' "$field"
+  mcp_manager secret "$name" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(sys.argv[1], ""))' "$field"
 }
 
 secret_file() { printf '%s/%s\n' "$HARR_SECRETS_DIR" "$(secret_meta_field "$1" file)"; }
@@ -38,7 +37,6 @@ cmd_secret_set() {
 
 cmd_secret_status() {
   [[ $# -eq 0 ]] || die 'usage: harr secret status'
-  require_mcp_manager
   printf '%-16s %s\n' SECRET STATE
   local line name file
   while IFS= read -r line; do
@@ -46,7 +44,7 @@ cmd_secret_status() {
     name="$(printf '%s' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')"
     file="$(printf '%s' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["file"])')"
     if [[ -s "${HARR_SECRETS_DIR}/${file}" ]]; then printf '%-16s %s\n' "$name" configured; else printf '%-16s %s\n' "$name" missing; fi
-  done < <(python3 "$HARR_MCP_MANAGER" secrets)
+  done < <(mcp_manager secrets)
 }
 
 cmd_secret_unset() {

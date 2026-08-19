@@ -7,7 +7,7 @@ cmd_leanctx_apply() {
   local src backup
   src="$(leanctx_template)"
   [[ -r "$src" ]] || die "LeanCTX base config not found: $src"
-  require_mcp_manager
+  ensure_mcp_effective
   migrate_gitlab_secret_from_leanctx
   ensure_private_dir "$HARR_LEANCTX_CONFIG_DIR"
   if [[ -e "$HARR_LEANCTX_CONFIG" ]] && ! grep -q '^# Managed by Harr\.$' "$HARR_LEANCTX_CONFIG" 2>/dev/null; then
@@ -15,13 +15,13 @@ cmd_leanctx_apply() {
     cp -a "$HARR_LEANCTX_CONFIG" "$backup"
     printf 'Backed up existing LeanCTX config to %s\n' "$backup"
   fi
-  python3 "$HARR_MCP_MANAGER" render-leanctx \
+  mcp_manager render-leanctx \
     --base "$src" \
     --output "$HARR_LEANCTX_CONFIG" \
     --platform "${HARR_PLATFORM:-linux}" \
     --runner-command harr-mcp-run
   chmod 0600 "$HARR_LEANCTX_CONFIG"
-  printf 'Applied Harr LeanCTX config from MCP registry: %s\n' "$HARR_LEANCTX_CONFIG"
+  printf 'Applied Harr LeanCTX config from selected MCP registry: %s\n' "$HARR_LEANCTX_CONFIG"
   if [[ -x "${HOME}/.local/bin/lean-ctx" ]] && ! "${HOME}/.local/bin/lean-ctx" config validate >/dev/null 2>&1; then
     warn 'LeanCTX config validate did not succeed; run: lean-ctx config validate'
   fi

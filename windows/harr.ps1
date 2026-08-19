@@ -26,6 +26,8 @@ Harr Windows CLI
   harr secret status
   harr secret unset NAME
   harr mcp list
+  harr mcp available
+  harr mcp configure [none|all|name1,name2]
   harr mcp start|stop|restart NAME|all
   harr mcp status
   harr mcp logs NAME
@@ -72,6 +74,8 @@ switch ($command) {
     'mcp' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'list') { foreach ($name in @(All-Mcp-Names)) { Write-Host $name } }
+        elseif ($sub -eq 'available') { Mcp-Available }
+        elseif ($sub -eq 'configure') { Mcp-Configure ($(if ($rest.Count -gt 1) { $rest[1] } else { '' })) }
         elseif ($sub -in @('start','stop','restart')) {
             $target = if ($rest.Count -gt 1) { $rest[1] } else { throw 'MCP target required' }
             Mcp-Action $sub $target
@@ -81,9 +85,10 @@ switch ($command) {
             $name = if ($rest.Count -gt 1) { $rest[1] } else { throw 'MCP name required' }
             Mcp-Logs $name
         }
-        else { throw 'usage: harr mcp list|start|stop|restart|status|logs' }
+        else { throw 'usage: harr mcp list|available|configure|start|stop|restart|status|logs' }
     }
     'status' {
+        Write-Host '== MCP selection =='; Mcp-Available; Write-Host ''
         Components-Status
         Hosts-Status
         foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }

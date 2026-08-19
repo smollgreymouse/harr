@@ -17,31 +17,43 @@ Harr-managed specialized MCPs stay behind LeanCTX so their large schemas do not 
 ```text
 Codex / OpenCode
       |
-      | Harr-managed route: LeanCTX
+      | Harr-managed route
       v
-LeanCTX 3.9.15
+LeanCTX 3.9.15                         required
       |
-      +-- stdio -----------> CodeGraph 1.5.0
+      +-- stdio -----------> CodeGraph 1.5.0       required
       |                     inherits LeanCTX cwd
       |
-      +-- HTTP :3334 -----> GitLab MCP 2.1.48 -> GitLab API
+      +-- HTTP :3334 -----> GitLab MCP 2.1.48     optional
       |
-      +-- stdio -----------> Grafana MCP -> uvx mcp-grafana
+      +-- stdio -----------> Grafana MCP           optional
+      |                     uvx mcp-grafana
       |
-      +-- future MCPs -----> common registry -> platform runtime adapter
+      +-- future MCPs -----> common registry       required/optional metadata
 
 Unrelated third-party MCPs/skills may coexist beside this stack.
 ```
 
+LeanCTX and CodeGraph are the fixed Harr baseline. Every other Harr MCP is selectable. A fresh interactive install starts optional MCPs unchecked; the saved choice is reused by later updates.
+
 Direct Harr-managed specialized MCP registrations are not part of the normal host profile; they stay behind LeanCTX.
 
-Platform-independent Harr assets have one source of truth under `common/`. In particular, `common/mcp/registry.json` declares Harr-managed downstream MCP transport, lifecycle, runtime/package, local env template and secret-memento routing. Linux and Windows consume that same registry; `linux/` and `windows/` contain platform-specific installation/lifecycle/path glue. `macos/` reserves the same boundary for a future launchd implementation; macOS installation is not implemented yet.
+Platform-independent Harr assets have one source of truth under `common/`. `common/mcp/registry.json` is the **full MCP catalog** and declares transport, lifecycle, runtime/package, required/optional status, local env template, secret-memento routing, labels/descriptions and optional skill references. Linux, macOS and Windows consume that same catalog; their platform directories contain only installation/lifecycle/path glue.
+
+The user choice is stored separately from the catalog:
+
+```text
+~/.config/harr/mcp-selection.json    # Windows: %USERPROFILE%\.config\harr\...
+~/.config/harr/mcp-registry.json     # generated effective registry
+```
+
+The effective registry is the single source for the active LeanCTX gateway, runtime packages, secrets/status, service lifecycle, global routing policy and installed Harr skill/reference set. Disabling an MCP preserves its existing env/secret files so it can be re-enabled without re-entering configuration.
 
 
 
 ## Quickstart
 
-Linux fresh install:
+### Linux
 
 ```bash
 git clone https://github.com/smollgreymouse/harr.git
@@ -49,12 +61,71 @@ cd harr
 ./install.sh --clean --start
 ```
 
-Windows fresh install from PowerShell:
+### macOS
+
+```bash
+git clone https://github.com/smollgreymouse/harr.git
+cd harr
+./install.sh --clean --start
+```
+
+### Windows
 
 ```powershell
 git clone https://github.com/smollgreymouse/harr.git
 cd harr
 .\install.ps1 -Clean -Start
+```
+
+On the first interactive install all three platforms show the same selector:
+
+```text
+Harr components
+
+  [x] LeanCTX      required  compact MCP gateway
+  [x] CodeGraph    required  cross-file code structure and impact analysis
+> [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
+  [ ] Grafana      optional  Grafana dashboards and datasources
+
+Up/Down move   Space toggle   Enter apply   Esc cancel
+```
+
+LeanCTX and CodeGraph cannot be deselected.
+
+For a completely silent **full** install:
+
+```bash
+# Linux / macOS
+./install.sh --clean --all --start
+```
+
+```powershell
+# Windows
+.\install.ps1 -Clean -All -Start
+```
+
+For a deterministic required-only install:
+
+```bash
+# Linux / macOS
+./install.sh --clean --mcp none
+```
+
+```powershell
+# Windows
+.\install.ps1 -Clean -Mcp none
+```
+
+For an exact optional set, list only the optional MCP names; required components are added automatically:
+
+```bash
+# Linux / macOS
+./install.sh --clean --mcp gitlab,grafana
+```
+
+```powershell
+# Windows
+.\install.ps1 -Clean -Mcp gitlab,grafana
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -63,7 +134,7 @@ If local PowerShell policy blocks scripts, use a process-local bypass rather tha
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Clean -Start
 ```
 
-Configure secrets as needed:
+Configure secrets only for MCPs you enabled:
 
 ```text
 harr secret set gitlab
@@ -78,19 +149,18 @@ Check the whole harness:
 harr status
 ```
 
-Expected normal routing after restarting/reopening Codex or OpenCode:
+Typical required-only routing after restarting/reopening Codex or OpenCode:
 
 ```text
-Codex / OpenCode -> LeanCTX
-                    +-> CodeGraph   (stdio, per-project cwd)
-                    +-> GitLab MCP  (HTTP, Harr-managed user process)
-                    +-> Grafana MCP (stdio, uvx on demand)
+Codex / OpenCode -> LeanCTX -> CodeGraph
 ```
 
-For later Harr updates:
+With optional MCPs selected they appear behind the same LeanCTX gateway.
+
+For later Harr updates, the saved MCP choice is reused without prompting:
 
 ```bash
-# Linux
+# Linux / macOS
 cd harr
 git pull
 ./install.sh
@@ -103,13 +173,19 @@ git pull
 .\install.ps1
 ```
 
+Change the selection later with:
+
+```text
+harr mcp configure
+```
+
 Rollback the entire global Harr takeover:
 
 ```text
 harr uninstall
 ```
 
-If a foreground test instance of a service MCP is already using its configured endpoint, stop it before the first start on either platform.
+If a foreground test instance of a selected service MCP is already using its configured endpoint, stop it before the first start.
 
 
 
@@ -125,6 +201,14 @@ cd harr
 ./install.sh --clean
 ```
 
+macOS:
+
+```bash
+git clone https://github.com/smollgreymouse/harr.git
+cd harr
+./install.sh --clean
+```
+
 Windows:
 
 ```powershell
@@ -133,9 +217,9 @@ cd harr
 .\install.ps1 -Clean
 ```
 
-The clean flag is required for the first takeover. Before writing global state, Harr snapshots the existing global harness.
+The clean flag is required for the first takeover. Before writing global state or the MCP selection, Harr snapshots the existing global harness.
 
-Linux snapshot:
+Linux/macOS snapshot:
 
 ```text
 ~/.local/share/harr-state/pre-harr/
@@ -147,23 +231,35 @@ Windows snapshot:
 %LOCALAPPDATA%\HarrState\pre-harr\
 ```
 
-The Windows snapshot also records the pre-Harr user `PATH` and any scheduled-task names that the current MCP registry will own. When a later Harr version adds a new service MCP, the original snapshot is extended for that new task name **before** Harr registers it. Existing snapshot entries are never replaced.
+The Windows snapshot also records the pre-Harr user `PATH`, MCP selection/effective-registry paths and scheduled-task names that the full MCP catalog may own. When a later Harr version adds a new managed path or service MCP, the original snapshot is extended for that new ownership target **before** Harr modifies it. Existing snapshot entries are never replaced.
+
+Fresh interactive install defaults to the required baseline. If stdin/stdout is not a TTY, Harr keeps that required-only default instead of failing. Use `--all`/`-All` or `--mcp`/`-Mcp` for deterministic automation.
+
+An installation made before MCP selection existed has no saved selection. On its first update to the selection-aware Harr, the migration default is **all**, preserving the MCPs that older Harr versions installed unconditionally. After that, normal updates reuse the saved choice silently. Newly introduced optional MCPs remain disabled until selected; newly introduced required components are added automatically.
 
 Useful modes:
 
 ```bash
-# Linux
+# Linux / macOS
 ./install.sh --clean --start
+./install.sh --clean --all --start
+./install.sh --clean --mcp none
+./install.sh --configure-mcp
 ./install.sh --harr-only
 ```
 
 ```powershell
 # Windows
 .\install.ps1 -Clean -Start
+.\install.ps1 -Clean -All -Start
+.\install.ps1 -Clean -Mcp none
+.\install.ps1 -ConfigureMcp
 .\install.ps1 -HarrOnly
 ```
 
-The installers are user-level; do not run the Linux installer with `sudo` and do not require an elevated Windows shell.
+The installers are user-level; do not run the Linux/macOS installer with `sudo` and do not require an elevated Windows shell.
+
+`--start` / `-Start` starts or restarts only the **enabled service MCPs**. On-demand MCPs are spawned through LeanCTX when called.
 
 
 
@@ -175,6 +271,7 @@ Harr owns and regenerates:
 - global OpenCode `AGENTS.md`, Harr/LeanCTX diagnostic skills, and the active global OpenCode harness config;
 - Harr LeanCTX binary/wrapper/config;
 - Harr CodeGraph convenience launcher and private runtime package;
+- the saved MCP selection and generated effective registry;
 - registry-defined MCP lifecycle/config/secret handling;
 - Harr-private runtime/state directories.
 
@@ -187,9 +284,12 @@ common/
   hosts/
   leanctx/
   mcp/
-    registry.json
-    manager.py
+    registry.json      # full catalog / extension point
+    manager.py         # runtime/config rendering
+    selector.py        # shared terminal selector + effective registry
+    assets.py          # MCP-aware policy/skill rendering
   policy/
+  shell/
   skills/
 ```
 
@@ -205,7 +305,7 @@ harr uninstall
 or from the repository:
 
 ```bash
-# Linux
+# Linux / macOS
 ./uninstall.sh
 ```
 
@@ -217,11 +317,11 @@ or from the repository:
 Before rollback Harr saves the current Harr state under:
 
 ```text
-Linux:   ~/.local/share/harr-uninstall-backups/<timestamp>/
-Windows: %LOCALAPPDATA%\HarrUninstallBackups\<timestamp>\
+Linux/macOS: ~/.local/share/harr-uninstall-backups/<timestamp>/
+Windows:     %LOCALAPPDATA%\HarrUninstallBackups\<timestamp>\
 ```
 
-Then it restores the exact pre-Harr global snapshot, removes paths Harr created when they did not previously exist, disables/removes registry-owned platform lifecycle resources, and leaves every project untouched.
+Then it restores the exact pre-Harr global snapshot, removes paths Harr created when they did not previously exist, disables/removes catalog-owned platform lifecycle resources, and leaves every project untouched.
 
 
 
@@ -246,6 +346,8 @@ Linux:
 ~/.local/share/harr/npm/
 ~/.local/share/harr-state/pre-harr/
 ~/.config/harr/
+  mcp-selection.json
+  mcp-registry.json
   runtime.env
   mcp/*.env
   secrets/*
@@ -263,6 +365,33 @@ ${XDG_CONFIG_HOME:-~/.config}/opencode/
   skills/{harr,lean-ctx}/
 ```
 
+macOS:
+
+```text
+~/.local/bin/
+  harr
+  lean-ctx
+  codegraph
+  harr-mcp-run
+
+~/.local/libexec/harr/
+  common/
+  cli/
+  leanctx/
+  state/
+  vendor/lean-ctx/3.9.15/lean-ctx
+
+~/.config/harr/
+  mcp-selection.json
+  mcp-registry.json
+  runtime.env
+  mcp/*.env
+  secrets/*
+~/.config/lean-ctx/config.toml
+~/Library/LaunchAgents/com.harr.mcp.<name>.plist
+~/Library/Logs/Harr/<name>.{out,err}.log
+```
+
 Windows:
 
 ```text
@@ -277,6 +406,8 @@ Windows:
 
 %LOCALAPPDATA%\HarrState\pre-harr\
 %USERPROFILE%\.config\harr\
+  mcp-selection.json
+  mcp-registry.json
   mcp\*.env
   secrets\*
 %USERPROFILE%\.config\lean-ctx\config.toml
@@ -292,7 +423,7 @@ Windows:
   skills\{harr,lean-ctx}\
 ```
 
-The Windows installer adds `%LOCALAPPDATA%\Harr\bin` to the **user** `PATH`. Registry entries with `lifecycle = service` are mapped to non-elevated per-user logon Scheduled Tasks; Linux maps the same entries to instances of `harr-mcp@.service`.
+The Windows installer adds `%LOCALAPPDATA%\Harr\bin` to the **user** `PATH`. Enabled registry entries with `lifecycle = service` map to non-elevated per-user logon Scheduled Tasks; Linux maps them to `harr-mcp@<name>.service`; macOS maps them to per-user LaunchAgents. Disabled service MCP lifecycle resources are stopped/removed from the active Harr configuration.
 
 
 
@@ -308,7 +439,13 @@ harr install all
 harr install leanctx
 harr install mcp
 
+harr mcp available
 harr mcp list
+harr mcp configure
+harr mcp configure none
+harr mcp configure all
+harr mcp configure gitlab,grafana
+
 harr mcp start gitlab
 harr mcp stop gitlab
 harr mcp restart gitlab
@@ -324,9 +461,11 @@ harr secret unset grafana
 harr uninstall
 ```
 
-`harr mcp list` includes both on-demand and service entries. Lifecycle commands apply only to registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph and Grafana are spawned by LeanCTX when called.
+`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument applies a non-interactive exact set.
 
-The Linux installer enables every registry service MCP through the generic `systemd --user` template but does not start/restart them unless `--start` is supplied. The Windows installer registers their per-user logon tasks and starts/restarts them only when `-Start` is supplied.
+Lifecycle commands apply only to **enabled** registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph and an enabled Grafana are spawned by LeanCTX when called.
+
+Changing the selection reapplies the effective registry, selected runtime package set, LeanCTX gateway, lifecycle registration, global policy and Harr diagnostic skill. Existing env/secret files for disabled MCPs are deliberately preserved.
 
 
 
@@ -334,29 +473,35 @@ The Linux installer enables every registry service MCP through the generic `syst
 
 ### MCP registry
 
-`common/mcp/registry.json` is the extension point for Harr-managed MCPs. The common manager generates the downstream LeanCTX server blocks, npm package set, local env files, component status and secret-memento wiring from this registry.
+`common/mcp/registry.json` is the full extension-point catalog for Harr-managed MCPs. The shared selector writes the chosen subset to the generated effective registry. The common manager then generates downstream LeanCTX server blocks, npm package set, local env files, component status and secret-memento wiring from **that selected subset**.
 
-Supported registry patterns are intentionally small:
+Useful registry metadata is intentionally small:
 
 ```text
+required:   true | false
+label:      short selector label
+description: selector/help description
 transport:  stdio | http
 lifecycle:  on-demand | service
 runtime:    npm package | command already available in PATH
 secret:     LeanCTX secret_env | secret_headers
+skill_reference: optional Harr diagnostic reference owned by that MCP
 ```
 
 Platform adapters implement only what differs by OS: executable paths, process/service lifecycle and rollback ownership. This keeps an MCP declaration shared instead of repeating it in every installer.
 
+A new ordinary optional MCP therefore appears automatically in the selector after updating Harr and stays disabled until chosen. A required MCP is automatically included and cannot be toggled off.
+
 
 ### Codex MCP registration
 
-Codex uses `${CODEX_HOME:-~/.codex}/config.toml` on Linux. On Windows it uses `%CODEX_HOME%` when explicitly set and otherwise `%USERPROFILE%\.codex\config.toml`.
+Codex uses `${CODEX_HOME:-~/.codex}/config.toml` on Linux/macOS. On Windows it uses `%CODEX_HOME%` when explicitly set and otherwise `%USERPROFILE%\.codex\config.toml`.
 
 Harr owns only the `lean-ctx` MCP registration. Its command is an absolute launcher path:
 
 ```text
-Linux:   ~/.local/bin/lean-ctx
-Windows: %LOCALAPPDATA%\Harr\bin\lean-ctx.cmd
+Linux/macOS: ~/.local/bin/lean-ctx
+Windows:     %LOCALAPPDATA%\Harr\bin\lean-ctx.cmd
 ```
 
 The absolute launcher path is intentional: desktop/IDE hosts do not have to inherit Harr's bin directory in `PATH`.
@@ -367,19 +512,27 @@ When a `codex` CLI is available, Harr uses the official MCP writer. If the host 
 
 All unrelated Codex settings and MCPs remain in place. The entire pre-Harr `config.toml` is part of the clean rollback snapshot.
 
-OpenCode uses the shared `common/hosts/opencode-config.py`; its global config is `~/.config/opencode/opencode.jsonc` on Linux and `%USERPROFILE%\.config\opencode\opencode.jsonc` on Windows unless `XDG_CONFIG_HOME` is explicitly set. Harr removes only retired/Harr-owned workflow pieces and preserves unrelated providers, plugins, MCPs and agents.
+OpenCode uses the shared `common/hosts/opencode-config.py`; its global config is `${XDG_CONFIG_HOME:-~/.config}/opencode/opencode.jsonc` on Linux/macOS and `%USERPROFILE%\.config\opencode\opencode.jsonc` on Windows unless `XDG_CONFIG_HOME` is explicitly set. Harr removes only retired/Harr-owned workflow pieces and preserves unrelated providers, plugins, MCPs and agents.
 
 
 
 ### CodeGraph project binding
 
-CodeGraph is declared as an on-demand stdio MCP in the common registry. The generated LeanCTX entry uses the generic runner, which starts the pinned CodeGraph runtime with `serve --mcp` while preserving the agent/LeanCTX working directory. CodeGraph therefore resolves the project-local `.codegraph` index without a machine-global project root.
+CodeGraph is the required downstream MCP. It is declared as an on-demand stdio MCP in the common registry. The generated LeanCTX entry uses the generic runner, which starts the pinned CodeGraph runtime with `serve --mcp` while preserving the agent/LeanCTX working directory. CodeGraph therefore resolves the project-local `.codegraph` index without a machine-global project root.
 
 The separate `codegraph` launcher remains installed for manual commands such as project initialization and status. If the wrong project is resolved, fix the host/LeanCTX cwd rather than adding per-project Harr configuration.
 
 
 
 ### GitLab
+
+GitLab is **optional**. Enable it during install or later with:
+
+```text
+harr mcp configure gitlab
+```
+
+If other optional MCPs are already enabled, include them in the exact set as well, or use the interactive `harr mcp configure` checklist.
 
 GitLab is declared as an HTTP service MCP in the common registry and exposed to LeanCTX at:
 
@@ -391,6 +544,7 @@ Its lifecycle adapter is platform-specific:
 
 ```text
 Linux:   systemd --user instance: harr-mcp@gitlab.service
+macOS:   ~/Library/LaunchAgents/com.harr.mcp.gitlab.plist
 Windows: per-user Scheduled Task
 ```
 
@@ -401,7 +555,7 @@ GITLAB_PERMISSION_MODE=full
 GITLAB_TOOLSETS=all
 ```
 
-The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling.
+The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling while GitLab is enabled.
 
 ```text
 harr secret set gitlab
@@ -409,17 +563,19 @@ harr secret status
 harr secret unset gitlab
 ```
 
+Disabling GitLab removes it from the gateway, agent policy/skill and active service lifecycle, but preserves its local env/secret files.
+
 
 
 ### Grafana
 
-Grafana is declared as an on-demand stdio MCP. The generated LeanCTX route is equivalent to:
+Grafana is **optional** and declared as an on-demand stdio MCP. When enabled, the generated LeanCTX route is equivalent to:
 
 ```text
 LeanCTX -> harr-mcp-run grafana -> uvx mcp-grafana
 ```
 
-`uvx` must be available in `PATH`. Harr creates the non-secret local config from `common/mcp/grafana.env.example`:
+`uvx` must be available in `PATH` only when Grafana is selected/used. Harr creates the non-secret local config from `common/mcp/grafana.env.example`:
 
 ```text
 GRAFANA_URL=http://localhost:3000
@@ -432,7 +588,7 @@ harr secret set grafana
 harr secret status
 ```
 
-The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` through LeanCTX secret-memento handling. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
+The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` through LeanCTX secret-memento handling while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
 
 For dashboard edits, prefer the compact patch-first flow:
 
@@ -449,7 +605,7 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 ### Git
 
-Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. GitLab MCP is reserved for GitLab API data such as merge requests, pipelines, jobs, issues and project/server metadata.
+Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. If GitLab MCP is enabled, it is reserved for GitLab API data such as merge requests, pipelines, jobs, issues and project/server metadata.
 
 
 
@@ -468,19 +624,19 @@ common/hosts/codex.env
 common/hosts/opencode.env
 ```
 
-The permanent policy keeps the original token-saving OpenCode rules:
+The permanent policy always keeps the core token-saving rules:
 
 - MCP for investigation; native host editor for edits;
 - cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
 - all Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`;
-- GitLab API data -> `gitlab` through the gateway;
-- Grafana dashboard work -> `grafana` through the gateway, with targeted reads and patch `update_dashboard` preferred over complete dashboard JSON;
 - uncommon LeanCTX capabilities -> `ctx_call`;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
+
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, and Grafana dashboard guidance does not exist when Grafana is disabled.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 
@@ -503,7 +659,7 @@ Shared sources:
 common/skills/{harr,lean-ctx}/
 ```
 
-They are installed globally for both Codex and OpenCode. Other skill directories are untouched.
+They are installed globally for both Codex and OpenCode. The installed Harr skill is rendered against the same effective MCP registry as the global policy: optional command blocks and component reference files are omitted when that MCP is disabled. Other third-party skill directories are untouched.
 
 
 

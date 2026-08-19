@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:HarrVersion = '0.5.0'
+$script:HarrVersion = '0.6.0'
 $script:LeanVersion = '3.9.15'
 $script:UserHome = if ($env:HARR_HOME) { $env:HARR_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $script:LocalRoot = if ($env:HARR_LOCALAPPDATA) { $env:HARR_LOCALAPPDATA } elseif ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $UserHome 'AppData\Local' }
@@ -14,11 +14,16 @@ $script:LibExecDir = Join-Path $HarrRoot 'libexec'
 $script:CommonDir = Join-Path $LibExecDir 'common'
 $script:WindowsDir = Join-Path $LibExecDir 'windows'
 $script:Manager = Join-Path $CommonDir 'mcp\manager.py'
+$script:Selector = Join-Path $CommonDir 'mcp\selector.py'
+$script:Assets = Join-Path $CommonDir 'mcp\assets.py'
+$script:McpCatalog = Join-Path $CommonDir 'mcp\registry.json'
 $script:NpmPrefix = Join-Path $HarrRoot 'share\npm'
 $script:NpmBin = Join-Path $NpmPrefix 'node_modules\.bin'
 $script:VendorDir = Join-Path $LibExecDir 'vendor'
 $script:HarrConfig = Join-Path $ConfigHome 'harr'
 $script:McpConfig = Join-Path $HarrConfig 'mcp'
+$script:McpSelection = Join-Path $HarrConfig 'mcp-selection.json'
+$script:McpEffective = Join-Path $HarrConfig 'mcp-registry.json'
 $script:SecretsDir = Join-Path $HarrConfig 'secrets'
 $script:LeanConfigDir = Join-Path $ConfigHome 'lean-ctx'
 $script:LeanConfig = Join-Path $LeanConfigDir 'config.toml'
@@ -60,15 +65,43 @@ function Invoke-Python([string[]]$CommandArgs, [switch]$AllowFailure) {
     return $code
 }
 
-function Manager-Lines([string[]]$CommandArgs) {
-    if (-not (Test-Path -LiteralPath $Manager)) { throw "Harr MCP manager missing: $Manager" }
+function Python-Lines([string[]]$CommandArgs) {
     [string[]]$cmd = @(Resolve-Python)
     $exe = $cmd[0]
     [string[]]$prefix = @()
     if ($cmd.Count -gt 1) { $prefix = @($cmd[1..($cmd.Count - 1)]) }
-    $lines = @(& $exe @prefix $Manager @CommandArgs)
-    if ($LASTEXITCODE -ne 0) { throw "MCP manager failed: $($CommandArgs -join ' ')" }
-    return [string[]]$lines
+    [string[]]$lines = @(& $exe @prefix @CommandArgs)
+    if ($LASTEXITCODE -ne 0) { throw "Python command failed: $($CommandArgs -join ' ')" }
+    return $lines
+}
+
+function Ensure-McpEffective {
+    if ((Test-Path -LiteralPath $McpSelection) -and (Test-Path -LiteralPath $McpEffective)) { return }
+    New-Item -ItemType Directory -Force -Path $HarrConfig | Out-Null
+    [void](Invoke-Python @($Selector, '--catalog', $McpCatalog, '--selection', $McpSelection, '--effective', $McpEffective, '--default', 'all'))
+}
+
+function Manager-Lines([string[]]$CommandArgs) {
+    Ensure-McpEffective
+    [string[]]$managerArgs = @($Manager, '--registry', $McpEffective) + $CommandArgs
+    return [string[]]@(Python-Lines $managerArgs)
+}
+
+function Invoke-Manager([string[]]$CommandArgs) {
+    Ensure-McpEffective
+    [string[]]$managerArgs = @($Manager, '--registry', $McpEffective) + $CommandArgs
+    [void](Invoke-Python $managerArgs)
+}
+
+function Catalog-Manager-Lines([string[]]$CommandArgs) {
+    [string[]]$managerArgs = @($Manager, '--registry', $McpCatalog) + $CommandArgs
+    return [string[]]@(Python-Lines $managerArgs)
+}
+
+function Active-McpNames { return [string[]]@(Manager-Lines @('names')) }
+function Catalog-McpServers {
+    if (-not (Test-Path -LiteralPath $McpCatalog)) { return [object[]]@() }
+    return [object[]]@((Get-Content -Raw -LiteralPath $McpCatalog | ConvertFrom-Json).servers)
 }
 
 function Read-Adapter([string]$Name) {
@@ -93,7 +126,14 @@ function Render-Policy([string]$Agent) {
         if (-not $adapter.ContainsKey($name)) { throw "Incomplete Harr host adapter: $Agent ($name missing)" }
         $text = $text.Replace("{{$name}}", [string]$adapter[$name])
     }
-    return $text
+    Ensure-McpEffective
+    $input = [IO.Path]::GetTempFileName()
+    $output = [IO.Path]::GetTempFileName()
+    try {
+        Write-Utf8 $input $text
+        [void](Invoke-Python @($Assets, 'filter-text', '--catalog', $McpCatalog, '--registry', $McpEffective, '--input', $input, '--output', $output))
+        return Get-Content -Raw -LiteralPath $output
+    } finally { Remove-Item $input,$output -Force -ErrorAction SilentlyContinue }
 }
 
 function Agent-PolicyPath([string]$Agent) {
@@ -101,17 +141,20 @@ function Agent-PolicyPath([string]$Agent) {
     if ($Agent -eq 'opencode') { return Join-Path $OpenCodeHome 'AGENTS.md' }
     throw "Unknown agent: $Agent"
 }
-
 function Agent-SkillRoot([string]$Agent) {
     if ($Agent -eq 'codex') { return Join-Path $CodexHome 'skills' }
     if ($Agent -eq 'opencode') { return Join-Path $OpenCodeHome 'skills' }
     throw "Unknown agent: $Agent"
 }
-
 function Copy-TreeFresh([string]$Source, [string]$Target) {
     if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Recurse -Force }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
     Copy-Item -LiteralPath $Source -Destination $Target -Recurse -Force
+}
+function Install-HarrSkill([string]$Target) {
+    Ensure-McpEffective
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
+    [void](Invoke-Python @($Assets, 'filter-skill', '--catalog', $McpCatalog, '--registry', $McpEffective, '--source', (Join-Path $CommonDir 'skills\harr'), '--output', $Target))
 }
 
 function Apply-Agents([string]$Requested = 'all') {
@@ -120,7 +163,8 @@ function Apply-Agents([string]$Requested = 'all') {
     foreach ($agent in $agents) {
         $policy = Agent-PolicyPath $agent
         Write-Utf8 $policy (Render-Policy $agent)
-        foreach ($skill in @('lean-ctx','harr')) { Copy-TreeFresh (Join-Path $CommonDir "skills\$skill") (Join-Path (Agent-SkillRoot $agent) $skill) }
+        Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path (Agent-SkillRoot $agent) 'lean-ctx')
+        Install-HarrSkill (Join-Path (Agent-SkillRoot $agent) 'harr')
         Write-Host "Applied Harr-owned global policy for ${agent}: $policy"
     }
 }
@@ -140,7 +184,6 @@ function Apply-Hosts {
     [void](Invoke-Python -CommandArgs @((Join-Path $CommonDir 'hosts\opencode-config.py'), 'apply'))
     [void](Invoke-Python -CommandArgs @((Join-Path $CommonDir 'hosts\codex-config.py'), 'apply'))
 }
-
 function Hosts-Status {
     $env:HARR_LEANCTX_COMMAND = $LeanCommand
     [void](Invoke-Python -CommandArgs @((Join-Path $CommonDir 'hosts\opencode-config.py'), 'status') -AllowFailure)
