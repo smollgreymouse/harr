@@ -33,21 +33,6 @@ Unrelated third-party MCPs/skills may coexist beside this stack.
 
 Direct Harr-managed CodeGraph/GitLab registrations are not part of the normal profile; they are diagnostic/on-demand bypasses only.
 
-## Measured gateway effect
-
-The gateway reduces the **permanently advertised tool surface**, not the amount of work or data a requested tool returns. The following is a reproducible example from the Harr reference stack on 2026-08-18:
-
-| Measurement | Result | Meaning |
-| --- | ---: | --- |
-| GitLab `tools/list` catalog | 216 tools | The full GitLab MCP catalog with `GITLAB_TOOLSETS=all`. |
-| Catalog response size | 177,710 B (173.5 KiB) | Streamable-HTTP `tools/list` payload, including the MCP response envelope. |
-| Gateway catalog | 217 tools | 216 GitLab tools plus CodeGraph. |
-| Permanently exposed host tools | 6 | `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_glob`, `ctx_tools`, and `ctx_call`. |
-| Hidden specialized tool names | 211 fewer (97.2%) | `(217 - 6) / 217`; specialized schemas stay behind `ctx_tools`. |
-
-This is intentionally **not** presented as a billed-token number. Host serialization, model tokenizer, provider formatting, enabled toolsets, and tool descriptions all change the actual context cost. The 173.5 KiB response is a useful order-of-magnitude proxy for the catalog that is no longer sent as direct host tool definitions on every turn; measure the actual host/model if a billing claim is needed.
-
-The trade-off is real. A direct MCP makes every operation immediately discoverable; the gateway adds a discovery/routing step and can make an underspecified request harder to map to the right specialized operation. `ctx_tools` is therefore best for a large, broad catalog such as GitLab. A small, frequently used, unambiguous toolset may be better exposed directly. Gateway availability, secret-memento configuration, and a project-local CodeGraph index are also quality dependencies: when any of them is unavailable, the agent must follow the fallback route rather than pretending the specialized capability exists.
 
 ## Quickstart
 
@@ -95,6 +80,7 @@ harr uninstall
 
 If a foreground test instance of `mcp-gitlab` is already using port `3334`, stop it before the first `--start` install.
 
+
 ## First install
 
 ```bash
@@ -123,6 +109,7 @@ Useful modes:
 ```
 
 The installer is user-level; do not use `sudo`.
+
 
 ## What clean takeover owns
 
@@ -159,6 +146,7 @@ The Codex CLI loads the existing MCP registry, replaces/adds only `lean-ctx`, an
 
 All unrelated Codex settings and MCPs remain in place. The entire pre-Harr `config.toml` is part of the clean rollback snapshot.
 
+
 ## Rollback / uninstall
 
 ```bash
@@ -179,7 +167,86 @@ Before rollback Harr saves the current Harr state under:
 
 Then it restores the exact pre-Harr global snapshot, removes paths Harr created when they did not previously exist, disables its service, and leaves every project untouched.
 
-## Compact AI routing policy
+
+## Commands
+
+```bash
+harr status
+harr hosts status
+harr agents status
+harr leanctx status
+
+harr install all
+harr install leanctx
+harr install mcp
+
+harr mcp list
+harr mcp start gitlab
+harr mcp stop gitlab
+harr mcp restart gitlab
+harr mcp status gitlab
+harr mcp logs gitlab -f
+
+harr uninstall
+```
+
+The installer enables the GitLab user service but does not start/restart it unless `--start` is supplied. This avoids colliding with a foreground MCP test process already using port `3334`.
+
+
+## MCP infrastructure
+
+### CodeGraph project binding
+
+CodeGraph deliberately stays stdio behind LeanCTX:
+
+```toml
+[[gateway.servers]]
+name = "codegraph"
+transport = "stdio"
+enabled = true
+command = "codegraph"
+args = ["serve", "--mcp"]
+url = ""
+```
+
+LeanCTX does not override the child working directory, so CodeGraph inherits the current agent/LeanCTX cwd and resolves the project-local `.codegraph` index. No Harr file or machine-global project root is required per repository.
+
+If the wrong project is resolved, fix the host/LeanCTX cwd rather than adding per-project Harr configuration.
+
+
+### GitLab
+
+GitLab MCP is a long-lived Harr user service at:
+
+```text
+http://127.0.0.1:3334/mcp
+```
+
+Harr exposes the full GitLab tool catalog behind LeanCTX:
+
+```text
+GITLAB_PERMISSION_MODE=full
+GITLAB_TOOLSETS=all
+```
+
+The PAT is stored only locally at:
+
+```text
+~/.config/harr/secrets/gitlab-pat
+```
+
+with mode `0600`; the Harr LeanCTX wrapper supplies it through LeanCTX secret-memento handling.
+
+```bash
+harr secret set gitlab
+harr secret status
+harr secret unset gitlab
+```
+
+
+## Routing rules
+
+### Compact AI routing policy
 
 The source of truth is one small template:
 
@@ -216,7 +283,8 @@ harr agents apply
 harr agents status
 ```
 
-## Diagnostic skills
+
+### Diagnostic skills
 
 `harr` and `lean-ctx` skills are diagnostic/reference material, not the normal routing prompt. Their descriptions explicitly discourage loading them for ordinary repository work.
 
@@ -227,80 +295,11 @@ harr agents status
 
 Other skill directories are untouched.
 
-## CodeGraph project binding
 
-CodeGraph deliberately stays stdio behind LeanCTX:
-
-```toml
-[[gateway.servers]]
-name = "codegraph"
-transport = "stdio"
-enabled = true
-command = "codegraph"
-args = ["serve", "--mcp"]
-url = ""
-```
-
-LeanCTX does not override the child working directory, so CodeGraph inherits the current agent/LeanCTX cwd and resolves the project-local `.codegraph` index. No Harr file or machine-global project root is required per repository.
-
-If the wrong project is resolved, fix the host/LeanCTX cwd rather than adding per-project Harr configuration.
-
-## Git
+### Git
 
 Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. GitLab MCP is reserved for GitLab API data such as merge requests, pipelines, jobs, issues and project/server metadata.
 
-## GitLab
-
-GitLab MCP is a long-lived Harr user service at:
-
-```text
-http://127.0.0.1:3334/mcp
-```
-
-Harr exposes the full GitLab tool catalog behind LeanCTX:
-
-```text
-GITLAB_PERMISSION_MODE=full
-GITLAB_TOOLSETS=all
-```
-
-The PAT is stored only locally at:
-
-```text
-~/.config/harr/secrets/gitlab-pat
-```
-
-with mode `0600`; the Harr LeanCTX wrapper supplies it through LeanCTX secret-memento handling.
-
-```bash
-harr secret set gitlab
-harr secret status
-harr secret unset gitlab
-```
-
-## Commands
-
-```bash
-harr status
-harr hosts status
-harr agents status
-harr leanctx status
-
-harr install all
-harr install leanctx
-harr install mcp
-
-harr mcp list
-harr mcp start gitlab
-harr mcp stop gitlab
-harr mcp restart gitlab
-harr mcp status gitlab
-harr mcp logs gitlab -f
-
-harr uninstall
-```
-
-The installer enables the GitLab user service but does not start/restart it unless `--start` is supplied. This avoids colliding with a foreground MCP test process already using port `3334`.
 
 ## Installed layout
 
@@ -336,6 +335,7 @@ ${XDG_CONFIG_HOME:-~/.config}/opencode/
   AGENTS.md
   skills/{harr,lean-ctx}/
 ```
+
 
 ## Token-economy benchmark
 
