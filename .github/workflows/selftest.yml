@@ -20,7 +20,7 @@ jobs:
           for f in linux/files/harr-cli/*.sh; do bash -n "$f"; done
       - name: Python syntax and registry render
         run: |
-          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py
+          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py tests/mcp-registry.py
           python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
           python3 common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output /tmp/harr-leanctx.toml --platform linux
           python3 - <<'PY'
@@ -28,6 +28,7 @@ jobs:
           with open('/tmp/harr-leanctx.toml','rb') as f:
               tomllib.load(f)
           PY
+          python3 tests/mcp-registry.py
       - name: Clean takeover and rollback
         run: bash tests/clean-harness.sh
 
@@ -56,10 +57,11 @@ jobs:
       - name: Python syntax and registry render
         shell: pwsh
         run: |
-          python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py
+          python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py tests/mcp-registry.py
           python common/mcp/manager.py npm-package-json | Out-File -Encoding utf8 $env:RUNNER_TEMP\harr-package.json
           python common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output $env:RUNNER_TEMP\harr-leanctx.toml --platform windows
           python -c "import tomllib, pathlib; tomllib.loads(pathlib.Path(r'$env:RUNNER_TEMP\harr-leanctx.toml').read_text())"
+          python tests/mcp-registry.py
       - name: Clean takeover and rollback
         shell: pwsh
         run: ./tests/windows-clean-harness.ps1

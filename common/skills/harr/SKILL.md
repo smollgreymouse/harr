@@ -8,7 +8,7 @@ description: Harr installation and diagnostics only: managed component versions,
 
 Use this skill only when installing, checking, or repairing the harness.
 
-```bash
+```text
 harr status
 harr install all
 harr agents status
@@ -17,6 +17,8 @@ harr leanctx status
 harr leanctx apply
 harr secret status
 harr secret set gitlab
+harr secret set grafana
+harr mcp list
 harr mcp status gitlab
 harr mcp logs gitlab
 ```
