@@ -336,3 +336,23 @@ ${XDG_CONFIG_HOME:-~/.config}/opencode/
   AGENTS.md
   skills/{harr,lean-ctx}/
 ```
+
+## Token-economy benchmark
+
+The reproducible A/B record is in [benchmarks/token-economy](benchmarks/token-economy/README.md).
+It counts saved payloads with `tiktoken` 0.8.0 and the `o200k_base` encoding;
+these are comparable payload counts, not provider billing telemetry or cached-token usage.
+
+| Measurement | Native/direct | Harr/LeanCTX | Difference |
+| --- | ---: | ---: | ---: |
+| Persistent MCP tool catalog | 39,873 tokens / 216 tools | 1,328 tokens / 6 core tools | 38,545 fewer / 96.7% |
+| Exact installer source read | 1,934 | 2,501 | 567 more / 29.3% |
+| Installer symbol search | 490 | 271 | 219 fewer / 44.7% |
+| Broad audit final prose | 3,089 | 3,443 | 354 more / 11.5% |
+
+The large context saving comes from the small LeanCTX gateway surface, while
+individual calls can legitimately be larger when the gateway preserves source
+and adds evidence. The broad audit used a warm CodeGraph index and differs in
+language and response structure, so its final-prose delta is not attributable
+solely to Harr. The saved prompts, raw counts, reproduction command, and
+methodological limitations are in the benchmark directory.
