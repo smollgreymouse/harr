@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly XDG_CONFIG_HOME_REAL="${XDG_CONFIG_HOME:-${HOME}/.config}"
+readonly CODEX_HOME_REAL="${CODEX_HOME:-${HOME}/.codex}"
+readonly STATE_ROOT="${HOME}/.local/share/harr-state"
+readonly PRE_HARR="${STATE_ROOT}/pre-harr"
+readonly RUNTIME_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
+readonly UNINSTALL_BACKUP_ROOT="${HOME}/.local/share/harr-uninstall-backups"
+readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
+readonly LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
+
+service_names() {
+  [[ -r "$MANAGER" ]] && command -v python3 >/dev/null 2>&1 || return 0
+  python3 "$MANAGER" names --lifecycle service
+}
+service_label() { printf 'com.harr.mcp.%s\n' "$1"; }
+service_plist() { printf '%s/%s.plist\n' "$LAUNCH_AGENTS_DIR" "$(service_label "$1")"; }
+service_target() { printf 'gui/%s/%s\n' "$(id -u)" "$(service_label "$1")"; }
+launch_domain() { printf 'gui/%s\n' "$(id -u)"; }
+
+item_target() {
+  case "$1" in
+    codex-agents) printf '%s\n' "${CODEX_HOME_REAL}/AGENTS.md" ;;
+    codex-config) printf '%s\n' "${CODEX_HOME_REAL}/config.toml" ;;
+    opencode-agents) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/AGENTS.md" ;;
+    opencode-jsonc) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.jsonc" ;;
+    opencode-json) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.json" ;;
+    codex-skill-harr) printf '%s\n' "${CODEX_HOME_REAL}/skills/harr" ;;
+    codex-skill-leanctx) printf '%s\n' "${CODEX_HOME_REAL}/skills/lean-ctx" ;;
+    opencode-skill-harr) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/harr" ;;
+    opencode-skill-leanctx) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/lean-ctx" ;;
+    leanctx-config) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/lean-ctx/config.toml" ;;
+    leanctx-launcher) printf '%s\n' "${HOME}/.local/bin/lean-ctx" ;;
+    codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
+    mcp-runner) printf '%s\n' "${HOME}/.local/bin/harr-mcp-run" ;;
+    harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
+    harr-config-root) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr" ;;
+    harr-libexec-root) printf '%s\n' "${HOME}/.local/libexec/harr" ;;
+    harr-share-root) printf '%s\n' "${HOME}/.local/share/harr" ;;
+    launch-agent-*) printf '%s\n' "$(service_plist "${1#launch-agent-}")" ;;
+    ocwf-command-build-log) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/build-log.md" ;;
+    ocwf-command-build-ok) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/build-ok.md" ;;
+    ocwf-command-quick) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/quick.md" ;;
+    ocwf-command-review) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/review.md" ;;
+    ocwf-command-safe) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/safe.md" ;;
+    ocwf-command-validate) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/commands/validate.md" ;;
+    *) printf 'unknown state item: %s\n' "$1" >&2; exit 2 ;;
+  esac
+}
+
+static_items() {
+  printf '%s\n' \
+    codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
+    codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
+    leanctx-config leanctx-launcher codegraph-launcher mcp-runner harr-launcher \
+    harr-config-root harr-libexec-root harr-share-root \
+    ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
+    ocwf-command-review ocwf-command-safe ocwf-command-validate
+}
+
+all_items() {
+  static_items
+  local name
+  while IFS= read -r name; do [[ -n "$name" ]] && printf 'launch-agent-%s\n' "$name"; done < <(service_names)
+}
+
+snapshot_item() {
+  local root="$1" key="$2" target dir
+  target="$(item_target "$key")"; dir="${root}/items/${key}"
+  mkdir -p "$dir"; printf '%s\n' "$target" >"${dir}/target"
+  if [[ -e "$target" || -L "$target" ]]; then
+    printf '1\n' >"${dir}/existed"; rm -rf -- "${dir}/payload"; cp -a -- "$target" "${dir}/payload"
+  else
+    printf '0\n' >"${dir}/existed"
+  fi
+}
+
+snapshot_service_meta() {
+  local root="$1" name="$2" dir loaded=0 disabled=0 plist output
+  dir="${root}/services/${name}"; mkdir -p "$dir"; plist="$(service_plist "$name")"
+  if command -v launchctl >/dev/null 2>&1 && launchctl print "$(service_target "$name")" >/dev/null 2>&1; then loaded=1; fi
+  if ((loaded)) && [[ ! -e "$plist" ]]; then
+    printf 'Refusing clean takeover: %s is already loaded but %s does not exist, so exact rollback is impossible.\n' "$(service_label "$name")" "$plist" >&2
+    exit 4
+  fi
+  output="$(launchctl print-disabled "$(launch_domain)" 2>/dev/null || true)"
+  if printf '%s\n' "$output" | grep -Eq '"?'"$(service_label "$name")"'"?[[:space:]]*=>[[:space:]]*true'; then disabled=1; fi
+  printf '%s\n' "$loaded" >"${dir}/loaded"; printf '%s\n' "$disabled" >"${dir}/disabled"
+}
+
+write_runtime_marker() { mkdir -p "$(dirname -- "$RUNTIME_MARKER")"; printf 'ok\n' >"$RUNTIME_MARKER"; }
+
+extend_snapshot() {
+  local key name
+  while IFS= read -r key; do
+    if [[ ! -d "${PRE_HARR}/items/${key}" ]]; then
+      snapshot_item "$PRE_HARR" "$key"
+      case "$key" in launch-agent-*) name="${key#launch-agent-}"; snapshot_service_meta "$PRE_HARR" "$name" ;; esac
+      printf 'Extended existing pre-Harr snapshot with %s.\n' "$key"
+    fi
+  done < <(all_items)
+}
+
+snapshot_all() {
+  if [[ -f "${PRE_HARR}/complete" ]]; then extend_snapshot; write_runtime_marker; printf 'Pre-Harr snapshot already exists: %s\n' "$PRE_HARR"; return; fi
+  local tmp="${STATE_ROOT}/.pre-harr.$$" key name
+  rm -rf -- "$tmp"; mkdir -p "${tmp}/items" "${tmp}/services"
+  while IFS= read -r key; do
+    snapshot_item "$tmp" "$key"
+    case "$key" in launch-agent-*) name="${key#launch-agent-}"; snapshot_service_meta "$tmp" "$name" ;; esac
+  done < <(all_items)
+  date '+%Y-%m-%dT%H:%M:%S%z' >"${tmp}/created-at"
+  printf 'clean\n' >"${tmp}/mode"; printf 'ok\n' >"${tmp}/complete"
+  mkdir -p "$STATE_ROOT"; mv "$tmp" "$PRE_HARR"; write_runtime_marker
+  printf 'Captured pre-Harr global harness snapshot: %s\n' "$PRE_HARR"
+}
+
+safety_snapshot() {
+  [[ -f "${PRE_HARR}/complete" ]] || return 0
+  local stamp root key name
+  stamp="$(date +%Y%m%d-%H%M%S)"; root="${UNINSTALL_BACKUP_ROOT}/${stamp}"
+  mkdir -p "${root}/items" "${root}/services"
+  while IFS= read -r key; do
+    snapshot_item "$root" "$key"
+    case "$key" in launch-agent-*) name="${key#launch-agent-}"; snapshot_service_meta "$root" "$name" ;; esac
+  done < <(all_items)
+  printf 'ok\n' >"${root}/complete"; printf '%s\n' "$root"
+}
+
+restore_items() {
+  local key dir target existed parent
+  for dir in "${PRE_HARR}/items"/*; do
+    [[ -d "$dir" ]] || continue; key="$(basename "$dir")"
+    [[ -r "${dir}/target" && -r "${dir}/existed" ]] || continue
+    target="$(cat "${dir}/target")"; existed="$(cat "${dir}/existed")"; rm -rf -- "$target"
+    if [[ "$existed" == 1 ]]; then parent="$(dirname -- "$target")"; mkdir -p "$parent"; cp -a -- "${dir}/payload" "$target"; printf 'Restored %s\n' "$target"; else printf 'Removed Harr-created %s\n' "$target"; fi
+  done
+}
+
+restore_services() {
+  local dir name loaded disabled target plist
+  [[ -d "${PRE_HARR}/services" ]] || return 0
+  for dir in "${PRE_HARR}/services"/*; do
+    [[ -d "$dir" ]] || continue; name="$(basename "$dir")"; target="$(service_target "$name")"; plist="$(service_plist "$name")"
+    launchctl bootout "$target" >/dev/null 2>&1 || true
+    loaded="$(cat "${dir}/loaded" 2>/dev/null || printf 0)"; disabled="$(cat "${dir}/disabled" 2>/dev/null || printf 0)"
+    if [[ "$disabled" == 1 ]]; then launchctl disable "$target" >/dev/null 2>&1 || true; else launchctl enable "$target" >/dev/null 2>&1 || true; fi
+    if [[ "$loaded" == 1 && -r "$plist" ]]; then launchctl bootstrap "$(launch_domain)" "$plist" >/dev/null 2>&1 || true; fi
+  done
+}
+
+restore_all() {
+  [[ -f "${PRE_HARR}/complete" ]] || { printf 'No pre-Harr snapshot found: %s\n' "$PRE_HARR" >&2; exit 3; }
+  restore_items; restore_services
+}
+
+case "${1:-}" in
+  snapshot) snapshot_all ;;
+  safety-snapshot) safety_snapshot ;;
+  restore) restore_all ;;
+  status) if [[ -f "${PRE_HARR}/complete" ]]; then printf 'clean-snapshot\tready\t%s\n' "$PRE_HARR"; else printf 'clean-snapshot\tmissing\t%s\n' "$PRE_HARR"; fi ;;
+  *) printf 'usage: harr-state {snapshot|safety-snapshot|restore|status}\n' >&2; exit 2 ;;
+esac

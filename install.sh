@@ -9,8 +9,7 @@ case "$(uname -s)" in
     exec "${ROOT_DIR}/linux/install.sh" "$@"
     ;;
   Darwin)
-    printf 'Error: the macOS platform directory is reserved, but its installer is not implemented yet.\n' >&2
-    exit 1
+    exec "${ROOT_DIR}/macos/install.sh" "$@"
     ;;
   MINGW*|MSYS*|CYGWIN*)
     printf 'Error: use PowerShell on Windows: .\\install.ps1 -Clean [-Start]\n' >&2
