@@ -36,18 +36,39 @@ Treat a request to create an MR as one workflow spanning local Git and the GitLa
 5. Attempt the normal publish path with `git push -u <remote> <branch>` through `ctx_shell`.
 6. If push succeeds, create the MR through `gitlab::create_merge_request`, set the requested assignee/reviewer IDs when supported, then verify the result with `gitlab::get_merge_request` before reporting success.
 
-### Push/auth failure fallback
+### Git transport fallback
 
-A Git transport/authentication failure does not by itself mean MR creation is impossible. If GitLab MCP is enabled and the local change can be represented faithfully through repository file APIs:
+If ordinary Git push fails because SSH credentials are unavailable to the current host or sandbox, do not stop. Retry the **same real Git push** through Harr:
 
-1. Discover `create branch`, `push files`/file update, diff and MR-create capabilities with targeted `ctx_tools find` calls. Prefer a batched/single-commit file operation such as `gitlab::push_files` when available instead of one GitLab commit per file.
+```text
+harr git push -u <remote> <branch>
+```
+
+This is a host-independent Harr capability used by Codex, OpenCode or any other host that routes Git through `ctx_shell`.
+
+Harr's secure GitLab HTTPS bridge:
+
+- derives the configured GitLab host from Harr's GitLab runtime config;
+- refuses to send Harr GitLab credentials to a remote on a different host;
+- rewrites only the current Git process from the SSH GitLab remote form to HTTPS;
+- reads the existing Harr GitLab PAT via `GIT_ASKPASS` without putting the token in command arguments, the repository remote, shell history or Git config;
+- disables interactive terminal credential prompts for that push;
+- performs a normal `git push`, preserving the local commit SHA and all Git semantics including deletions, renames, binary files, symlinks, submodules and mode changes.
+
+The stored token must be valid for Git-over-HTTPS push. A personal access token with `api` works; `write_repository` is the narrower Git repository scope when available. Effective push permission is still bounded by GitLab project/branch permissions.
+
+### Repository-file API fallback
+
+Only if both ordinary Git transport and `harr git push` are unavailable should repository-file API mirroring be considered.
+
+1. Discover the exact repository write capabilities with targeted `ctx_tools find` calls.
 2. Create the remote source branch from the intended target branch.
-3. Mirror the **actual local diff**, not a manually reconstructed approximation. Include additions, updates and deletions; if an expected file operation is not found, refresh and search for that exact operation before giving up.
+3. Mirror the **actual local diff**, not a manually reconstructed approximation, using only operations the enabled GitLab MCP actually exposes.
 4. Verify the remote branch diff with GitLab MCP and compare it with the intended local diff before creating the MR.
 5. Create the MR and verify its source/target branches, state, assignee/reviewer IDs and resulting diff.
 6. State explicitly that API fallback created different remote commit SHA(s) from the local commit, even if the final tree/diff is equivalent.
 
-Do not silently use a browser, `curl`, or expose/use the PAT manually while the enabled GitLab MCP can perform the operation. Do not use the API fallback if the local change cannot be represented exactly, for example unsupported binary, symlink, submodule or mode-only changes; report that limitation instead.
+Do not claim this fallback can represent deletions or other Git changes unless the currently installed GitLab MCP exposes the required operation. In pinned `@zereight/mcp-gitlab 2.1.48`, repository-file deletion is not exposed, so a diff containing a deletion cannot be mirrored faithfully through that MCP alone. Do not silently use a browser, `curl`, or expose/use the PAT manually while Harr's HTTPS Git transport or the enabled GitLab MCP can perform the operation.
 
 ### Identity rules
 
@@ -64,11 +85,11 @@ Do not query both direct and gateway routes for the same operation unless diagno
 
 ## Scope
 
-Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for local and remote Git repository operations such as status, branch checkout, history, fetch, pull, push and commits.
+Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for local and remote Git repository operations. If ordinary Git transport cannot authenticate, use `harr git push` before considering repository-file API mirroring.
 
 ## Authentication and permissions
 
-Harr stores the GitLab PAT privately and LeanCTX supplies it as `Private-Token` through secret-memento handling. Never print or inspect the PAT.
+Harr stores the GitLab PAT privately and LeanCTX supplies it as `Private-Token` through secret-memento handling. The same local secret is used by `harr git push` through `GIT_ASKPASS`; Harr does not print the PAT or persist it into Git configuration.
 
 Harr configures the server with the full tool surface:
 
