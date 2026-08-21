@@ -19,6 +19,7 @@ CLI:
   harr secret unset NAME
   harr leanctx apply
   harr leanctx status
+  harr git push [git-push-options] [remote] [refspec...]
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
@@ -37,6 +38,11 @@ Managed baseline:
   optional registry MCPs are installed only when selected
   compact MCP-aware global AGENTS policy
   diagnostic Harr/LeanCTX skills filtered to the selected MCP set
+
+GitLab transport:
+  With GitLab enabled, `harr git push` performs a real Git push over HTTPS using
+  the stored Harr GitLab PAT through GIT_ASKPASS. It is the common fallback when
+  the current host/sandbox cannot use the repository's SSH credentials.
 
 Ownership:
   Harr owns its GLOBAL harness policy/configuration after --clean.
