@@ -66,6 +66,7 @@ def check(spec: str, expected: list[str]) -> None:
             run(MANAGER, "--registry", effective, "render-leanctx", "--base", BASE, "--output", lean, "--platform", platform, "--runner-command", "harr-mcp-run")
             parsed = tomllib.loads(lean.read_text(encoding="utf-8"))
             assert parsed["gateway"]["top_n"] == 3
+            assert "harr" in parsed["shell_allowlist_extra"]
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
@@ -75,7 +76,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("Creating a GitLab MR is a combined Git + GitLab workflow" in policy) == ("gitlab" in expected)
-        assert ("If push fails only because of Git transport/authentication" in policy) == ("gitlab" in expected)
+        assert ("harr git push [git-push-options] [remote] [refspec...]" in policy) == ("gitlab" in expected)
+        assert ("host-independent secure HTTPS bridge" in policy) == ("gitlab" in expected)
+        assert ("Only if both normal Git transport and `harr git push` are unavailable" in policy) == ("gitlab" in expected)
         assert ("MR author is the authenticated GitLab identity" in policy) == ("gitlab" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in policy
@@ -90,8 +93,10 @@ def check(spec: str, expected: list[str]) -> None:
         if gitlab_ref.exists():
             gitlab_text = gitlab_ref.read_text(encoding="utf-8")
             assert "gitlab::create_merge_request" in gitlab_text
-            assert "gitlab::push_files" in gitlab_text
-            assert "Do not wait for `git push` to fail" in gitlab_text
+            assert "harr git push -u <remote> <branch>" in gitlab_text
+            assert "host-independent Harr capability" in gitlab_text
+            assert "GIT_ASKPASS" in gitlab_text
+            assert "repository-file deletion is not exposed" in gitlab_text
             assert "GitLab MR author is the authenticated GitLab identity" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
