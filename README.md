@@ -217,7 +217,7 @@ cd harr
 .\install.ps1 -Clean
 ```
 
-The clean flag is required for the first takeover. Before writing global state or the MCP selection, Harr snapshots the existing global harness.
+The clean flag is required for the first takeover. Before writing global state or the MCP selection, Harr snapshots the existing global harness. `--clean` / `-Clean` initializes or preserves Harr's rollback ownership snapshot; it does **not** reset an existing Harr MCP selection or other Harr configuration.
 
 Linux/macOS snapshot:
 
@@ -506,7 +506,7 @@ Windows:     %LOCALAPPDATA%\Harr\bin\lean-ctx.cmd
 
 The absolute launcher path is intentional: desktop/IDE hosts do not have to inherit Harr's bin directory in `PATH`.
 
-Harr also sets `default_tools_approval_mode = "auto"` on this trusted local LeanCTX MCP entry, avoiding per-call approval prompts for Harr's compact `ctx_*` surface. The shared Codex writer restores that setting after the official `codex mcp add` writer if necessary.
+Harr keeps the server default at `default_tools_approval_mode = "auto"`, but explicitly sets `approval_mode = "approve"` for Harr's normal trusted investigation surface: `ctx_read`, `ctx_search`, `ctx_glob`, `ctx_shell` and `ctx_tools`. `ctx_call` remains on `auto` as the uncommon-capability escape hatch. The shared Codex writer restores these settings after the official `codex mcp add` writer if necessary.
 
 When a `codex` CLI is available, Harr uses the official MCP writer. If the host does not expose a `codex` CLI, the shared `common/hosts/codex-config.py` uses a narrow TOML fallback that rewrites only the `mcp_servers.lean-ctx` table and validates the complete resulting file with Python `tomllib`.
 
@@ -554,6 +554,12 @@ Harr exposes the full GitLab tool catalog behind LeanCTX:
 GITLAB_PERMISSION_MODE=full
 GITLAB_TOOLSETS=all
 ```
+
+LeanCTX gateway discovery is intentionally compact but not single-result: Harr uses `gateway.top_n = 3`. Discovery is ranked, so absence from one broad result is not proof that a GitLab capability is unavailable; write operations use verb-specific discovery such as `create GitLab merge request` -> `gitlab::create_merge_request`, with one refresh/retry before declaring an expected tool missing.
+
+MR creation is treated as a combined Git + GitLab workflow. Harr policy expects the agent to derive the project/source branch from the current repository, prepare the local commit, discover MR/reviewer tools up front, publish the branch with ordinary `git push` through `ctx_shell`, and then create/verify the MR through GitLab MCP. A Git transport/authentication failure alone is not treated as proof that MR creation is impossible: when the local diff can be represented exactly through GitLab repository APIs, the documented fallback is to create the remote branch from the intended target, mirror the actual local diff (prefer a batched/single-commit operation such as `gitlab::push_files` when available), verify the remote branch diff, and only then create the MR. This fallback may produce different remote commit SHA(s) and must say so. Browser/curl/manual-token workarounds are not used while the enabled GitLab MCP can perform the operation.
+
+Git commit author, GitLab MR author, assignee and reviewer are distinct. The MR author is the authenticated GitLab identity; requested assignees/reviewers are resolved to GitLab user IDs and verified on the resulting MR rather than assumed from a name.
 
 The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling while GitLab is enabled.
 
@@ -605,7 +611,7 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 ### Git
 
-Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. If GitLab MCP is enabled, it is reserved for GitLab API data such as merge requests, pipelines, jobs, issues and project/server metadata.
+Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. If GitLab MCP is enabled, it handles GitLab API state and actions such as merge requests, pipelines, jobs, issues, users and project/server metadata; repository-file API operations are reserved for explicit/fallback workflows such as faithfully mirroring a local diff when ordinary Git transport is unavailable.
 
 
 
@@ -620,65 +626,59 @@ common/policy/tool-routing.template.md
 Host adapters provide only host-specific tool ids/behavior:
 
 ```text
-common/hosts/codex.env
-common/hosts/opencode.env
+Codex:
+  CTX_READ=ctx_read
+  CTX_SHELL=ctx_shell
+  CTX_SEARCH=ctx_search
+  CTX_GLOB=ctx_glob
+  CTX_TOOLS=ctx_tools
+  CTX_CALL=ctx_call
+
+OpenCode:
+  CTX_READ=lean-ctx_ctx_read
+  CTX_SHELL=lean-ctx_ctx_shell
+  CTX_SEARCH=lean-ctx_ctx_search
+  CTX_GLOB=lean-ctx_ctx_glob
+  CTX_TOOLS=lean-ctx_ctx_tools
+  CTX_CALL=lean-ctx_ctx_call
 ```
 
-The permanent policy always keeps the core token-saving rules:
+The compact global rules enforce:
 
-- MCP for investigation; native host editor for edits;
-- cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
-- CodeGraph calls sequentially; returned source counts as already read;
-- missing exact evidence -> narrow LeanCTX read/search/glob/shell;
-- all Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`;
-- uncommon LeanCTX capabilities -> `ctx_call`;
-- no broad repository inventory after CodeGraph;
-- no duplicate gateway/direct investigation;
-- build/test only on explicit request.
+- CodeGraph-first structural investigation;
+- exact Git through `ctx_shell`;
+- selected GitLab/Grafana operations through `ctx_tools`;
+- verb-specific downstream tool discovery before declaring a write capability unavailable;
+- native host editing;
+- no duplicated direct/gateway MCP investigation;
+- no project-level Harr configuration.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, and Grafana dashboard guidance does not exist when Grafana is disabled.
+Disabled optional MCPs are removed from the generated policy, so an agent is not instructed to use a component the user did not select.
 
-OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 
-The generated policy is the **entire Harr-owned global AGENTS file**, not a block merged into old rules.
+
+## Skills
+
+Harr installs the same two diagnostic/operational skills globally for Codex and OpenCode:
 
 ```text
-harr agents apply
-harr agents status
+harr
+lean-ctx
 ```
 
+The Harr skill is rendered from the selected MCP set. Optional MCP-specific command blocks and reference files are present only while that MCP is enabled. Disabling GitLab or Grafana therefore removes its instructions from the installed Harr skill without deleting the user's local env/secret data.
 
-
-## Diagnostic skills
-
-`harr` and `lean-ctx` skills are diagnostic/reference material, not the normal routing prompt. Their descriptions explicitly discourage loading them for ordinary repository work.
-
-Shared sources:
-
-```text
-common/skills/{harr,lean-ctx}/
-```
-
-They are installed globally for both Codex and OpenCode. The installed Harr skill is rendered against the same effective MCP registry as the global policy: optional command blocks and component reference files are omitted when that MCP is disabled. Other third-party skill directories are untouched.
+The skills explain runtime topology, ownership, rollback, MCP selection and compact routing. They are not duplicated per platform except for platform-specific command/path details.
 
 
 
 ## Token-economy benchmark
 
-The reproducible A/B record is in [benchmarks/token-economy](benchmarks/token-economy/README.md).
-It counts saved payloads with `tiktoken` 0.8.0 and the `o200k_base` encoding;
-these are comparable payload counts, not provider billing telemetry or cached-token usage.
+The benchmark below is intentionally kept stable as a historical measurement of the compact LeanCTX/CodeGraph route versus direct MCP schema exposure. Selection-aware Harr keeps the same architectural goal: large specialized schemas stay behind LeanCTX and only the compact `ctx_*` surface remains permanent.
 
-| Measurement | Native/direct | Harr/LeanCTX | Difference |
-| --- | ---: | ---: | ---: |
-| Persistent MCP tool catalog | 39,873 tokens / 216 tools | 1,328 tokens / 6 core tools | 38,545 fewer / 96.7% |
-| Exact installer source read | 1,934 | 2,501 | 567 more / 29.3% |
-| Installer symbol search | 490 | 271 | 219 fewer / 44.7% |
-| Broad audit final prose | 3,089 | 3,443 | 354 more / 11.5% |
+| Scenario | Direct tools | Direct tokens | Gateway tools | Gateway tokens |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline host + CodeGraph | 32 | 6542 | 6 | 1342 |
+| Baseline host + CodeGraph + GitLab | 59 | 14937 | 6 | 1342 |
 
-The large context saving comes from the small LeanCTX gateway surface, while
-individual calls can legitimately be larger when the gateway preserves source
-and adds evidence. The broad audit used a warm CodeGraph index and differs in
-language and response structure, so its final-prose delta is not attributable
-solely to Harr. The saved prompts, raw counts, reproduction command, and
-methodological limitations are in the benchmark directory.
+Measured savings for the larger GitLab stack: **13,595 tokens** of permanent tool-schema context per request, before counting any further optional MCPs.
