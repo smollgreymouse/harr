@@ -217,7 +217,7 @@ cd harr
 .\install.ps1 -Clean
 ```
 
-The clean flag is required for the first takeover. Before writing global state or the MCP selection, Harr snapshots the existing global harness.
+The clean flag is required for the first takeover. Before writing global state or the MCP selection, Harr snapshots the existing global harness. `--clean` / `-Clean` initializes or preserves Harr's rollback ownership snapshot; it does **not** reset an existing Harr MCP selection or other Harr configuration.
 
 Linux/macOS snapshot:
 
@@ -506,7 +506,7 @@ Windows:     %LOCALAPPDATA%\Harr\bin\lean-ctx.cmd
 
 The absolute launcher path is intentional: desktop/IDE hosts do not have to inherit Harr's bin directory in `PATH`.
 
-Harr also sets `default_tools_approval_mode = "auto"` on this trusted local LeanCTX MCP entry, avoiding per-call approval prompts for Harr's compact `ctx_*` surface. The shared Codex writer restores that setting after the official `codex mcp add` writer if necessary.
+Harr keeps the server default at `default_tools_approval_mode = "auto"`, but explicitly sets `approval_mode = "approve"` for Harr's normal trusted investigation surface: `ctx_read`, `ctx_search`, `ctx_glob`, `ctx_shell` and `ctx_tools`. `ctx_call` remains on `auto` as the uncommon-capability escape hatch. The shared Codex writer restores these settings after the official `codex mcp add` writer if necessary.
 
 When a `codex` CLI is available, Harr uses the official MCP writer. If the host does not expose a `codex` CLI, the shared `common/hosts/codex-config.py` uses a narrow TOML fallback that rewrites only the `mcp_servers.lean-ctx` table and validates the complete resulting file with Python `tomllib`.
 
@@ -554,6 +554,12 @@ Harr exposes the full GitLab tool catalog behind LeanCTX:
 GITLAB_PERMISSION_MODE=full
 GITLAB_TOOLSETS=all
 ```
+
+LeanCTX gateway discovery is intentionally compact but not single-result: Harr uses `gateway.top_n = 3`. Discovery is ranked, so absence from one broad result is not proof that a GitLab capability is unavailable; write operations use verb-specific discovery such as `create GitLab merge request` -> `gitlab::create_merge_request`, with one refresh/retry before declaring an expected tool missing.
+
+MR creation is treated as a combined Git + GitLab workflow: derive the project/source branch from the current repository, prepare the local commit, discover MR/reviewer tools up front, publish the branch with ordinary `git push` through `ctx_shell`, then create and verify the MR through GitLab MCP. If Git transport/authentication fails but the local diff can be represented exactly through GitLab repository APIs, the documented fallback is to create the remote branch from the intended target, mirror the actual local diff (prefer a batched/single-commit operation such as `gitlab::push_files` when available), verify the remote branch diff, and only then create the MR. This fallback may produce different remote commit SHA(s) and must say so; browser/curl/manual-token workarounds are not used while the enabled GitLab MCP can perform the operation.
+
+Git commit author, GitLab MR author, assignee and reviewer are distinct. The MR author is the authenticated GitLab identity; requested assignees/reviewers are resolved to GitLab user IDs and verified on the resulting MR rather than assumed from a name.
 
 The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling while GitLab is enabled.
 
@@ -646,7 +652,6 @@ The generated policy is the **entire Harr-owned global AGENTS file**, not a bloc
 harr agents apply
 harr agents status
 ```
-
 
 
 ## Diagnostic skills
