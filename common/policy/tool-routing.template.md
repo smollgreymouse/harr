@@ -7,7 +7,7 @@
 - CodeGraph calls are sequential. Source returned by CodeGraph counts as already read; if another source-code area remains unresolved, make another targeted CodeGraph call before generic read/search/glob/shell.
 - Git repository state/history/branches/remotes/fetch/pull/push/commits: use one exact `git ...` command through `{{CTX_SHELL}}`.
 <!-- harr-mcp:gitlab:start -->
-- GitLab MR/pipeline/job/issue/project/server data: use `gitlab` through `{{CTX_TOOLS}}`.
+- GitLab API operations: use `gitlab` through `{{CTX_TOOLS}}`. Gateway discovery is ranked/limited, so never infer that a capability is absent from an earlier `find`; for writes do a verb-specific `find` first (for example `create GitLab merge request` -> `gitlab::create_merge_request`) and `refresh` once before declaring an expected tool unavailable.
 <!-- harr-mcp:gitlab:end -->
 <!-- harr-mcp:grafana:start -->
 - Grafana dashboard work: use `grafana` through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary.
