@@ -5,7 +5,7 @@
 - Harr-managed specialized MCPs stay behind LeanCTX; unrelated third-party MCPs/skills may coexist globally and follow their own explicit rules.
 - Cross-file structure, flow, relationships, dependencies, architecture, impact, callers/references: FIRST investigation call MUST be `{{CTX_TOOLS}}` with `action="call"`, `tool="codegraph::codegraph_explore"`, `arguments={"query":"<task or relevant symbols/files>"}`.
 - CodeGraph calls are sequential. Source returned by CodeGraph counts as already read; if another source-code area remains unresolved, make another targeted CodeGraph call before generic read/search/glob/shell.
-- Git repository state/history/branches/remotes/fetch/pull/commits and normal pushes: use one exact `git ...` command through `{{CTX_SHELL}}`.
+- Git repository state/history/branches/remotes/fetch/pull/push/commits: use one exact `git ...` command through `{{CTX_SHELL}}`.
 <!-- harr-mcp:gitlab:start -->
 - GitLab API operations: use `gitlab` through `{{CTX_TOOLS}}`. Gateway discovery is ranked/limited, so never infer that a capability is absent from an earlier `find`; for writes do a verb-specific `find` first (for example `create GitLab merge request` -> `gitlab::create_merge_request`) and `refresh` once before declaring an expected tool unavailable.
 - Creating a GitLab MR is a combined Git + GitLab workflow: derive the GitLab project and source branch from the current repository, prepare the local commit, discover the MR/user tools up front, try the normal exact `git push ...` through `{{CTX_SHELL}}`, then create/update the MR and reviewers through `{{CTX_TOOLS}}`.
