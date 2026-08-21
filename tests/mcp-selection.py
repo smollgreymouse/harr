@@ -74,6 +74,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert "codegraph::codegraph_explore" in policy
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
+        assert ("Creating a GitLab MR is a combined Git + GitLab workflow" in policy) == ("gitlab" in expected)
+        assert ("If push fails only because of Git transport/authentication" in policy) == ("gitlab" in expected)
+        assert ("MR author is the authenticated GitLab identity" in policy) == ("gitlab" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in policy
 
@@ -87,6 +90,9 @@ def check(spec: str, expected: list[str]) -> None:
         if gitlab_ref.exists():
             gitlab_text = gitlab_ref.read_text(encoding="utf-8")
             assert "gitlab::create_merge_request" in gitlab_text
+            assert "gitlab::push_files" in gitlab_text
+            assert "Do not wait for `git push` to fail" in gitlab_text
+            assert "GitLab MR author is the authenticated GitLab identity" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in skill
