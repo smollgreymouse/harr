@@ -20,6 +20,7 @@ harr mcp configure
 harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
+harr git push [git-push-options] [remote] [refspec...]
 harr mcp status gitlab
 harr mcp logs gitlab
 <!-- harr-mcp:gitlab:end -->
@@ -29,6 +30,8 @@ harr secret set grafana
 ```
 
 LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
+
+When GitLab is enabled, `harr git push` is the host-independent secure Git-over-HTTPS fallback for a normal Git push that cannot use SSH credentials. It uses the Harr GitLab secret via `GIT_ASKPASS` and does not alter the repository remote.
 
 Harr owns managed versions/configuration. Do not independently run upstream LeanCTX setup/update, CodeGraph upgrades, or global installs of Harr-managed MCP packages.
 
