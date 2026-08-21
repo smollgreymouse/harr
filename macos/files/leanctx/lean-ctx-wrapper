@@ -6,8 +6,10 @@ readonly HARR_LEANCTX_VERSION="3.9.15"
 readonly REAL="${HARR_LEANCTX_REAL:-${HOME}/.local/libexec/harr/vendor/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx}"
 readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
 readonly RUNTIME_ENV="${HARR_RUNTIME_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/runtime.env}"
+readonly EFFECTIVE="${HARR_MCP_EFFECTIVE:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/mcp-registry.json}"
 [[ -x "$REAL" ]] || { printf 'Harr LeanCTX binary is missing: %s\nRun: harr install leanctx\n' "$REAL" >&2; exit 127; }
 [[ -r "$MANAGER" ]] || { printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2; exit 127; }
+[[ -r "$EFFECTIVE" ]] || { printf 'Harr MCP selection is missing: %s\nRun: harr mcp configure\n' "$EFFECTIVE" >&2; exit 127; }
 if [[ -r "$RUNTIME_ENV" ]]; then
   # shellcheck disable=SC1090
   source "$RUNTIME_ENV"
@@ -19,4 +21,4 @@ base_path="${HOME}/.local/bin:${HARR_NPM_BIN_DIR}:/opt/homebrew/bin:/usr/local/b
 export PATH="${base_path}:${PATH:-}"
 python_bin="${HARR_PYTHON_BIN:-$(command -v python3 || true)}"
 [[ -n "$python_bin" && -x "$python_bin" ]] || { printf 'python3 is required by the Harr LeanCTX wrapper\n' >&2; exit 127; }
-exec "$python_bin" "$MANAGER" exec-leanctx "$REAL" -- "$@"
+exec "$python_bin" "$MANAGER" --registry "$EFFECTIVE" exec-leanctx "$REAL" -- "$@"

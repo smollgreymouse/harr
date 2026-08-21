@@ -14,8 +14,7 @@ readonly HARR_POLICY_START='<!-- harr-tool-policy:start -->'
 readonly HARR_CLEAN_SNAPSHOT="${HOME}/.local/share/harr/state/pre-harr/complete"
 
 require_clean_ownership() {
-  [[ -f "$HARR_CLEAN_SNAPSHOT" ]] || \
-    die 'Harr has not taken clean ownership of the global harness; run the repository installer with --clean first'
+  [[ -f "$HARR_CLEAN_SNAPSHOT" ]] || die 'Harr has not taken clean ownership of the global harness; run the repository installer with --clean first'
 }
 
 agent_skill_root() {
@@ -45,6 +44,19 @@ agent_targets() {
 }
 skill_source_dir() { printf '%s/%s\n' "$HARR_SKILLS_SOURCE_DIR" "$1"; }
 
+filter_mcp_text() {
+  local input="$1" output="$2"
+  ensure_mcp_effective
+  [[ -r "$HARR_MCP_ASSETS" ]] || die "Harr MCP asset renderer missing: $HARR_MCP_ASSETS"
+  python3 "$HARR_MCP_ASSETS" filter-text --catalog "$HARR_MCP_CATALOG" --registry "$HARR_MCP_EFFECTIVE" --input "$input" --output "$output"
+}
+
+render_harr_skill() {
+  local target_dir="$1"
+  ensure_mcp_effective
+  python3 "$HARR_MCP_ASSETS" filter-skill --catalog "$HARR_MCP_CATALOG" --registry "$HARR_MCP_EFFECTIVE" --source "$(skill_source_dir harr)" --output "$target_dir"
+}
+
 install_one_skill() {
   local agent="$1" skill="$2" root source_dir target_dir
   root="$(agent_skill_root "$agent")"
@@ -52,13 +64,17 @@ install_one_skill() {
   target_dir="${root}/${skill}"
   [[ -r "${source_dir}/SKILL.md" ]] || die "Harr skill source missing: ${source_dir}/SKILL.md"
   install -d -m 0755 "$root"
-  rm -rf -- "$target_dir"
-  install -d -m 0755 "$target_dir"
-  cp -a "${source_dir}/." "$target_dir/"
+  if [[ "$skill" == harr ]]; then
+    render_harr_skill "$target_dir"
+  else
+    rm -rf -- "$target_dir"
+    install -d -m 0755 "$target_dir"
+    cp -a "${source_dir}/." "$target_dir/"
+  fi
 }
 
 render_agent_policy() {
-  local agent="$1" output="$2" adapter
+  local agent="$1" output="$2" adapter expanded
   adapter="$(agent_adapter "$agent")"
   [[ -r "$HARR_POLICY_TEMPLATE" ]] || die "Harr policy template missing: $HARR_POLICY_TEMPLATE"
   [[ -r "$adapter" ]] || die "Harr host adapter missing: $adapter"
@@ -66,6 +82,7 @@ render_agent_policy() {
   # shellcheck disable=SC1090
   source "$adapter"
   [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" && -n "$HOST_NATIVE_POLICY" ]] || die "incomplete Harr host adapter: $adapter"
+  expanded="$(mktemp)"
   sed \
     -e "s|{{CTX_READ}}|${CTX_READ}|g" \
     -e "s|{{CTX_SHELL}}|${CTX_SHELL}|g" \
@@ -74,7 +91,9 @@ render_agent_policy() {
     -e "s|{{CTX_TOOLS}}|${CTX_TOOLS}|g" \
     -e "s|{{CTX_CALL}}|${CTX_CALL}|g" \
     -e "s|{{HOST_NATIVE_POLICY}}|${HOST_NATIVE_POLICY}|g" \
-    "$HARR_POLICY_TEMPLATE" >"$output"
+    "$HARR_POLICY_TEMPLATE" >"$expanded"
+  filter_mcp_text "$expanded" "$output"
+  rm -f -- "$expanded"
 }
 
 install_agent_policy() {
@@ -112,12 +131,19 @@ cmd_agents_apply() {
 }
 
 skill_state() {
-  local agent="$1" skill="$2" source_dir target_dir target
+  local agent="$1" skill="$2" source_dir target_dir target expected
   source_dir="$(skill_source_dir "$skill")"
   target_dir="$(agent_skill_root "$agent")/${skill}"
   target="${target_dir}/SKILL.md"
-  if [[ ! -e "$target_dir" ]]; then printf 'missing';
-  elif [[ ! -r "${source_dir}/SKILL.md" ]]; then printf 'source-missing';
+  if [[ ! -e "$target_dir" ]]; then printf 'missing'; return; fi
+  if [[ ! -r "${source_dir}/SKILL.md" ]]; then printf 'source-missing'; return; fi
+  if [[ "$skill" == harr ]]; then
+    expected="$(mktemp -d)"
+    render_harr_skill "$expected"
+    if diff -qr "$expected" "$target_dir" >/dev/null 2>&1; then printf 'managed';
+    elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then printf 'modified';
+    else printf 'external'; fi
+    rm -rf -- "$expected"
   elif diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1; then printf 'managed';
   elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then printf 'modified';
   else printf 'external'; fi

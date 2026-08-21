@@ -1,17 +1,27 @@
 function Service-Names { return [string[]]@(Manager-Lines @('names','--lifecycle','service')) }
 function All-Mcp-Names { return [string[]]@(Manager-Lines @('names')) }
+function Catalog-Service-Names { return [string[]]@(Catalog-Manager-Lines @('names','--lifecycle','service')) }
 
 function Task-Name([string]$Name) {
-    $value = (Manager-Lines @('server-field', $Name, 'windows_task') | Select-Object -First 1)
-    if ($value) { return [string]$value }
+    foreach ($server in @(Catalog-McpServers)) {
+        if ([string]$server.name -ne $Name) { continue }
+        if ($server.PSObject.Properties.Name -contains 'windows_task' -and $server.windows_task) { return [string]$server.windows_task }
+        break
+    }
     return "Harr MCP $Name"
 }
 
 function Register-ServiceTasks {
     if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) { throw 'Windows ScheduledTasks module is required for service MCP lifecycle' }
-    foreach ($name in @(Service-Names)) {
+    [string[]]$active = @(Service-Names)
+    foreach ($name in @(Catalog-Service-Names)) {
         if (-not $name) { continue }
         $taskName = Task-Name $name
+        if ($active -notcontains $name) {
+            try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+            try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+            continue
+        }
         $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $WindowsDir 'files\mcp\harr-mcp-run.ps1')`" -Log $name"
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argument
         $trigger = New-ScheduledTaskTrigger -AtLogOn
@@ -46,7 +56,7 @@ function Endpoint-Reachable([string]$Url) {
 function Mcp-Targets([string]$Target) {
     [string[]]$services = @(Service-Names)
     if ($Target -eq 'all') { return $services }
-    if ($services -notcontains $Target) { throw "unknown or non-service Harr MCP: $Target" }
+    if ($services -notcontains $Target) { throw "unknown or non-service enabled Harr MCP: $Target" }
     return [string[]]@($Target)
 }
 
@@ -75,8 +85,31 @@ function Mcp-Status {
     }
 }
 
+function Mcp-Available {
+    Ensure-McpEffective
+    [string[]]$active = @(Active-McpNames)
+    Write-Host ('{0,-14} {1,-10} {2}' -f 'MCP','STATE','KIND')
+    Write-Host ('{0,-14} {1,-10} {2}' -f 'leanctx','enabled','required')
+    foreach ($server in @(Catalog-McpServers)) {
+        $name = [string]$server.name
+        $state = if ($active -contains $name) { 'enabled' } else { 'disabled' }
+        $kind = if ($server.required -eq $true) { 'required' } else { 'optional' }
+        Write-Host ('{0,-14} {1,-10} {2}' -f $name,$state,$kind)
+    }
+}
+
+function Mcp-Configure([string]$Spec = '') {
+    Ensure-McpEffective
+    [string[]]$selectorArgs = @('--catalog', $McpCatalog, '--selection', $McpSelection, '--effective', $McpEffective, '--default', 'all')
+    if ($Spec) { $selectorArgs += @('--spec', $Spec) } else { $selectorArgs += '--configure' }
+    [void](Invoke-Python (@($Selector) + $selectorArgs))
+    Install-Components 'mcp'
+    Apply-Agents 'all'
+    Write-Host 'MCP selection applied. Disabled MCP env/secret files were preserved.'
+}
+
 function Mcp-Logs([string]$Name) {
-    if (@(Service-Names) -notcontains $Name) { throw "unknown or non-service Harr MCP: $Name" }
+    if (@(Service-Names) -notcontains $Name) { throw "unknown or non-service enabled Harr MCP: $Name" }
     $log = Join-Path $LogDir "$Name.log"
     if (Test-Path -LiteralPath $log) { Get-Content -Tail 100 -LiteralPath $log }
     else { Write-Host "No MCP log yet: $log" }
@@ -85,7 +118,7 @@ function Mcp-Logs([string]$Name) {
 function Uninstall-Harr {
     if (-not (Test-Path $StateHelper)) { throw "Harr state helper missing: $StateHelper" }
     & $StateHelper safety-snapshot | Out-Host
-    foreach ($name in @(Service-Names)) {
+    foreach ($name in @(Catalog-Service-Names)) {
         $taskName = Task-Name $name
         try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
         try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }

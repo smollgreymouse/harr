@@ -31,6 +31,8 @@ $Items = [ordered]@{
     'opencode-skill-harr' = Join-Path $OpenCodeHome 'skills\harr'
     'opencode-skill-leanctx' = Join-Path $OpenCodeHome 'skills\lean-ctx'
     'leanctx-config' = Join-Path $ConfigHome 'lean-ctx\config.toml'
+    'harr-mcp-selection' = Join-Path $ConfigHome 'harr\mcp-selection.json'
+    'harr-mcp-effective' = Join-Path $ConfigHome 'harr\mcp-registry.json'
     'ocwf-command-build-log' = Join-Path $OpenCodeHome 'commands\build-log.md'
     'ocwf-command-build-ok' = Join-Path $OpenCodeHome 'commands\build-ok.md'
     'ocwf-command-quick' = Join-Path $OpenCodeHome 'commands\quick.md'
@@ -57,6 +59,15 @@ function Snapshot-Item([string]$Root, [string]$Name, [string]$Target) {
         Copy-Item -LiteralPath $Target -Destination $payload -Recurse -Force
     } else {
         Write-Utf8 (Join-Path $dir 'existed.txt') '0'
+    }
+}
+
+function Extend-ItemSnapshots([string]$Root) {
+    foreach ($entry in $Items.GetEnumerator()) {
+        $dir = Join-Path (Join-Path $Root 'items') $entry.Key
+        if (-not (Test-Path -LiteralPath (Join-Path $dir 'target.txt'))) {
+            Snapshot-Item $Root $entry.Key $entry.Value
+        }
     }
 }
 
@@ -88,10 +99,7 @@ function Task-Key([string]$Name) {
     $bytes = [Text.Encoding]::UTF8.GetBytes($Name)
     return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
 }
-
-function Task-SnapshotDir([string]$Root, [string]$Name) {
-    return Join-Path (Join-Path $Root 'tasks') (Task-Key $Name)
-}
+function Task-SnapshotDir([string]$Root, [string]$Name) { return Join-Path (Join-Path $Root 'tasks') (Task-Key $Name) }
 
 function Snapshot-TaskNamed([string]$Root, [string]$Name) {
     $dir = Task-SnapshotDir $Root $Name
@@ -196,8 +204,9 @@ function Restore-RegistryTasks([string]$Root) {
 switch ($Command) {
     'snapshot' {
         if (Test-Path (Join-Path $PreHarr 'complete')) {
+            Extend-ItemSnapshots $PreHarr
             Snapshot-RegistryTasks $PreHarr
-            Write-Host "Pre-Harr snapshot already exists and registry task ownership is current: $PreHarr"
+            Write-Host "Pre-Harr snapshot already exists and managed ownership is current: $PreHarr"
             exit 0
         }
         $tmp = Join-Path $StateRoot ('.pre-harr-' + [guid]::NewGuid().ToString('N'))

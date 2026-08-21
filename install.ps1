@@ -3,7 +3,10 @@ param(
     [switch]$Clean,
     [switch]$Start,
     [switch]$HarrOnly,
-    [switch]$NoPathUpdate
+    [switch]$NoPathUpdate,
+    [switch]$All,
+    [string]$Mcp,
+    [switch]$ConfigureMcp
 )
 
 Set-StrictMode -Version Latest

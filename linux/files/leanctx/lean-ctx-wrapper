@@ -5,19 +5,15 @@ set -Eeuo pipefail
 readonly HARR_LEANCTX_VERSION="3.9.15"
 readonly REAL="${HARR_LEANCTX_REAL:-${HOME}/.local/libexec/harr/vendor/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx}"
 readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
+readonly EFFECTIVE="${HARR_MCP_EFFECTIVE:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/mcp-registry.json}"
 
-[[ -x "$REAL" ]] || {
-  printf 'Harr LeanCTX binary is missing: %s\nRun: harr install leanctx\n' "$REAL" >&2
-  exit 127
-}
-[[ -r "$MANAGER" ]] || {
-  printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2
-  exit 127
-}
+[[ -x "$REAL" ]] || { printf 'Harr LeanCTX binary is missing: %s\nRun: harr install leanctx\n' "$REAL" >&2; exit 127; }
+[[ -r "$MANAGER" ]] || { printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2; exit 127; }
+[[ -r "$EFFECTIVE" ]] || { printf 'Harr MCP selection is missing: %s\nRun: harr mcp configure\n' "$EFFECTIVE" >&2; exit 127; }
 
 # GUI/IDE launches often inherit a smaller PATH. Keep cwd unchanged so
 # CodeGraph and all other stdio MCPs inherit the current project directory.
 export PATH="${HOME}/.local/bin:${HOME}/.local/share/harr/npm/node_modules/.bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
 export HARR_NPM_BIN_DIR="${HARR_NPM_BIN_DIR:-${HOME}/.local/share/harr/npm/node_modules/.bin}"
 
-exec python3 "$MANAGER" exec-leanctx "$REAL" -- "$@"
+exec python3 "$MANAGER" --registry "$EFFECTIVE" exec-leanctx "$REAL" -- "$@"

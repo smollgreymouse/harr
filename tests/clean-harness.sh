@@ -88,6 +88,7 @@ from pathlib import Path
 
 home = Path(os.environ['HOME'])
 lean = home / '.local' / 'bin' / 'lean-ctx'
+trusted = ('ctx_read', 'ctx_search', 'ctx_glob', 'ctx_shell', 'ctx_tools')
 
 codex_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
 codex = tomllib.loads(codex_path.read_text())
@@ -96,11 +97,14 @@ assert codex['mcp_servers']['external-mcp'] == {
     'url': 'https://example.invalid/codex-mcp',
     'enabled': True,
 }
-assert codex['mcp_servers']['lean-ctx'] == {
-    'command': str(lean),
-    'enabled': True,
-    'default_tools_approval_mode': 'auto',
-}
+leanctx = codex['mcp_servers']['lean-ctx']
+assert leanctx['command'] == str(lean)
+assert leanctx['enabled'] is True
+assert leanctx['default_tools_approval_mode'] == 'auto'
+assert set(leanctx['tools']) == set(trusted)
+for name in trusted:
+    assert leanctx['tools'][name] == {'approval_mode': 'approve'}
+assert 'ctx_call' not in leanctx['tools']
 
 p = Path(os.environ['XDG_CONFIG_HOME']) / 'opencode' / 'opencode.jsonc'
 cfg = json.loads(p.read_text())
@@ -122,16 +126,24 @@ assert 'default_agent' not in cfg
 assert 'subagent_depth' not in cfg
 PY
 
-# The official Codex writer can replace the MCP table. Harr must restore its
-# trust setting after that writer removes it.
+# The official Codex writer can replace the MCP table. Harr must restore the
+# server default and every trusted standard LeanCTX tool override.
 cat >"${TMP}/bin/codex" <<'EOF'
 #!/usr/bin/env bash
 sed -i '/^default_tools_approval_mode = /d' "${CODEX_HOME}/config.toml"
+for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
+  sed -i "/^\[mcp_servers\.lean-ctx\.tools\.${tool}\]$/,+1d" "${CODEX_HOME}/config.toml"
+done
 EOF
 chmod 0755 "${TMP}/bin/codex"
 HARR_CODEX_DISABLE_CLI=0 HARR_CODEX_CLI="${TMP}/bin/codex" \
   python3 "${ROOT}/common/hosts/codex-config.py" apply
 grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
+for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
+  grep -q "^\[mcp_servers\.lean-ctx\.tools\.${tool}\]$" "${CODEX_HOME}/config.toml"
+done
+[[ "$(grep -c '^approval_mode = "approve"$' "${CODEX_HOME}/config.toml")" -eq 5 ]]
+! grep -q '^\[mcp_servers\.lean-ctx\.tools\.ctx_call\]$' "${CODEX_HOME}/config.toml"
 
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/commands/quick.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
@@ -146,6 +158,11 @@ grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
+for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
+  grep -q "^\[mcp_servers\.lean-ctx\.tools\.${tool}\]$" "${CODEX_HOME}/config.toml"
+done
+[[ "$(grep -c '^approval_mode = "approve"$' "${CODEX_HOME}/config.toml")" -eq 5 ]]
+! grep -q '^\[mcp_servers\.lean-ctx\.tools\.ctx_call\]$' "${CODEX_HOME}/config.toml"
 
 mkdir -p "${HOME}/.local/libexec/harr/state"
 install -m 0755 "${ROOT}/linux/files/state/harr-state" "${HOME}/.local/libexec/harr/state/harr-state"

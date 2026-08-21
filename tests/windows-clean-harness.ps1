@@ -65,13 +65,30 @@ enabled = false
         Lean = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
     }
 
-    & (Join-Path $Root 'install.ps1') -Clean -HarrOnly -NoPathUpdate
+    & (Join-Path $Root 'install.ps1') -Clean -HarrOnly -NoPathUpdate -Mcp none
 
     $codexAgents = Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')
     $openAgents = Get-Content -Raw (Join-Path $OpenCodeDir 'AGENTS.md')
     if ($codexAgents -notmatch 'codegraph::codegraph_explore' -or $codexAgents -notmatch 'through `ctx_shell`') { throw 'Codex Harr policy was not applied' }
     if ($openAgents -notmatch 'lean-ctx_ctx_tools' -or $openAgents -notmatch 'Do not use native read/grep/glob/bash') { throw 'OpenCode Harr policy was not applied' }
+    if ($codexAgents -match 'GitLab MR/pipeline' -or $codexAgents -match 'Grafana dashboard work') { throw 'Disabled MCP routing leaked into Codex policy' }
+    if ($openAgents -match 'GitLab MR/pipeline' -or $openAgents -match 'Grafana dashboard work') { throw 'Disabled MCP routing leaked into OpenCode policy' }
     if ($codexAgents -match 'git-mcp' -or $openAgents -match 'git-mcp') { throw 'Retired git-mcp policy leaked into Windows install' }
+
+    $selectionPath = Join-Path $ConfigDir 'harr\mcp-selection.json'
+    $effectivePath = Join-Path $ConfigDir 'harr\mcp-registry.json'
+    $selection = Get-Content -Raw $selectionPath | ConvertFrom-Json
+    $effective = Get-Content -Raw $effectivePath | ConvertFrom-Json
+    if (@($selection.enabled).Count -ne 1 -or $selection.enabled[0] -ne 'codegraph') { throw 'Windows required-only selection is wrong' }
+    if (@($effective.servers).Count -ne 1 -or $effective.servers[0].name -ne 'codegraph') { throw 'Windows effective registry is wrong' }
+
+    $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
+    if ($leanText -notmatch 'name = "codegraph"') { throw 'CodeGraph missing from LeanCTX gateway' }
+    if ($leanText -match 'name = "gitlab"' -or $leanText -match 'name = "grafana"') { throw 'Disabled MCP leaked into LeanCTX gateway' }
+
+    $harrSkill = Join-Path $OpenCodeDir 'skills\harr'
+    if (Test-Path (Join-Path $harrSkill 'references\gitlab.md')) { throw 'Disabled GitLab reference installed' }
+    if (Test-Path (Join-Path $harrSkill 'references\grafana.md')) { throw 'Disabled Grafana reference installed' }
 
     $leanCommand = Join-Path $LocalDir 'Harr\bin\lean-ctx.cmd'
     $open = Get-Content -Raw (Join-Path $OpenCodeDir 'opencode.jsonc') | ConvertFrom-Json
@@ -90,7 +107,7 @@ enabled = false
     if (-not $codexText.Contains('model = "keep-model"') -or -not $codexText.Contains($tomlLeanCommand)) { throw 'Codex config did not preserve existing settings and register LeanCTX' }
     if (-not $codexText.Contains('default_tools_approval_mode = "auto"')) { throw 'Codex LeanCTX tools were not auto-approved' }
 
-    if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP registry missing' }
+    if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }
 
     & (Join-Path $Root 'uninstall.ps1')
@@ -103,6 +120,7 @@ enabled = false
     if ((Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')) -ne $before.Lean) { throw 'LeanCTX config rollback mismatch' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'commands\custom.md'))) { throw 'Unrelated command disappeared after rollback' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\external\SKILL.md'))) { throw 'Unrelated skill disappeared after rollback' }
+    if ((Test-Path $selectionPath) -or (Test-Path $effectivePath)) { throw 'Harr MCP selection state survived rollback' }
     if (Test-Path (Join-Path $LocalDir 'Harr')) { throw 'Harr-created install root survived rollback' }
     if (Test-Path (Join-Path $LocalDir 'HarrState')) { throw 'Harr state root survived rollback' }
 

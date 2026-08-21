@@ -48,30 +48,36 @@ cp "${XDG_CONFIG_HOME}/opencode/AGENTS.md" "${TMP}/opencode-agents.before"
 cp "${XDG_CONFIG_HOME}/opencode/opencode.jsonc" "${TMP}/opencode-config.before"
 cp "${XDG_CONFIG_HOME}/lean-ctx/config.toml" "${TMP}/leanctx.before"
 
-bash "${ROOT}/macos/install.sh" --clean --harr-only
+bash "${ROOT}/macos/install.sh" --clean --harr-only --mcp none
 
 grep -q 'codegraph::codegraph_explore' "${CODEX_HOME}/AGENTS.md"
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
+! grep -q 'GitLab MR/pipeline' "${CODEX_HOME}/AGENTS.md"
+! grep -q 'Grafana dashboard work' "${CODEX_HOME}/AGENTS.md"
 grep -q 'lean-ctx_ctx_tools' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q '^# Managed by Harr\.$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'brew' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+! grep -q 'name = "gitlab"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+! grep -q 'name = "grafana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
+[[ ! -e "${HOME}/Library/LaunchAgents/com.harr.mcp.gitlab.plist" ]]
 
 python3 - <<'PY'
-import os, plistlib, tomllib
+import json, os, tomllib
 from pathlib import Path
 home = Path(os.environ['HOME'])
+config = Path(os.environ['XDG_CONFIG_HOME'])
 codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text())
 assert codex['model'] == 'keep-model'
 assert codex['mcp_servers']['external-mcp']['url'] == 'https://example.invalid/codex-mcp'
 assert codex['mcp_servers']['lean-ctx']['command'] == str(home / '.local/bin/lean-ctx')
 assert codex['mcp_servers']['lean-ctx']['default_tools_approval_mode'] == 'auto'
-plist = home / 'Library/LaunchAgents/com.harr.mcp.gitlab.plist'
-assert plist.is_file()
-with plist.open('rb') as f:
-    job = plistlib.load(f)
-assert job['Label'] == 'com.harr.mcp.gitlab'
-assert job['ProgramArguments'] == [str(home / '.local/bin/harr-mcp-run'), 'gitlab']
-assert job['RunAtLoad'] is True and job['KeepAlive'] is True
+selection = json.loads((config / 'harr/mcp-selection.json').read_text())
+effective = json.loads((config / 'harr/mcp-registry.json').read_text())
+assert selection['enabled'] == ['codegraph']
+assert [item['name'] for item in effective['servers']] == ['codegraph']
 PY
 
 "${HOME}/.local/bin/harr" status >/dev/null
@@ -84,8 +90,9 @@ cmp -s "${TMP}/opencode-config.before" "${XDG_CONFIG_HOME}/opencode/opencode.jso
 cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-selection.json" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-registry.json" ]]
 [[ ! -e "${HOME}/.local/libexec/harr" ]]
-[[ ! -e "${HOME}/Library/LaunchAgents/com.harr.mcp.gitlab.plist" ]]
 [[ ! -e "${HOME}/.local/share/harr-state" ]]
 find "${HOME}/.local/share/harr-uninstall-backups" -mindepth 1 -maxdepth 1 -type d | grep -q .
 

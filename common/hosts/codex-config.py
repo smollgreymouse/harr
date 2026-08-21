@@ -14,6 +14,14 @@ from typing import Any
 
 SERVER_NAME = "lean-ctx"
 DEFAULT_TOOLS_APPROVAL_MODE = "auto"
+TRUSTED_TOOLS = (
+    "ctx_read",
+    "ctx_search",
+    "ctx_glob",
+    "ctx_shell",
+    "ctx_tools",
+)
+TRUSTED_TOOL_APPROVAL_MODE = "approve"
 CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser()
 CONFIG = CODEX_HOME / "config.toml"
 
@@ -55,6 +63,10 @@ def expected_entry() -> dict[str, Any]:
         "command": str(LEANCTX),
         "enabled": True,
         "default_tools_approval_mode": DEFAULT_TOOLS_APPROVAL_MODE,
+        "tools": {
+            name: {"approval_mode": TRUSTED_TOOL_APPROVAL_MODE}
+            for name in TRUSTED_TOOLS
+        },
     }
 
 
@@ -69,11 +81,20 @@ def current_entry(config: dict[str, Any]) -> dict[str, Any] | None:
 def entry_is_managed(entry: dict[str, Any] | None) -> bool:
     if entry is None:
         return False
-    return (
-        entry.get("command") == str(LEANCTX)
-        and entry.get("enabled", True) is True
-        and entry.get("default_tools_approval_mode") == DEFAULT_TOOLS_APPROVAL_MODE
-    )
+    if (
+        entry.get("command") != str(LEANCTX)
+        or entry.get("enabled", True) is not True
+        or entry.get("default_tools_approval_mode") != DEFAULT_TOOLS_APPROVAL_MODE
+    ):
+        return False
+    tools = entry.get("tools")
+    if not isinstance(tools, dict):
+        return False
+    for name in TRUSTED_TOOLS:
+        tool = tools.get(name)
+        if not isinstance(tool, dict) or tool.get("approval_mode") != TRUSTED_TOOL_APPROVAL_MODE:
+            return False
+    return True
 
 
 def codex_cli() -> str | None:
@@ -102,8 +123,8 @@ def apply_with_codex_cli(binary: str) -> None:
         )
 
     # The official writer can replace this MCP table, so restore Harr's trust
-    # setting after it runs instead of relying on the writer to preserve it.
-    ensure_default_tools_approval_mode()
+    # settings after it runs instead of relying on the writer to preserve them.
+    ensure_approval_settings()
     data = parse_config(load_config_text())
     if not entry_is_managed(current_entry(data)):
         raise RuntimeError("Codex CLI completed but LeanCTX MCP registration is not the expected Harr entry")
@@ -166,6 +187,23 @@ def remove_existing_target_tables(text: str, had_target: bool) -> str:
     return "".join(line for idx, line in enumerate(lines) if not remove[idx])
 
 
+def remove_exact_table(text: str, target: list[str]) -> str:
+    lines = text.splitlines(keepends=True)
+    remove = [False] * len(lines)
+    i = 0
+    while i < len(lines):
+        header = table_header(lines[i])
+        if header == ("table", target):
+            remove[i] = True
+            i += 1
+            while i < len(lines) and table_header(lines[i]) is None:
+                remove[i] = True
+                i += 1
+            continue
+        i += 1
+    return "".join(line for idx, line in enumerate(lines) if not remove[idx])
+
+
 def toml_basic_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
@@ -192,7 +230,7 @@ def write_config_text(text: str) -> None:
             pass
 
 
-def ensure_default_tools_approval_mode() -> None:
+def ensure_approval_settings() -> None:
     text = load_config_text()
     lines = text.splitlines(keepends=True)
     target_header = None
@@ -221,8 +259,35 @@ def ensure_default_tools_approval_mode() -> None:
         lines.insert(table_end, replacement)
 
     new_text = "".join(lines)
+    for name in TRUSTED_TOOLS:
+        new_text = remove_exact_table(
+            new_text,
+            ["mcp_servers", SERVER_NAME, "tools", name],
+        ).rstrip()
+
+    tool_blocks = "\n\n".join(
+        f"[mcp_servers.{SERVER_NAME}.tools.{name}]\n"
+        f'approval_mode = "{TRUSTED_TOOL_APPROVAL_MODE}"'
+        for name in TRUSTED_TOOLS
+    )
+    new_text = f"{new_text}\n\n{tool_blocks}\n" if new_text else f"{tool_blocks}\n"
     parse_config(new_text)
     write_config_text(new_text)
+
+
+def managed_block() -> str:
+    server = (
+        "[mcp_servers.lean-ctx]\n"
+        f"command = {toml_basic_string(str(LEANCTX))}\n"
+        "enabled = true\n"
+        f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"'
+    )
+    tools = "\n\n".join(
+        f"[mcp_servers.lean-ctx.tools.{name}]\n"
+        f'approval_mode = "{TRUSTED_TOOL_APPROVAL_MODE}"'
+        for name in TRUSTED_TOOLS
+    )
+    return f"{server}\n\n{tools}\n"
 
 
 def apply_with_fallback() -> None:
@@ -230,12 +295,7 @@ def apply_with_fallback() -> None:
     old_text = load_config_text()
     old_config = parse_config(old_text)
     base = remove_existing_target_tables(old_text, current_entry(old_config) is not None).rstrip()
-    block = (
-        "[mcp_servers.lean-ctx]\n"
-        f"command = {toml_basic_string(str(LEANCTX))}\n"
-        "enabled = true\n"
-        f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"\n'
-    )
+    block = managed_block()
     new_text = f"{base}\n\n{block}" if base else block
     data = parse_config(new_text)
     if not entry_is_managed(current_entry(data)):
@@ -265,11 +325,19 @@ def status() -> int:
     if entry_is_managed(entry):
         print(f"codex-config\tmanaged\t{CONFIG}")
         return 0
+
+    tools = entry.get("tools") if isinstance(entry, dict) else None
+    actual_modes: dict[str, Any] = {}
+    for name in TRUSTED_TOOLS:
+        tool = tools.get(name) if isinstance(tools, dict) else None
+        actual_modes[name] = tool.get("approval_mode") if isinstance(tool, dict) else None
     print(
         "codex-config\tstale\t"
-        f"expected command={LEANCTX} enabled=true default_tools_approval_mode={DEFAULT_TOOLS_APPROVAL_MODE!r}; "
+        f"expected command={LEANCTX} enabled=true default_tools_approval_mode={DEFAULT_TOOLS_APPROVAL_MODE!r} "
+        f"trusted_tools={dict.fromkeys(TRUSTED_TOOLS, TRUSTED_TOOL_APPROVAL_MODE)!r}; "
         f"got command={entry.get('command')!r} enabled={entry.get('enabled', True)!r} "
-        f"default_tools_approval_mode={entry.get('default_tools_approval_mode')!r}"
+        f"default_tools_approval_mode={entry.get('default_tools_approval_mode')!r} "
+        f"trusted_tools={actual_modes!r}"
     )
     return 1
 
