@@ -65,13 +65,15 @@ def check(spec: str, expected: list[str]) -> None:
             lean = tmp / f"lean-{platform}.toml"
             run(MANAGER, "--registry", effective, "render-leanctx", "--base", BASE, "--output", lean, "--platform", platform, "--runner-command", "harr-mcp-run")
             parsed = tomllib.loads(lean.read_text(encoding="utf-8"))
+            assert parsed["gateway"]["top_n"] == 3
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
         run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--input", POLICY, "--output", filtered_policy)
         policy = filtered_policy.read_text(encoding="utf-8")
         assert "codegraph::codegraph_explore" in policy
-        assert ("GitLab MR/pipeline" in policy) == ("gitlab" in expected)
+        assert ("GitLab API operations" in policy) == ("gitlab" in expected)
+        assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in policy
 
@@ -80,7 +82,12 @@ def check(spec: str, expected: list[str]) -> None:
         skill = (filtered_skill / "SKILL.md").read_text(encoding="utf-8")
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
-        assert (filtered_skill / "references" / "gitlab.md").exists() == ("gitlab" in expected)
+        gitlab_ref = filtered_skill / "references" / "gitlab.md"
+        assert gitlab_ref.exists() == ("gitlab" in expected)
+        if gitlab_ref.exists():
+            gitlab_text = gitlab_ref.read_text(encoding="utf-8")
+            assert "gitlab::create_merge_request" in gitlab_text
+            assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in skill
 
