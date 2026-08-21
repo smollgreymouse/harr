@@ -11,6 +11,7 @@ $ModuleDir = Join-Path $PSScriptRoot 'windows\files\harr-cli'
 . (Join-Path $ModuleDir 'common.ps1')
 . (Join-Path $ModuleDir 'mcp.ps1')
 . (Join-Path $ModuleDir 'runtime.ps1')
+. (Join-Path $ModuleDir 'git.ps1')
 
 function Show-Help {
     @'
@@ -25,6 +26,7 @@ Harr Windows CLI
   harr secret set NAME
   harr secret status
   harr secret unset NAME
+  harr git push [git-push-options] [remote] [refspec...]
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
@@ -71,6 +73,7 @@ switch ($command) {
         $name = if ($rest.Count -gt 1) { $rest[1] } else { '' }
         Secret-Command $sub $name
     }
+    'git' { Git-Command $rest }
     'mcp' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'list') { foreach ($name in @(All-Mcp-Names)) { Write-Host $name } }
