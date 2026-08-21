@@ -17,6 +17,7 @@ CLI:
   harr secret set NAME
   harr secret status
   harr secret unset NAME
+  harr git push [git-push-options] [remote] [refspec...]
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
@@ -27,6 +28,10 @@ CLI:
 
 LeanCTX and CodeGraph are required. Optional registry MCPs are installed only
 when selected; global policy and Harr skill references follow the same set.
+
+With GitLab enabled, `harr git push` is the common host-independent fallback
+for SSH/auth failures: it performs a real Git push over HTTPS using the stored
+Harr GitLab PAT through GIT_ASKPASS without changing the repository remote.
 EOF
 }
 
