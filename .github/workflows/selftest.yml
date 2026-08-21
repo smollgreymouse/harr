@@ -20,7 +20,7 @@ jobs:
           for f in linux/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax and MCP contracts
         run: |
-          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py tests/mcp-registry.py tests/mcp-selection.py
+          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/gitlab/git_https.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py
           python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
           python3 common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output /tmp/harr-leanctx.toml --platform linux
           python3 - <<'PY'
@@ -30,6 +30,7 @@ jobs:
           PY
           python3 tests/mcp-registry.py
           python3 tests/mcp-selection.py
+          python3 tests/gitlab-git-https.py
       - name: Clean takeover and rollback
         run: bash tests/clean-harness.sh
 
@@ -45,11 +46,12 @@ jobs:
           bash -n macos/files/state/harr-state
           bash -n macos/files/mcp/harr-mcp-run macos/files/mcp/codegraph-cli macos/files/leanctx/lean-ctx-wrapper
           for f in macos/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
-          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py tests/mcp-registry.py tests/mcp-selection.py
+          python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/gitlab/git_https.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py
           python3 common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output "$RUNNER_TEMP/harr-leanctx.toml" --platform macos
           python3 -c 'import os,tomllib; tomllib.load(open(os.environ["RUNNER_TEMP"]+"/harr-leanctx.toml","rb"))'
           python3 tests/mcp-registry.py
           python3 tests/mcp-selection.py
+          python3 tests/gitlab-git-https.py
       - name: Clean takeover and rollback
         shell: bash
         run: bash tests/macos-clean-harness.sh
@@ -71,6 +73,7 @@ jobs:
             'windows/files/harr-cli/common.ps1',
             'windows/files/harr-cli/runtime.ps1',
             'windows/files/harr-cli/mcp.ps1',
+            'windows/files/harr-cli/git.ps1',
             'tests/windows-clean-harness.ps1'
           )
           foreach ($file in $files) {
@@ -79,12 +82,13 @@ jobs:
       - name: Python syntax and MCP contracts
         shell: pwsh
         run: |
-          python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py tests/mcp-registry.py tests/mcp-selection.py
+          python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/gitlab/git_https.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py
           python common/mcp/manager.py npm-package-json | Out-File -Encoding utf8 $env:RUNNER_TEMP\harr-package.json
           python common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output $env:RUNNER_TEMP\harr-leanctx.toml --platform windows
           python -c "import tomllib, pathlib; tomllib.loads(pathlib.Path(r'$env:RUNNER_TEMP\harr-leanctx.toml').read_text())"
           python tests/mcp-registry.py
           python tests/mcp-selection.py
+          python tests/gitlab-git-https.py
       - name: Clean takeover and rollback
         shell: pwsh
         run: ./tests/windows-clean-harness.ps1
