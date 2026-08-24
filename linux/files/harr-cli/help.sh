@@ -21,6 +21,10 @@ CLI:
   harr leanctx status
   harr git publish [remote]
   harr git push [git-push-options] [remote] [refspec...]
+  harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
+  harr kube sync [--allow-exec] [--no-check]
+  harr kube status [--no-check]
+  harr kubectl <kubectl args...>
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
@@ -46,6 +50,12 @@ GitLab transport:
   verifies the remote SHA, and fixes stale upstream tracking. It uses the stored
   Harr GitLab PAT through GIT_ASKPASS over HTTPS and never needs an SSH attempt.
   `harr git push` is the lower-level HTTPS/PAT command for custom push refspecs.
+
+Kubernetes transport:
+  `harr kube configure` captures the working kubectl configuration as a private
+  flattened Harr snapshot. `harr kubectl ...` always runs the real kubectl with
+  that managed config, so agent hosts do not need access to ~/.kube/config.
+  Exec credential helpers are rejected by default unless explicitly allowed.
 
 Ownership:
   Harr owns its GLOBAL harness policy/configuration after --clean.
