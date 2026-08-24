@@ -73,6 +73,9 @@ def check(spec: str, expected: list[str]) -> None:
         run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--input", POLICY, "--output", filtered_policy)
         policy = filtered_policy.read_text(encoding="utf-8")
         assert "codegraph::codegraph_explore" in policy
+        assert "Kubernetes cluster operations" in policy
+        assert "harr kubectl ..." in policy
+        assert "Do not use a Kubernetes MCP" in policy
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("MR source branch is ALWAYS the current named local branch" in policy) == ("gitlab" in expected)
@@ -88,6 +91,14 @@ def check(spec: str, expected: list[str]) -> None:
         filtered_skill = tmp / "harr-skill"
         run(ASSETS, "filter-skill", "--catalog", CATALOG, "--registry", effective, "--source", SKILL, "--output", filtered_skill)
         skill = (filtered_skill / "SKILL.md").read_text(encoding="utf-8")
+        assert "harr kube configure" in skill
+        assert "harr kubectl <kubectl args...>" in skill
+        kube_ref = filtered_skill / "references" / "kubernetes.md"
+        assert kube_ref.exists()
+        kube_text = kube_ref.read_text(encoding="utf-8")
+        assert "Kubernetes is intentionally **not** a Harr MCP component" in kube_text
+        assert "kubectl config view --raw --flatten -o json" in kube_text
+        assert "user.exec" in kube_text
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
