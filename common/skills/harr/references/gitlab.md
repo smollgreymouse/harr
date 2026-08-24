@@ -27,39 +27,61 @@ If an expected tool is not returned, call `ctx_tools` with `action="refresh"` on
 
 ## Merge request creation workflow
 
-Treat a request to create an MR as one workflow spanning local Git and the GitLab API. Do not wait for `git push` to fail before discovering that GitLab write tools exist.
+Treat a request to create an MR as one workflow spanning local Git and the GitLab API. Do not infer the MR source branch from Git upstream configuration.
 
-1. Derive the GitLab project from the current repository remote and identify the current source branch and intended target branch. Do not reuse a project ID from another task or repository.
-2. Prepare/inspect the local commit with exact `git ...` commands through `ctx_shell`.
-3. Before publishing, discover the required GitLab tools with targeted queries, at minimum `gitlab::create_merge_request` plus user lookup when assignees/reviewers were requested.
-4. Resolve requested assignees/reviewers to GitLab user IDs. Git commit author, GitLab MR author, assignee and reviewer are separate concepts.
-5. Attempt the normal publish path with `git push -u <remote> <branch>` through `ctx_shell`.
-6. If push succeeds, create the MR through `gitlab::create_merge_request`, set the requested assignee/reviewer IDs when supported, then verify the result with `gitlab::get_merge_request` before reporting success.
-
-### Git transport fallback
-
-If ordinary Git push fails because SSH credentials are unavailable to the current host or sandbox, do not stop. Retry the **same real Git push** through Harr:
+1. Derive the GitLab project from the current repository remote and determine the intended target branch separately.
+2. Read the current **named local branch** with Git. Detached HEAD is not a valid MR source; the source branch must also differ from the intended target branch.
+3. Prepare/inspect the local commit with exact `git ...` commands through `ctx_shell`.
+4. Before publishing, discover the required GitLab tools with targeted queries, at minimum `gitlab::create_merge_request` plus user lookup when assignees/reviewers were requested.
+5. Resolve requested assignees/reviewers to GitLab user IDs. Git commit author, GitLab MR author, assignee and reviewer are separate concepts.
+6. Publish the current local branch with:
 
 ```text
-harr git push -u <remote> <branch>
+harr git publish [remote]
 ```
 
-This is a host-independent Harr capability used by Codex, OpenCode or any other host that routes Git through `ctx_shell`.
+7. Create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify it with `gitlab::get_merge_request` before reporting success.
 
-Harr's secure GitLab HTTPS bridge:
+### Why `harr git publish` is mandatory for MR source publication
 
-- derives the configured GitLab host from Harr's GitLab runtime config;
-- refuses to send Harr GitLab credentials to a remote on a different host;
-- rewrites only the current Git process from the SSH GitLab remote form to HTTPS;
-- reads the existing Harr GitLab PAT via `GIT_ASKPASS` without putting the token in command arguments, the repository remote, shell history or Git config;
-- disables interactive terminal credential prompts for that push;
-- performs a normal `git push`, preserving the local commit SHA and all Git semantics including deletions, renames, binary files, symlinks, submodules and mode changes.
+For GitLab MR creation Harr deliberately does **not** use a bare `git push`, because a local feature branch may still track `origin/master` or another target branch. Depending on Git push configuration, an implicit push can therefore target a protected branch.
 
-The stored token must be valid for Git-over-HTTPS push. A personal access token with `api` works; `write_repository` is the narrower Git repository scope when available. Effective push permission is still bounded by GitLab project/branch permissions.
+`harr git publish` is branch-safe and host-independent:
+
+- it takes the MR source name from the current local branch, never from `branch.<name>.remote` / `branch.<name>.merge`;
+- it uses Harr's GitLab HTTPS/PAT transport directly, so no SSH attempt is needed first;
+- it pushes the exact refspec `HEAD:refs/heads/<current-local-branch>`;
+- it preserves the real local Git commit SHA and all Git semantics, including deletions, renames, binary files, symlinks, submodules and mode changes;
+- it verifies the remote same-named branch SHA equals local `HEAD`;
+- after successful verification it sets local upstream to `<remote>/<current-local-branch>`, replacing a stale upstream such as `origin/master`.
+
+Example for local branch `ADSDSP-7737-final-prerank-cleanup`:
+
+```text
+harr git publish origin
+```
+
+is semantically equivalent to a secure authenticated:
+
+```text
+git push -u origin HEAD:refs/heads/ADSDSP-7737-final-prerank-cleanup
+```
+
+plus remote-SHA verification and explicit upstream normalization.
+
+### Explicit custom push
+
+For non-MR workflows or genuinely custom push refspecs/options, Harr also exposes:
+
+```text
+harr git push [git-push-options] [remote] [refspec...]
+```
+
+This uses the same secure GitLab HTTPS/PAT transport but does not impose the current-branch MR invariant.
 
 ### Repository-file API fallback
 
-Only if both ordinary Git transport and `harr git push` are unavailable should repository-file API mirroring be considered.
+Only if Harr Git transport itself cannot be used should repository-file API mirroring be considered.
 
 1. Discover the exact repository write capabilities with targeted `ctx_tools find` calls.
 2. Create the remote source branch from the intended target branch.
@@ -85,11 +107,11 @@ Do not query both direct and gateway routes for the same operation unless diagno
 
 ## Scope
 
-Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for local and remote Git repository operations. If ordinary Git transport cannot authenticate, use `harr git push` before considering repository-file API mirroring.
+Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local/remote Git operations. Use `harr git publish` specifically to publish a GitLab MR source branch safely and `harr git push` for explicit GitLab HTTPS push operations.
 
 ## Authentication and permissions
 
-Harr stores the GitLab PAT privately and LeanCTX supplies it as `Private-Token` through secret-memento handling. The same local secret is used by `harr git push` through `GIT_ASKPASS`; Harr does not print the PAT or persist it into Git configuration.
+Harr stores the GitLab PAT privately and LeanCTX supplies it as `Private-Token` through secret-memento handling. The same local secret is used by Harr's Git HTTPS transport through `GIT_ASKPASS`; Harr does not print the PAT or persist it into Git configuration.
 
 Harr configures the server with the full tool surface:
 
