@@ -101,11 +101,11 @@ def render_gateway(data: dict, runner_command: str) -> str:
 
 def shell_allowlist(platform: str) -> list[str]:
     if platform == "linux":
-        return ["adb", "sudo", "apt-get", "openssl"]
+        return ["adb", "harr", "sudo", "apt-get", "openssl"]
     if platform == "windows":
-        return ["adb", "openssl"]
+        return ["adb", "harr", "openssl"]
     if platform == "macos":
-        return ["adb", "sudo", "brew", "openssl"]
+        return ["adb", "harr", "sudo", "brew", "openssl"]
     raise SystemExit(f"unsupported Harr platform: {platform}")
 
 
