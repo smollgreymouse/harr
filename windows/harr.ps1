@@ -26,6 +26,7 @@ Harr Windows CLI
   harr secret set NAME
   harr secret status
   harr secret unset NAME
+  harr git publish [remote]
   harr git push [git-push-options] [remote] [refspec...]
   harr mcp list
   harr mcp available
