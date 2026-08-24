@@ -33,6 +33,7 @@ $Items = [ordered]@{
     'leanctx-config' = Join-Path $ConfigHome 'lean-ctx\config.toml'
     'harr-mcp-selection' = Join-Path $ConfigHome 'harr\mcp-selection.json'
     'harr-mcp-effective' = Join-Path $ConfigHome 'harr\mcp-registry.json'
+    'harr-kubernetes' = Join-Path $ConfigHome 'harr\kubernetes'
     'ocwf-command-build-log' = Join-Path $OpenCodeHome 'commands\build-log.md'
     'ocwf-command-build-ok' = Join-Path $OpenCodeHome 'commands\build-ok.md'
     'ocwf-command-quick' = Join-Path $OpenCodeHome 'commands\quick.md'
