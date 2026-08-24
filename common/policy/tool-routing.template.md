@@ -6,6 +6,7 @@
 - Cross-file structure, flow, relationships, dependencies, architecture, impact, callers/references: FIRST investigation call MUST be `{{CTX_TOOLS}}` with `action="call"`, `tool="codegraph::codegraph_explore"`, `arguments={"query":"<task or relevant symbols/files>"}`.
 - CodeGraph calls are sequential. Source returned by CodeGraph counts as already read; if another source-code area remains unresolved, make another targeted CodeGraph call before generic read/search/glob/shell.
 - Git repository state/history/branches/remotes/fetch/pull/push/commits: use one exact `git ...` command through `{{CTX_SHELL}}` except the GitLab MR source-branch publish workflow below.
+- Kubernetes cluster operations: use the real kubectl only through `harr kubectl ...` via `{{CTX_SHELL}}`. Do not use a Kubernetes MCP and do not use bare `kubectl`, because Harr supplies the managed portable kubeconfig for sandboxed/isolated hosts. Prefer narrow resource/namespace/label queries and bounded logs over broad `-A -o yaml` dumps unless the broad result is genuinely required. Use `harr kube status` for transport/config diagnostics; changing the snapshot is an explicit user setup operation via `harr kube configure` or `harr kube sync`.
 <!-- harr-mcp:gitlab:start -->
 - GitLab API operations: use `gitlab` through `{{CTX_TOOLS}}`. Gateway discovery is ranked/limited, so never infer that a capability is absent from an earlier `find`; for writes do a verb-specific `find` first (for example `create GitLab merge request` -> `gitlab::create_merge_request`) and `refresh` once before declaring an expected tool unavailable.
 - Creating a GitLab MR is a combined Git + GitLab workflow. The MR source branch is ALWAYS the current named local branch, never its configured upstream. Require a non-detached current branch and require source branch != intended target branch.
@@ -17,7 +18,7 @@
 <!-- harr-mcp:grafana:start -->
 - Grafana dashboard work: use `grafana` through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary.
 <!-- harr-mcp:grafana:end -->
-- Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence and Git operations.
+- Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
 - Use `{{CTX_CALL}}` for uncommon LeanCTX capabilities instead of expanding the permanent Harr tool surface. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
 <!-- harr-tool-policy:end -->
