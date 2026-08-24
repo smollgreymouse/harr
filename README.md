@@ -458,6 +458,9 @@ harr secret set grafana
 harr secret unset gitlab
 harr secret unset grafana
 
+harr git publish [remote]
+harr git push [git-push-options] [remote] [refspec...]
+
 harr uninstall
 ```
 
@@ -557,11 +560,19 @@ GITLAB_TOOLSETS=all
 
 LeanCTX gateway discovery is intentionally compact but not single-result: Harr uses `gateway.top_n = 3`. Discovery is ranked, so absence from one broad result is not proof that a GitLab capability is unavailable; write operations use verb-specific discovery such as `create GitLab merge request` -> `gitlab::create_merge_request`, with one refresh/retry before declaring an expected tool missing.
 
-MR creation is treated as a combined Git + GitLab workflow: derive the project/source branch from the current repository, prepare the local commit, discover MR/reviewer tools up front, publish the branch with ordinary `git push` through `ctx_shell`, then create and verify the MR through GitLab MCP. If Git transport/authentication fails but the local diff can be represented exactly through GitLab repository APIs, the documented fallback is to create the remote branch from the intended target, mirror the actual local diff (prefer a batched/single-commit operation such as `gitlab::push_files` when available), verify the remote branch diff, and only then create the MR. This fallback may produce different remote commit SHA(s) and must say so; browser/curl/manual-token workarounds are not used while the enabled GitLab MCP can perform the operation.
+MR creation is treated as a combined Git + GitLab workflow. The MR source branch is the **current named local branch**, never its configured upstream. For MR source publication Harr uses:
+
+```text
+harr git publish [remote]
+```
+
+`harr git publish` uses the configured Harr GitLab PAT over HTTPS directly, so it does not try SSH first. It pushes the explicit refspec `HEAD:refs/heads/<current-local-branch>`, verifies that the same-named remote branch SHA equals local `HEAD`, and then sets upstream to `<remote>/<current-local-branch>`. Therefore a stale feature-branch upstream such as `origin/master` cannot redirect the publish to protected `master` and cannot determine the MR `source_branch`.
+
+After publication, create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify the remote source branch and MR. `harr git push [git-push-options] [remote] [refspec...]` remains available as the lower-level GitLab HTTPS/PAT transport for custom pushes. Repository-file API mirroring is only a last resort when Harr Git transport itself cannot be used and the installed GitLab MCP can reproduce the local diff exactly.
 
 Git commit author, GitLab MR author, assignee and reviewer are distinct. The MR author is the authenticated GitLab identity; requested assignees/reviewers are resolved to GitLab user IDs and verified on the resulting MR rather than assumed from a name.
 
-The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling while GitLab is enabled.
+The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling while GitLab is enabled. The same secret is used by Harr's Git HTTPS transport through `GIT_ASKPASS`; it is not embedded in the repository remote URL, command arguments, shell history or Git config.
 
 ```text
 harr secret set gitlab
@@ -611,7 +622,7 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 ### Git
 
-Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for local repository state/history/branches as well as remote `fetch`/`pull`/`push` operations. If GitLab MCP is enabled, it is reserved for GitLab API data such as merge requests, pipelines, jobs, issues and project/server metadata.
+Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches and remote fetch/pull/push operations. When GitLab is enabled, use `harr git publish [remote]` specifically for branch-safe MR source publication and `harr git push ...` for explicit GitLab HTTPS/PAT pushes; GitLab API operations such as MRs, pipelines, jobs, issues and users continue through `ctx_tools`.
 
 
 
@@ -636,7 +647,7 @@ The permanent policy always keeps the core token-saving rules:
 - cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
-- all Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`;
+- ordinary Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`; GitLab MR source publication -> branch-safe `harr git publish`;
 - uncommon LeanCTX capabilities -> `ctx_call`;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;
