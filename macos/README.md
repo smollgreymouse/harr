@@ -54,6 +54,24 @@ Requirements:
 
 The same saved selection drives the LeanCTX gateway, runtime set, secrets/status, LaunchAgents, global AGENTS routing and installed Harr skill/reference set. Disabled MCP env/secret files are preserved.
 
+## GitLab Git transport
+
+When GitLab is enabled and its Harr secret is configured, Harr can publish Git branches without SSH keys. For an MR source branch use:
+
+```text
+harr git publish [remote]
+```
+
+This command takes the source name from the current local branch, never from its upstream, and performs a real Git-over-HTTPS push using the stored GitLab PAT through `GIT_ASKPASS`. It pushes `HEAD:refs/heads/<current-local-branch>`, verifies the remote SHA equals local `HEAD`, then sets upstream to the same-named remote branch. A stale upstream such as `origin/master` therefore cannot redirect MR publication to `master`.
+
+For custom push options/refspecs use the lower-level:
+
+```text
+harr git push [git-push-options] [remote] [refspec...]
+```
+
+Neither command rewrites the repository remote URL or requires an SSH attempt first.
+
 ## Lifecycle
 
 Enabled registry entries with `lifecycle = service` are mapped to:
