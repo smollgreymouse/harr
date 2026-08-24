@@ -3,13 +3,18 @@ function Invoke-KubeStateSnapshot {
         throw "Harr state helper is unavailable; refusing to change managed Kubernetes state without rollback ownership: $StateHelper"
     }
     & $StateHelper snapshot | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Harr state snapshot failed ($LASTEXITCODE)" }
 }
 
 function Kube-Bridge([string[]]$CommandArgs) {
     $bridge = Join-Path $CommonDir 'kubernetes\kubectl.py'
     if (-not (Test-Path -LiteralPath $bridge)) { throw "Harr Kubernetes bridge missing: $bridge" }
-    [void](Invoke-Python (@($bridge) + $CommandArgs))
+
+    [string[]]$cmd = @(Resolve-Python)
+    $exe = $cmd[0]
+    [string[]]$prefix = @()
+    if ($cmd.Count -gt 1) { $prefix = @($cmd[1..($cmd.Count - 1)]) }
+    & $exe @prefix $bridge @CommandArgs
+    if ($LASTEXITCODE -ne 0) { throw "Harr Kubernetes command failed ($LASTEXITCODE)" }
 }
 
 function Kube-Command([string[]]$CommandArgs) {
