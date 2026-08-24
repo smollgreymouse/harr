@@ -1,6 +1,6 @@
 ---
 name: harr
-description: Harr installation and diagnostics only: managed component versions, MCP services, agent policy, secrets, and repair. Do not load for normal repository investigation; the compact Harr routing block in global AGENTS.md already defines tool order.
+description: Harr installation and diagnostics only: managed component versions, MCP services, agent policy, Git/Kubernetes transports, secrets, and repair. Do not load for normal repository investigation; the compact Harr routing block in global AGENTS.md already defines tool order.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -15,6 +15,10 @@ harr agents status
 harr agents apply
 harr leanctx status
 harr leanctx apply
+harr kube configure
+harr kube sync
+harr kube status
+harr kubectl <kubectl args...>
 harr mcp available
 harr mcp configure
 harr mcp list
@@ -31,6 +35,8 @@ harr secret set grafana
 ```
 
 LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
+
+Kubernetes is intentionally not an MCP component. `harr kube configure` captures the user's working kubectl configuration into Harr-owned private state, and `harr kubectl ...` executes the real kubectl with that managed config so isolated agent hosts do not need direct access to the original kubeconfig. Load `references/kubernetes.md` only for Kubernetes bridge setup/diagnostics.
 
 When GitLab is enabled, `harr git publish` is the branch-safe host-independent MR source publisher: it uses the current local branch name, pushes `HEAD` to the same-named remote branch through Harr's HTTPS/PAT transport, verifies the remote SHA, and normalizes upstream to that branch. `harr git push` is the lower-level secure Git-over-HTTPS command for custom push options/refspecs. Neither command requires SSH credentials or changes the repository remote URL.
 
