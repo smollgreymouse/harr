@@ -6,6 +6,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,7 @@ assert mod.remote_host_and_rewrite("https://gitlab.example.test/group/proj.git",
 )
 assert mod.first_remote_arg(["-u", "origin", "topic"]) == "origin"
 assert mod.first_remote_arg(["--force-with-lease", "origin", "topic"]) == "origin"
+assert mod.publish_refspec("ADSDSP-7737-final-prerank-cleanup") == "HEAD:refs/heads/ADSDSP-7737-final-prerank-cleanup"
 
 try:
     mod.remote_host_and_rewrite("git@evil.example:group/proj.git", api)
@@ -40,6 +42,30 @@ except RuntimeError as exc:
     assert "refusing to send Harr GitLab credentials" in str(exc)
 else:
     raise AssertionError("cross-host credential exfiltration guard missing")
+
+# Regression: a feature branch may accidentally still track origin/master.
+# MR publication must derive the source name from local HEAD, never upstream.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    repo = Path(tmp_raw) / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/ADSDSP-7737-final-prerank-cleanup"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "branch.ADSDSP-7737-final-prerank-cleanup.remote", "origin"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "branch.ADSDSP-7737-final-prerank-cleanup.merge", "refs/heads/master"], cwd=repo, check=True)
+    old_cwd = Path.cwd()
+    os.chdir(repo)
+    try:
+        branch = mod.current_branch()
+        assert branch == "ADSDSP-7737-final-prerank-cleanup"
+        assert mod.publish_refspec(branch) == "HEAD:refs/heads/ADSDSP-7737-final-prerank-cleanup"
+        assert subprocess.run(
+            ["git", "config", "--get", f"branch.{branch}.merge"],
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout.strip() == "refs/heads/master"
+    finally:
+        os.chdir(old_cwd)
 
 with tempfile.TemporaryDirectory() as tmp_raw:
     secret = Path(tmp_raw) / "pat"
