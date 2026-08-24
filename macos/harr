@@ -22,6 +22,7 @@ source "${CLI_LIB_DIR}/components.sh"
 source "${HARR_COMMON_DIR}/shell/secret.sh"
 source "${HARR_COMMON_DIR}/shell/leanctx.sh"
 source "${HARR_COMMON_DIR}/shell/git.sh"
+source "${HARR_COMMON_DIR}/shell/kube.sh"
 source "${CLI_LIB_DIR}/mcp.sh"
 source "${CLI_LIB_DIR}/uninstall.sh"
 
@@ -41,6 +42,8 @@ case "$command" in
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
   git) cmd_git "$@" ;;
+  kube) cmd_kube "$@" ;;
+  kubectl) cmd_kubectl "$@" ;;
   mcp) cmd_mcp "$@" ;;
   status) cmd_status "$@" ;;
   uninstall) cmd_uninstall "$@" ;;
