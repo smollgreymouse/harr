@@ -51,6 +51,7 @@ shell_allow_writes = false
 shell_security = "enforce"
 shell_strict_mode = false
 shell_allowlist_extra = [
+    "harr",
 {{HARR_SHELL_ALLOWLIST_EXTRA}}
 ]
 
@@ -73,7 +74,7 @@ threshold_chars = 800
 enabled = true
 cache_ttl_secs = 300
 call_timeout_secs = 120
-top_n = 1
+top_n = 3
 
 # Downstream servers are rendered from common/mcp/registry.json.
 # {{HARR_GATEWAY_SERVERS}}

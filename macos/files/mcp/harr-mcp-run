@@ -3,7 +3,9 @@ set -Eeuo pipefail
 
 readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
 readonly RUNTIME_ENV="${HARR_RUNTIME_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/runtime.env}"
+readonly EFFECTIVE="${HARR_MCP_EFFECTIVE:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/mcp-registry.json}"
 [[ -r "$MANAGER" ]] || { printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2; exit 127; }
+[[ -r "$EFFECTIVE" ]] || { printf 'Harr MCP selection is missing: %s\nRun: harr mcp configure\n' "$EFFECTIVE" >&2; exit 127; }
 if [[ -r "$RUNTIME_ENV" ]]; then
   # Harr owns this file; it contains paths only, no secrets.
   # shellcheck disable=SC1090
@@ -16,4 +18,4 @@ base_path="${HARR_NPM_BIN_DIR}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/u
 export PATH="${base_path}:${PATH:-}"
 python_bin="${HARR_PYTHON_BIN:-$(command -v python3 || true)}"
 [[ -n "$python_bin" && -x "$python_bin" ]] || { printf 'python3 is required by the Harr MCP runner\n' >&2; exit 127; }
-exec "$python_bin" "$MANAGER" run "$@"
+exec "$python_bin" "$MANAGER" --registry "$EFFECTIVE" run "$@"

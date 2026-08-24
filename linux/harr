@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly HARR_VERSION="0.5.0"
+readonly HARR_VERSION="0.6.0"
 readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
@@ -14,12 +14,15 @@ fi
 export HARR_COMMON_DIR
 
 source "${CLI_LIB_DIR}/common.sh"
+source "${HARR_COMMON_DIR}/shell/selection.sh"
 source "${CLI_LIB_DIR}/help.sh"
 source "${HARR_COMMON_DIR}/shell/agents.sh"
 source "${HARR_COMMON_DIR}/shell/hosts.sh"
 source "${CLI_LIB_DIR}/components.sh"
 source "${HARR_COMMON_DIR}/shell/secret.sh"
 source "${HARR_COMMON_DIR}/shell/leanctx.sh"
+source "${HARR_COMMON_DIR}/shell/git.sh"
+source "${HARR_COMMON_DIR}/shell/kube.sh"
 source "${CLI_LIB_DIR}/mcp.sh"
 source "${CLI_LIB_DIR}/uninstall.sh"
 
@@ -38,6 +41,9 @@ case "$command" in
   hosts) cmd_hosts "$@" ;;
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
+  git) cmd_git "$@" ;;
+  kube) cmd_kube "$@" ;;
+  kubectl) cmd_kubectl "$@" ;;
   mcp) cmd_mcp "$@" ;;
   status) cmd_status "$@" ;;
   uninstall) cmd_uninstall "$@" ;;

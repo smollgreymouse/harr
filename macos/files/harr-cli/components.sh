@@ -32,15 +32,13 @@ check_node_runtime() {
 }
 
 install_node_mcp_stack() {
-  require_mcp_manager
   local node_bin package_file
   node_bin="$(check_node_runtime)"
   install -d -m 0755 "$HARR_NPM_PREFIX"
   package_file="${HARR_NPM_PREFIX}/package.json"
-  python3 "$HARR_MCP_MANAGER" npm-package-json >"$package_file"
-  printf 'Installing Harr npm MCP runtimes from registry...\n'
-  PATH="$(dirname -- "$node_bin"):${PATH}" npm install \
-    --prefix "$HARR_NPM_PREFIX" --omit=dev --no-audit --no-fund --package-lock=false
+  mcp_manager npm-package-json >"$package_file"
+  printf 'Installing selected Harr npm MCP runtimes...\n'
+  PATH="$(dirname -- "$node_bin"):${PATH}" npm install --prefix "$HARR_NPM_PREFIX" --omit=dev --no-audit --no-fund --package-lock=false
   write_runtime_env "$node_bin"
 }
 
@@ -60,9 +58,7 @@ verify_sha256() {
 }
 
 install_leanctx_wrapper() {
-  local wrapper_src="${HARR_LIBEXEC_DIR}/leanctx/lean-ctx-wrapper"
-  local target="${HOME}/.local/bin/lean-ctx"
-  local backup_dir="${HARR_LIBEXEC_DIR}/backup"
+  local wrapper_src="${HARR_LIBEXEC_DIR}/leanctx/lean-ctx-wrapper" target="${HOME}/.local/bin/lean-ctx" backup_dir="${HARR_LIBEXEC_DIR}/backup"
   [[ -x "$wrapper_src" ]] || die "LeanCTX wrapper missing: $wrapper_src"
   install -d -m 0755 "${HOME}/.local/bin" "$backup_dir"
   if [[ -e "$target" ]] && ! grep -q 'HARR_LEANCTX_WRAPPER=1' "$target" 2>/dev/null && [[ ! -e "${backup_dir}/lean-ctx.pre-harr" ]]; then
@@ -73,36 +69,25 @@ install_leanctx_wrapper() {
 }
 
 install_leanctx() {
-  require_command curl
-  require_command tar
-  require_command python3
+  require_command curl; require_command tar; require_command python3
   local target version_dir real_bin tmpdir archive sums expected asset sums_url
-  target="$(leanctx_target)"
-  version_dir="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}"
-  real_bin="${version_dir}/lean-ctx"
+  target="$(leanctx_target)"; version_dir="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}"; real_bin="${version_dir}/lean-ctx"
   if [[ -x "$real_bin" ]] && "$real_bin" --version 2>/dev/null | grep -q "${HARR_LEANCTX_VERSION}"; then
-    printf 'LeanCTX %s already installed in Harr vendor dir.\n' "$HARR_LEANCTX_VERSION"
-    install_leanctx_wrapper
-    return
+    printf 'LeanCTX %s already installed in Harr vendor dir.\n' "$HARR_LEANCTX_VERSION"; install_leanctx_wrapper; return
   fi
-  tmpdir="$(mktemp -d)"
-  archive="${tmpdir}/lean-ctx.tar.gz"
-  sums="${tmpdir}/SHA256SUMS"
+  tmpdir="$(mktemp -d)"; archive="${tmpdir}/lean-ctx.tar.gz"; sums="${tmpdir}/SHA256SUMS"
   asset="https://github.com/yvgude/lean-ctx/releases/download/v${HARR_LEANCTX_VERSION}/lean-ctx-${target}.tar.gz"
   sums_url="https://github.com/yvgude/lean-ctx/releases/download/v${HARR_LEANCTX_VERSION}/SHA256SUMS"
   printf 'Installing LeanCTX %s (%s)...\n' "$HARR_LEANCTX_VERSION" "$target"
-  curl -fsSL "$asset" -o "$archive"
-  curl -fsSL "$sums_url" -o "$sums"
+  curl -fsSL "$asset" -o "$archive"; curl -fsSL "$sums_url" -o "$sums"
   expected="$(awk -v f="lean-ctx-${target}.tar.gz" '$2 == f || $2 == "*" f {print $1; exit}' "$sums")"
   [[ -n "$expected" ]] || die "checksum entry not found for lean-ctx-${target}.tar.gz"
   verify_sha256 "$archive" "$expected"
   tar -xzf "$archive" -C "$tmpdir"
   [[ -x "${tmpdir}/lean-ctx" ]] || die 'LeanCTX archive did not contain lean-ctx executable'
-  install -d -m 0755 "$version_dir"
-  install -m 0755 "${tmpdir}/lean-ctx" "$real_bin"
+  install -d -m 0755 "$version_dir"; install -m 0755 "${tmpdir}/lean-ctx" "$real_bin"
   "$real_bin" --version | grep -q "${HARR_LEANCTX_VERSION}" || die 'installed LeanCTX version check failed'
-  install_leanctx_wrapper
-  rm -rf "$tmpdir"
+  install_leanctx_wrapper; rm -rf "$tmpdir"
 }
 
 cmd_install_components() {
@@ -123,8 +108,7 @@ cmd_components_status() {
   if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" ok "$lean_actual";
   elif [[ -n "$lean_actual" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" version-mismatch "$lean_actual";
   else printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" missing '-'; fi
-  require_mcp_manager
   while IFS=$'\t' read -r name expected state installed; do
     printf '%-16s %-18s %-16s %s\n' "$name" "$expected" "$state" "$installed"
-  done < <(python3 "$HARR_MCP_MANAGER" components --npm-prefix "$HARR_NPM_PREFIX")
+  done < <(mcp_manager components --npm-prefix "$HARR_NPM_PREFIX")
 }

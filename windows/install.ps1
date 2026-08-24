@@ -3,7 +3,10 @@ param(
     [switch]$Clean,
     [switch]$Start,
     [switch]$HarrOnly,
-    [switch]$NoPathUpdate
+    [switch]$NoPathUpdate,
+    [switch]$All,
+    [string]$Mcp,
+    [switch]$ConfigureMcp
 )
 
 Set-StrictMode -Version Latest
@@ -13,8 +16,14 @@ $SourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $SourceDir
 $CommonSource = Join-Path $RepoRoot 'common'
 $FilesSource = Join-Path $SourceDir 'files'
+$SourceCatalog = Join-Path $CommonSource 'mcp\registry.json'
+$SourceSelector = Join-Path $CommonSource 'mcp\selector.py'
 $UserHome = if ($env:HARR_HOME) { $env:HARR_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $LocalRoot = if ($env:HARR_LOCALAPPDATA) { $env:HARR_LOCALAPPDATA } elseif ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $UserHome 'AppData\Local' }
+$ConfigHome = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $UserHome '.config' }
+$HarrConfig = Join-Path $ConfigHome 'harr'
+$McpSelection = Join-Path $HarrConfig 'mcp-selection.json'
+$McpEffective = Join-Path $HarrConfig 'mcp-registry.json'
 $HarrRoot = Join-Path $LocalRoot 'Harr'
 $BinDir = Join-Path $HarrRoot 'bin'
 $LibExecDir = Join-Path $HarrRoot 'libexec'
@@ -22,7 +31,7 @@ $StateRoot = Join-Path $LocalRoot 'HarrState'
 $StateHelperSource = Join-Path $FilesSource 'state\harr-state.ps1'
 $StateHelper = Join-Path $StateRoot 'harr-state.ps1'
 $CleanMarker = Join-Path $StateRoot 'pre-harr\complete'
-$env:HARR_MCP_REGISTRY = Join-Path $CommonSource 'mcp\registry.json'
+$env:HARR_MCP_REGISTRY = $SourceCatalog
 
 function Write-Utf8([string]$Path, [string]$Value) {
     $parent = Split-Path -Parent $Path
@@ -37,21 +46,50 @@ function Copy-TreeFresh([string]$Source, [string]$Target) {
     Copy-Item -LiteralPath $Source -Destination $Target -Recurse -Force
 }
 
-if ($env:OS -ne 'Windows_NT') { throw 'install.ps1 is the Windows Harr installer' }
-if (-not (Test-Path $StateHelperSource)) { throw "Missing Harr state helper: $StateHelperSource" }
-if (-not (Get-Command python.exe -ErrorAction SilentlyContinue) -and -not (Get-Command python -ErrorAction SilentlyContinue) -and -not (Get-Command py.exe -ErrorAction SilentlyContinue)) {
+function Resolve-Python {
+    $python = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($python) { return [string[]]@($python.Source) }
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) { return [string[]]@($python.Source) }
+    $py = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($py) { return [string[]]@($py.Source, '-3') }
     throw 'Python 3 is required for Harr host configuration management'
 }
 
-if (-not (Test-Path $CleanMarker) -and -not $Clean) {
-    throw 'First Harr installation requires -Clean; Harr will not merge itself into an existing global harness'
+function Invoke-Selector([string[]]$SelectorArgs) {
+    [string[]]$cmd = @(Resolve-Python)
+    $exe = $cmd[0]
+    [string[]]$prefix = @()
+    if ($cmd.Count -gt 1) { $prefix = @($cmd[1..($cmd.Count - 1)]) }
+    & $exe @prefix $SourceSelector @SelectorArgs
+    if ($LASTEXITCODE -ne 0) { throw 'Harr MCP selection failed' }
 }
-if ((Test-Path $CleanMarker) -and $Clean) {
-    Write-Host 'Clean ownership already initialized; preserving original pre-Harr snapshot.'
-}
-# Run on every install: existing clean snapshots are extended only for newly
-# introduced registry service task names, before Harr can overwrite them.
+
+if ($env:OS -ne 'Windows_NT') { throw 'install.ps1 is the Windows Harr installer' }
+if (-not (Test-Path $StateHelperSource)) { throw "Missing Harr state helper: $StateHelperSource" }
+if (-not (Test-Path $SourceSelector)) { throw "Missing Harr MCP selector: $SourceSelector" }
+[void](Resolve-Python)
+
+$explicitMcp = $PSBoundParameters.ContainsKey('Mcp')
+if ($All -and $explicitMcp) { throw '-All and -Mcp cannot be combined' }
+if ($ConfigureMcp -and ($All -or $explicitMcp)) { throw '-ConfigureMcp cannot be combined with -All or -Mcp' }
+
+$firstInstall = -not (Test-Path $CleanMarker)
+$selectionExists = Test-Path -LiteralPath $McpSelection
+if ($firstInstall -and -not $Clean) { throw 'First Harr installation requires -Clean; Harr will not merge itself into an existing global harness' }
+if ((-not $firstInstall) -and $Clean) { Write-Host 'Clean ownership already initialized; preserving original pre-Harr snapshot.' }
+
+# Exact rollback state must be captured before the selection files are created or changed.
 & $StateHelperSource snapshot
+
+New-Item -ItemType Directory -Force -Path $HarrConfig | Out-Null
+[string[]]$selectorArgs = @('--catalog', $SourceCatalog, '--selection', $McpSelection, '--effective', $McpEffective)
+if ((-not $firstInstall) -and (-not $selectionExists)) { $selectorArgs += @('--default', 'all') }
+else { $selectorArgs += @('--default', 'required') }
+if ($All) { $selectorArgs += @('--spec', 'all') }
+elseif ($explicitMcp) { $selectorArgs += @('--spec', $Mcp) }
+elseif ($ConfigureMcp -or $firstInstall) { $selectorArgs += '--configure' }
+Invoke-Selector $selectorArgs
 
 New-Item -ItemType Directory -Force -Path $BinDir, $LibExecDir, $StateRoot | Out-Null
 Copy-Item -LiteralPath $StateHelperSource -Destination $StateHelper -Force
@@ -86,20 +124,17 @@ if ($HarrOnly) {
     & $installedHarr install all
 }
 
-if ($Start -and -not $HarrOnly) {
-    & $installedHarr mcp restart all
-}
+if ($Start -and -not $HarrOnly) { & $installedHarr mcp restart all }
 
 Write-Host ''
 Write-Host 'Harr installed in clean global-harness mode for Windows.'
 Write-Host "CLI: $(Join-Path $BinDir 'harr.cmd')"
+Write-Host 'LeanCTX + CodeGraph are required; optional MCPs follow the saved selection.'
+Write-Host "Selection: $McpSelection"
+Write-Host 'Change it later with: harr mcp configure'
 Write-Host 'Project-level configs/files were not touched.'
-Write-Host "MCP registry: $(Join-Path $LibExecDir 'common\mcp\registry.json')"
-if ($HarrOnly) {
-    Write-Host 'Stack components were skipped (-HarrOnly). Install later with: harr install all'
-} else {
-    Write-Host 'Pinned stack installed; LeanCTX registered in Codex/OpenCode; global agent policy applied.'
-}
+if ($HarrOnly) { Write-Host 'Stack components were skipped (-HarrOnly). Install later with: harr install all' }
+else { Write-Host 'Selected stack installed; LeanCTX registered in Codex/OpenCode; MCP-aware global agent policy applied.' }
 Write-Host 'Open a new terminal after installation if the harr command is not yet visible.'
 Write-Host 'Check with: harr status'
 Write-Host 'Rollback completely with: harr uninstall'

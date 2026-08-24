@@ -11,6 +11,8 @@ $ModuleDir = Join-Path $PSScriptRoot 'windows\files\harr-cli'
 . (Join-Path $ModuleDir 'common.ps1')
 . (Join-Path $ModuleDir 'mcp.ps1')
 . (Join-Path $ModuleDir 'runtime.ps1')
+. (Join-Path $ModuleDir 'git.ps1')
+. (Join-Path $ModuleDir 'kube.ps1')
 
 function Show-Help {
     @'
@@ -25,7 +27,15 @@ Harr Windows CLI
   harr secret set NAME
   harr secret status
   harr secret unset NAME
+  harr git publish [remote]
+  harr git push [git-push-options] [remote] [refspec...]
+  harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
+  harr kube sync [--allow-exec] [--no-check]
+  harr kube status [--no-check]
+  harr kubectl <kubectl args...>
   harr mcp list
+  harr mcp available
+  harr mcp configure [none|all|name1,name2]
   harr mcp start|stop|restart NAME|all
   harr mcp status
   harr mcp logs NAME
@@ -69,9 +79,14 @@ switch ($command) {
         $name = if ($rest.Count -gt 1) { $rest[1] } else { '' }
         Secret-Command $sub $name
     }
+    'git' { Git-Command $rest }
+    'kube' { Kube-Command $rest }
+    'kubectl' { Kubectl-Command $rest }
     'mcp' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'list') { foreach ($name in @(All-Mcp-Names)) { Write-Host $name } }
+        elseif ($sub -eq 'available') { Mcp-Available }
+        elseif ($sub -eq 'configure') { Mcp-Configure ($(if ($rest.Count -gt 1) { $rest[1] } else { '' })) }
         elseif ($sub -in @('start','stop','restart')) {
             $target = if ($rest.Count -gt 1) { $rest[1] } else { throw 'MCP target required' }
             Mcp-Action $sub $target
@@ -81,9 +96,10 @@ switch ($command) {
             $name = if ($rest.Count -gt 1) { $rest[1] } else { throw 'MCP name required' }
             Mcp-Logs $name
         }
-        else { throw 'usage: harr mcp list|start|stop|restart|status|logs' }
+        else { throw 'usage: harr mcp list|available|configure|start|stop|restart|status|logs' }
     }
     'status' {
+        Write-Host '== MCP selection =='; Mcp-Available; Write-Host ''
         Components-Status
         Hosts-Status
         foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }

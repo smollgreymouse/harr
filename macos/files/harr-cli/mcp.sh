@@ -25,8 +25,7 @@ mcp_service_state() {
 
 mcp_startup_state() {
   local label domain disabled
-  label="$(mcp_label "$1")"
-  domain="$(launch_domain)"
+  label="$(mcp_label "$1")"; domain="$(launch_domain)"
   disabled="$(launchctl print-disabled "$domain" 2>/dev/null || true)"
   if printf '%s\n' "$disabled" | grep -Eq '"?'"${label}"'"?[[:space:]]*=>[[:space:]]*true'; then printf '%s\n' disabled; else printf '%s\n' enabled; fi
 }
@@ -69,12 +68,12 @@ launch_bootstrap() {
 }
 
 cmd_mcp_lifecycle() {
-  local action="$1" target="$2" names name label plist service
+  local action="$1" target="$2" names name plist service
   names="$(mcp_targets "$target")"
   [[ -n "$names" ]] || die 'no Harr service MCPs configured'
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
-    label="$(mcp_label "$name")"; plist="$(mcp_plist "$name")"; service="$(launch_target "$name")"
+    plist="$(mcp_plist "$name")"; service="$(launch_target "$name")"
     printf '%s %s...\n' "$action" "$name"
     case "$action" in
       start) launchctl enable "$service" >/dev/null 2>&1 || true; launch_bootstrap "$name"; launchctl kickstart "$service" ;;
@@ -87,11 +86,49 @@ cmd_mcp_lifecycle() {
   done <<<"$names"
 }
 
+write_launch_agent() {
+  local name="$1" label plist runner out err
+  label="$(mcp_label "$name")"; plist="$(mcp_plist "$name")"; runner="${HOME}/.local/bin/harr-mcp-run"
+  out="${HARR_LOG_DIR}/${name}.out.log"; err="${HARR_LOG_DIR}/${name}.err.log"
+  install -d -m 0755 "$HARR_LAUNCH_AGENTS_DIR" "$HARR_LOG_DIR"
+  python3 - "$plist" "$label" "$runner" "$name" "$out" "$err" <<'PY'
+import plistlib, sys
+path, label, runner, name, out, err = sys.argv[1:]
+data = {"Label": label, "ProgramArguments": [runner, name], "RunAtLoad": True, "KeepAlive": True, "ProcessType": "Background", "StandardOutPath": out, "StandardErrorPath": err}
+with open(path, "wb") as f: plistlib.dump(data, f, sort_keys=False)
+PY
+  chmod 0644 "$plist"
+}
+
+reconcile_mcp_services() {
+  local name active
+  active="$(managed_mcp_names)"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    if printf '%s\n' "$active" | grep -Fxq -- "$name"; then
+      write_launch_agent "$name"
+    else
+      launchctl bootout "$(launch_target "$name")" >/dev/null 2>&1 || true
+      rm -f -- "$(mcp_plist "$name")"
+    fi
+  done < <(catalog_service_mcp_names)
+}
+
+cmd_mcp_configure() {
+  [[ $# -le 1 ]] || die 'usage: harr mcp configure [none|all|name1,name2]'
+  if (($#)); then mcp_select spec "$1" all; else mcp_select configure '' all; fi
+  mcp_manager install-configs --config-dir "$HARR_MCP_CONFIG_DIR"
+  cmd_install_components mcp
+  cmd_leanctx_apply
+  reconcile_mcp_services
+  cmd_agents_apply all
+  printf 'MCP selection applied. Disabled MCP env/secret files were preserved.\n'
+}
+
 cmd_mcp_logs() {
   [[ $# -ge 1 && $# -le 2 ]] || die 'usage: harr mcp logs NAME [-f|--follow]'
   local name="$1" follow='' out err
-  require_mcp "$name"
-  shift
+  require_mcp "$name"; shift
   if (($#)); then case "$1" in -f|--follow) follow=-f ;; *) die 'usage: harr mcp logs NAME [-f|--follow]' ;; esac; fi
   out="${HARR_LOG_DIR}/${name}.out.log"; err="${HARR_LOG_DIR}/${name}.err.log"
   touch "$out" "$err"
@@ -100,7 +137,8 @@ cmd_mcp_logs() {
 
 cmd_status() {
   [[ $# -eq 0 ]] || die 'usage: harr status'
-  printf '== Components ==\n\n'; cmd_components_status
+  printf '== MCP selection ==\n\n'; mcp_available
+  printf '\n== Components ==\n\n'; cmd_components_status
   printf '\n== LeanCTX ==\n\n'; cmd_leanctx_status
   printf '\n== Global hosts ==\n\n'; cmd_hosts_status
   printf '\n== Agent policy / diagnostic skills ==\n\n'; cmd_agents_status
@@ -112,6 +150,8 @@ cmd_mcp() {
   shift || true
   case "$command" in
     list) [[ $# -eq 0 ]] || die 'usage: harr mcp list'; all_mcp_names ;;
+    available) [[ $# -eq 0 ]] || die 'usage: harr mcp available'; mcp_available ;;
+    configure) cmd_mcp_configure "$@" ;;
     start|stop|restart|enable|disable) [[ $# -eq 1 ]] || die "usage: harr mcp $command NAME|all"; cmd_mcp_lifecycle "$command" "$1" ;;
     status) cmd_mcp_status "$@" ;;
     logs) cmd_mcp_logs "$@" ;;

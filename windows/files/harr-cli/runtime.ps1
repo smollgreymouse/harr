@@ -1,12 +1,12 @@
 function Registry-Apply {
     New-Item -ItemType Directory -Force -Path $McpConfig, $SecretsDir | Out-Null
-    [void](Invoke-Python @($Manager, 'install-configs', '--config-dir', $McpConfig))
+    Invoke-Manager @('install-configs', '--config-dir', $McpConfig)
 }
 
 function Apply-LeanCtx {
     New-Item -ItemType Directory -Force -Path $LeanConfigDir | Out-Null
-    [void](Invoke-Python @($Manager, 'render-leanctx', '--base', (Join-Path $CommonDir 'leanctx\config.base.toml'), '--output', $LeanConfig, '--platform', 'windows', '--runner-command', 'harr-mcp-run'))
-    Write-Host "Applied Harr LeanCTX config from MCP registry: $LeanConfig"
+    Invoke-Manager @('render-leanctx', '--base', (Join-Path $CommonDir 'leanctx\config.base.toml'), '--output', $LeanConfig, '--platform', 'windows', '--runner-command', 'harr-mcp-run')
+    Write-Host "Applied Harr LeanCTX config from selected MCP registry: $LeanConfig"
 }
 
 function Write-CodeGraphWrapper {
@@ -26,17 +26,12 @@ function Install-NodeStack {
     if ($major -lt 20 -or $major -ge 25) { throw "Node.js 20-24 is required; current major: $major" }
 
     New-Item -ItemType Directory -Force -Path $NpmPrefix | Out-Null
-    [string[]]$cmd = @(Resolve-Python)
-    $exe = $cmd[0]
-    [string[]]$prefix = @()
-    if ($cmd.Count -gt 1) { $prefix = @($cmd[1..($cmd.Count - 1)]) }
-    $packageText = (& $exe @prefix $Manager npm-package-json) -join "`n"
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to render Harr npm package.json' }
-    Write-Utf8 (Join-Path $NpmPrefix 'package.json') ($packageText + "`n")
+    $packageText = (@(Manager-Lines @('npm-package-json')) -join "`n") + "`n"
+    Write-Utf8 (Join-Path $NpmPrefix 'package.json') $packageText
+    Write-Host 'Installing selected Harr npm MCP runtimes...'
     & $npm.Source install --prefix $NpmPrefix --omit=dev --no-audit --no-fund --package-lock=false
     if ($LASTEXITCODE -ne 0) { throw 'npm install failed for Harr MCP runtime' }
     $env:HARR_NPM_BIN_DIR = $NpmBin
-    # CodeGraph has a user-facing CLI in addition to its registry MCP entry.
     Write-CodeGraphWrapper
 }
 

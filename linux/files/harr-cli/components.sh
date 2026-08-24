@@ -24,22 +24,19 @@ check_node_runtime() {
   node_bin="$(command -v node)"
   major="$(node -p 'Number(process.versions.node.split(".")[0])')"
   [[ "$major" =~ ^[0-9]+$ ]] || die 'could not determine Node.js major version'
-  ((major >= 20 && major < 25)) || \
-    die "Node.js 20-24 is required by the Harr MCP runtime; current: $(node --version)"
-
+  ((major >= 20 && major < 25)) || die "Node.js 20-24 is required by the Harr MCP runtime; current: $(node --version)"
   printf '%s\n' "$node_bin"
 }
 
 install_node_mcp_stack() {
-  require_mcp_manager
   local node_bin package_file
   node_bin="$(check_node_runtime)"
 
   install -d -m 0755 "$HARR_NPM_PREFIX"
   package_file="${HARR_NPM_PREFIX}/package.json"
-  python3 "$HARR_MCP_MANAGER" npm-package-json >"$package_file"
+  mcp_manager npm-package-json >"$package_file"
 
-  printf 'Installing Harr npm MCP runtimes from registry...\n'
+  printf 'Installing selected Harr npm MCP runtimes...\n'
   PATH="$(dirname -- "$node_bin"):${PATH}" \
     npm install \
       --prefix "$HARR_NPM_PREFIX" \
@@ -66,9 +63,7 @@ leanctx_target() {
     if [[ -n "$glibc_ver" ]]; then
       major="${glibc_ver%%.*}"
       minor="${glibc_ver##*.}"
-      if ((major > 2 || (major == 2 && minor >= 35))); then
-        libc=gnu
-      fi
+      if ((major > 2 || (major == 2 && minor >= 35))); then libc=gnu; fi
     fi
   fi
   printf '%s\n' "${arch}-unknown-linux-${libc}"
@@ -76,13 +71,9 @@ leanctx_target() {
 
 verify_sha256() {
   local file="$1" expected="$2" actual
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$file" | awk '{print $1}')"
-  elif command -v shasum >/dev/null 2>&1; then
-    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
-  else
-    die 'sha256sum or shasum is required to install LeanCTX'
-  fi
+  if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$file" | awk '{print $1}')";
+  elif command -v shasum >/dev/null 2>&1; then actual="$(shasum -a 256 "$file" | awk '{print $1}')";
+  else die 'sha256sum or shasum is required to install LeanCTX'; fi
   [[ "$actual" == "$expected" ]] || die "LeanCTX checksum mismatch: expected $expected, got $actual"
 }
 
@@ -147,39 +138,23 @@ cmd_install_components() {
   [[ $# -le 1 ]] || die 'usage: harr install [all|leanctx|mcp]'
 
   case "$target" in
-    all)
-      install_node_mcp_stack
-      install_leanctx
-      cmd_leanctx_apply
-      ;;
-    mcp)
-      install_node_mcp_stack
-      ;;
-    leanctx)
-      install_leanctx
-      cmd_leanctx_apply
-      ;;
+    all) install_node_mcp_stack; install_leanctx; cmd_leanctx_apply ;;
+    mcp) install_node_mcp_stack ;;
+    leanctx) install_leanctx; cmd_leanctx_apply ;;
     *) die 'usage: harr install [all|leanctx|mcp]' ;;
   esac
 }
 
 cmd_components_status() {
   local lean_actual='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx"
-  if [[ -x "$lean_real" ]]; then
-    lean_actual="$("$lean_real" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
-  fi
+  if [[ -x "$lean_real" ]]; then lean_actual="$("$lean_real" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"; fi
 
   printf '%-16s %-18s %-16s %s\n' COMPONENT EXPECTED STATE INSTALLED
-  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then
-    printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" ok "$lean_actual"
-  elif [[ -n "$lean_actual" ]]; then
-    printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" version-mismatch "$lean_actual"
-  else
-    printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" missing '-'
-  fi
+  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" ok "$lean_actual";
+  elif [[ -n "$lean_actual" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" version-mismatch "$lean_actual";
+  else printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" missing '-'; fi
 
-  require_mcp_manager
   while IFS=$'\t' read -r name expected state installed; do
     printf '%-16s %-18s %-16s %s\n' "$name" "$expected" "$state" "$installed"
-  done < <(python3 "$HARR_MCP_MANAGER" components --npm-prefix "$HARR_NPM_PREFIX")
+  done < <(mcp_manager components --npm-prefix "$HARR_NPM_PREFIX")
 }

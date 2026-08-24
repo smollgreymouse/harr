@@ -3,10 +3,9 @@ set -Eeuo pipefail
 
 readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
 readonly RUNTIME_ENV="${HARR_RUNTIME_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/runtime.env}"
-[[ -r "$MANAGER" ]] || {
-  printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2
-  exit 127
-}
+readonly EFFECTIVE="${HARR_MCP_EFFECTIVE:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/mcp-registry.json}"
+[[ -r "$MANAGER" ]] || { printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2; exit 127; }
+[[ -r "$EFFECTIVE" ]] || { printf 'Harr MCP selection is missing: %s\nRun: harr mcp configure\n' "$EFFECTIVE" >&2; exit 127; }
 
 if [[ -r "$RUNTIME_ENV" ]]; then
   # Harr owns this file; it contains paths only, no secrets.
@@ -19,4 +18,4 @@ if [[ -n "${HARR_NODE_BIN_DIR:-}" ]]; then
 else
   export PATH="${HARR_NPM_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
 fi
-exec python3 "$MANAGER" run "$@"
+exec python3 "$MANAGER" --registry "$EFFECTIVE" run "$@"
