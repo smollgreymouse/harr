@@ -63,6 +63,38 @@ harr git push [git-push-options] [remote] [refspec...]
 
 Neither command rewrites the repository remote URL or requires an SSH attempt first.
 
+## Kubernetes / kubectl bridge
+
+Kubernetes is not an MCP component. Harr uses the real kubectl through `ctx_shell` and supplies a Harr-owned portable kubeconfig so sandboxed/isolated hosts do not need access to the user's original `%USERPROFILE%\.kube\config`.
+
+From a normal PowerShell/terminal where kubectl already works, run once:
+
+```text
+harr kube configure
+```
+
+Harr captures `kubectl config view --raw --flatten -o json` into:
+
+```text
+%USERPROFILE%\.config\harr\kubernetes\config
+```
+
+and verifies the candidate config against the current cluster before replacing the previous snapshot. Then all agent-side Kubernetes work uses normal kubectl syntax after the Harr prefix:
+
+```text
+harr kubectl get pods -A
+harr kubectl logs POD -n NAMESPACE --tail=100
+harr kubectl apply -f manifest.yaml
+harr kubectl rollout status deployment/NAME -n NAMESPACE
+harr kubectl delete pod POD -n NAMESPACE
+```
+
+`harr kubectl` always passes the managed `--kubeconfig`; callers cannot override it. Refresh the private snapshot after changing the normal kubeconfig with `harr kube sync`, and inspect it without printing credentials with `harr kube status`.
+
+If the current kubeconfig context uses a `user.exec` credential helper, `harr kube configure` refuses it by default because a flattened file alone is not portable. `--allow-exec` is an explicit opt-in only when that helper and its credential chain are reachable from every Harr host.
+
+The Windows rollback snapshot explicitly owns `%USERPROFILE%\.config\harr\kubernetes`, so an existing pre-Harr directory is restored exactly and a Harr-created one is removed by `harr uninstall`.
+
 ## Lifecycle
 
 Enabled registry entries with `lifecycle = service` are mapped to non-elevated per-user Scheduled Tasks. Disabled service MCP tasks are stopped and unregistered from the active Harr configuration.
@@ -83,4 +115,4 @@ harr mcp logs gitlab
 harr uninstall
 ```
 
-The Windows clean snapshot also owns the saved selection/effective-registry paths and catalog-defined Scheduled Task names, so rollback restores the exact pre-Harr state.
+The Windows clean snapshot also owns the saved selection/effective-registry paths, Harr Kubernetes state, and catalog-defined Scheduled Task names, so rollback restores the exact pre-Harr state.
