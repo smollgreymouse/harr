@@ -19,6 +19,7 @@ CLI:
   harr secret unset NAME
   harr leanctx apply
   harr leanctx status
+  harr git publish [remote]
   harr git push [git-push-options] [remote] [refspec...]
   harr mcp list
   harr mcp available
@@ -40,9 +41,11 @@ Managed baseline:
   diagnostic Harr/LeanCTX skills filtered to the selected MCP set
 
 GitLab transport:
-  With GitLab enabled, `harr git push` performs a real Git push over HTTPS using
-  the stored Harr GitLab PAT through GIT_ASKPASS. It is the common fallback when
-  the current host/sandbox cannot use the repository's SSH credentials.
+  With GitLab enabled, `harr git publish [remote]` publishes the current named
+  local branch to the same-named remote branch with an explicit HEAD refspec,
+  verifies the remote SHA, and fixes stale upstream tracking. It uses the stored
+  Harr GitLab PAT through GIT_ASKPASS over HTTPS and never needs an SSH attempt.
+  `harr git push` is the lower-level HTTPS/PAT command for custom push refspecs.
 
 Ownership:
   Harr owns its GLOBAL harness policy/configuration after --clean.
