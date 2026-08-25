@@ -23,13 +23,14 @@ servers = {item["name"]: item for item in registry["servers"]}
 assert set(("codegraph", "gitlab", "grafana")) <= set(servers)
 
 grafana = servers["grafana"]
-assert grafana["transport"] == "stdio"
-assert grafana["lifecycle"] == "on-demand"
+assert grafana["transport"] == "http"
+assert grafana["lifecycle"] == "service"
+assert grafana["url"] == "http://127.0.0.1:3335/mcp"
 assert grafana["runtime"] == {
     "kind": "uvx",
     "package": "mcp-grafana",
     "command": "uvx",
-    "args": ["mcp-grafana"],
+    "args": ["mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"],
     "prefetch_args": ["mcp-grafana", "--version"],
     "probe_args": ["--offline", "mcp-grafana", "--version"],
     "install_hint": "uvx is required for Grafana MCP; install uv/uvx and run `harr install mcp`",
@@ -40,7 +41,7 @@ assert grafana["secrets"] == [
         "file": "grafana-service-account-token",
         "prompt": "Grafana service account token",
         "memento_id": "mcp/grafana/default",
-        "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"},
+        "target": {"kind": "header", "name": "X-Grafana-Service-Account-Token"},
     }
 ]
 
@@ -57,10 +58,9 @@ for platform in ("linux", "windows"):
         config = tomllib.loads(output.read_text(encoding="utf-8"))
         rendered = {item["name"]: item for item in config["gateway"]["servers"]}
         item = rendered["grafana"]
-        assert item["transport"] == "stdio"
-        assert item["command"] == "harr-mcp-run"
-        assert item["args"] == ["grafana"]
-        assert item["secret_env"]["GRAFANA_SERVICE_ACCOUNT_TOKEN"] == {"id": "mcp/grafana/default"}
+        assert item["transport"] == "http"
+        assert item["url"] == "http://127.0.0.1:3335/mcp"
+        assert item["secret_headers"]["X-Grafana-Service-Account-Token"] == {"id": "mcp/grafana/default"}
 
 with tempfile.TemporaryDirectory() as tmp:
     target = Path(tmp)
@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory() as tmp:
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
 with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     grafana_command = manager.runtime_command(grafana)
-    assert grafana_command == ["/tmp/uvx", "mcp-grafana"]
+    assert grafana_command == ["/tmp/uvx", "mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"]
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
 print("cross-platform MCP registry: PASS")
