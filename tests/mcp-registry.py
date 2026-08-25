@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import tomllib
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 MANAGER_PATH = ROOT / "common" / "mcp" / "manager.py"
@@ -25,10 +26,13 @@ grafana = servers["grafana"]
 assert grafana["transport"] == "stdio"
 assert grafana["lifecycle"] == "on-demand"
 assert grafana["runtime"] == {
-    "kind": "path",
+    "kind": "uvx",
+    "package": "mcp-grafana",
     "command": "uvx",
     "args": ["mcp-grafana"],
-    "install_hint": "uvx is required for Grafana MCP; install uv/uvx and rerun the Grafana tool",
+    "prefetch_args": ["mcp-grafana", "--version"],
+    "probe_args": ["--offline", "mcp-grafana", "--version"],
+    "install_hint": "uvx is required for Grafana MCP; install uv/uvx and run `harr install mcp`",
 }
 assert grafana["secrets"] == [
     {
@@ -67,4 +71,9 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "GRAFANA_SERVICE_ACCOUNT_TOKEN=" not in grafana_env
 
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
+with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
+    grafana_command = manager.runtime_command(grafana)
+    assert grafana_command == ["/tmp/uvx", "mcp-grafana"]
+    assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
+    assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
 print("cross-platform MCP registry: PASS")

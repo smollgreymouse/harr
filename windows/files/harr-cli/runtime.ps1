@@ -31,6 +31,7 @@ function Install-NodeStack {
     Write-Host 'Installing selected Harr npm MCP runtimes...'
     & $npm.Source install --prefix $NpmPrefix --omit=dev --no-audit --no-fund --package-lock=false
     if ($LASTEXITCODE -ne 0) { throw 'npm install failed for Harr MCP runtime' }
+    Invoke-Manager @('prefetch-runtimes')
     $env:HARR_NPM_BIN_DIR = $NpmBin
     Write-CodeGraphWrapper
 }

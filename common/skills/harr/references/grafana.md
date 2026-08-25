@@ -6,7 +6,13 @@ Grafana is an on-demand stdio MCP declared in `common/mcp/registry.json`:
 agent -> LeanCTX gateway -> harr-mcp-run grafana -> uvx mcp-grafana -> self-hosted Grafana
 ```
 
-`uvx` must be available in `PATH`. Harr does not globally install `mcp-grafana`; `uvx` runs the official package in its isolated environment.
+`uvx` must be available in `PATH`. During `harr install all` and `harr install mcp`, Harr downloads the `mcp-grafana` runtime into the `uvx` cache before the MCP is exposed to a sandboxed agent. This prevents a first tool call from failing when that sandbox has no network access. `harr status` reports Grafana as `ready` only when the cached runtime can start offline.
+
+After enabling Grafana with a `--harr-only` update, run:
+
+```text
+harr install mcp
+```
 
 Configure the non-secret endpoint in the Harr-local `mcp/grafana.env` generated from `common/mcp/grafana.env.example`:
 
