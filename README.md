@@ -458,6 +458,7 @@ harr secret set grafana
 harr secret unset gitlab
 harr secret unset grafana
 
+harr git fetch [git-fetch-options] [remote] [refspec...]
 harr git publish [remote]
 harr git push [git-push-options] [remote] [refspec...]
 
@@ -568,7 +569,7 @@ harr git publish [remote]
 
 `harr git publish` uses the configured Harr GitLab PAT over HTTPS directly, so it does not try SSH first. It pushes the explicit refspec `HEAD:refs/heads/<current-local-branch>`, verifies that the same-named remote branch SHA equals local `HEAD`, and then sets upstream to `<remote>/<current-local-branch>`. Therefore a stale feature-branch upstream such as `origin/master` cannot redirect the publish to protected `master` and cannot determine the MR `source_branch`.
 
-After publication, create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify the remote source branch and MR. `harr git push [git-push-options] [remote] [refspec...]` remains available as the lower-level GitLab HTTPS/PAT transport for custom pushes. Repository-file API mirroring is only a last resort when Harr Git transport itself cannot be used and the installed GitLab MCP can reproduce the local diff exactly.
+After publication, create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify the remote source branch and MR. Use `harr git fetch [remote] [refspec...]` for GitLab remote reads and `harr git push [git-push-options] [remote] [refspec...]` for custom pushes. All Harr Git network operations use HTTPS/PAT without changing repository remote URLs or global Git URL rewrites. Repository-file API mirroring is only a last resort when Harr Git transport itself cannot be used and the installed GitLab MCP can reproduce the local diff exactly.
 
 Git commit author, GitLab MR author, assignee and reviewer are distinct. The MR author is the authenticated GitLab identity; requested assignees/reviewers are resolved to GitLab user IDs and verified on the resulting MR rather than assumed from a name.
 
@@ -622,7 +623,7 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 ### Git
 
-Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches and remote fetch/pull/push operations. When GitLab is enabled, use `harr git publish [remote]` specifically for branch-safe MR source publication and `harr git push ...` for explicit GitLab HTTPS/PAT pushes; GitLab API operations such as MRs, pipelines, jobs, issues and users continue through `ctx_tools`.
+Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches. When GitLab is enabled, use `harr git fetch [remote] [refspec...]` for remote reads, `harr git publish [remote]` specifically for branch-safe MR source publication, and `harr git push ...` for explicit GitLab HTTPS/PAT pushes; GitLab API operations such as MRs, pipelines, jobs, issues and users continue through `ctx_tools`.
 
 
 
@@ -647,7 +648,7 @@ The permanent policy always keeps the core token-saving rules:
 - cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
-- ordinary Git repository/local/remote operations -> exact `git ...` commands through `ctx_shell`; GitLab MR source publication -> branch-safe `harr git publish`;
+- ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; GitLab remote reads/writes -> HTTPS `harr git fetch` / `harr git publish` / `harr git push`;
 - uncommon LeanCTX capabilities -> `ctx_call`;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;

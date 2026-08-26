@@ -24,6 +24,7 @@ harr mcp configure
 harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
+harr git fetch [remote] [refspec...]
 harr git publish [remote]
 harr git push [git-push-options] [remote] [refspec...]
 harr mcp status gitlab
@@ -38,7 +39,7 @@ LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected
 
 Kubernetes is intentionally not an MCP component. `harr kube configure` captures the user's working kubectl configuration into Harr-owned private state, and `harr kubectl ...` executes the real kubectl with that managed config so isolated agent hosts do not need direct access to the original kubeconfig. Load `references/kubernetes.md` only for Kubernetes bridge setup/diagnostics.
 
-When GitLab is enabled, `harr git publish` is the branch-safe host-independent MR source publisher: it uses the current local branch name, pushes `HEAD` to the same-named remote branch through Harr's HTTPS/PAT transport, verifies the remote SHA, and normalizes upstream to that branch. `harr git push` is the lower-level secure Git-over-HTTPS command for custom push options/refspecs. Neither command requires SSH credentials or changes the repository remote URL.
+When GitLab is enabled, `harr git fetch`, `harr git publish`, and `harr git push` use Harr's HTTPS/PAT transport. `harr git publish` is the branch-safe host-independent MR source publisher: it uses the current local branch name, pushes `HEAD` to the same-named remote branch, verifies the remote SHA, and normalizes upstream to that branch. `harr git push` is the lower-level command for custom push options/refspecs. These commands never require SSH credentials, change a repository remote URL, or write global Git URL rewrites.
 
 Harr owns managed versions/configuration. Do not independently run upstream LeanCTX setup/update, CodeGraph upgrades, or global installs of Harr-managed MCP packages.
 

@@ -88,10 +88,17 @@ def remote_host_and_rewrite(remote_url: str, api_url: str) -> tuple[str, str | N
     return host, f"{user_prefix}{host}:", f"{scheme}://{api_netloc}/"
 
 
-def first_remote_arg(push_args: list[str]) -> str | None:
-    takes_value = {"--receive-pack", "--exec", "-o", "--push-option"}
+def first_remote_arg(git_args: list[str], *, fetch: bool = False) -> str | None:
+    takes_value = {
+        "--receive-pack", "--exec", "-o", "--push-option",
+        "--upload-pack", "--depth", "--deepen", "--shallow-since",
+        "--shallow-exclude", "--filter", "--negotiation-tip", "--server-option",
+        "--jobs", "-j",
+    }
+    if fetch:
+        takes_value.add("-u")
     skip = False
-    for arg in push_args:
+    for arg in git_args:
         if skip:
             skip = False
             continue
@@ -106,13 +113,24 @@ def first_remote_arg(push_args: list[str]) -> str | None:
     return None
 
 
+def fetch_remote_and_args(git_args: list[str]) -> tuple[str, list[str]]:
+    blocked = {"--all", "-a", "--multiple", "--recurse-submodules"}
+    for arg in git_args:
+        if arg in blocked or arg.startswith("--recurse-submodules="):
+            fail(f"unsupported Harr GitLab fetch option {arg!r}; it can contact remotes other than the selected GitLab remote")
+    remote = resolve_remote(git_args, fetch=True)
+    if first_remote_arg(git_args, fetch=True) is None:
+        return remote, [*git_args, remote]
+    return remote, git_args
+
+
 def git_output(*args: str) -> str:
     result = subprocess.run(["git", *args], check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return result.stdout.strip()
 
 
-def resolve_remote(push_args: list[str]) -> str:
-    candidate = first_remote_arg(push_args)
+def resolve_remote(git_args: list[str], *, fetch: bool = False) -> str:
+    candidate = first_remote_arg(git_args, fetch=fetch)
     if candidate:
         return candidate
     branch = current_branch(allow_detached=True)
@@ -233,6 +251,20 @@ def push(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def fetch(args: argparse.Namespace) -> int:
+    registry, config_dir, secrets_dir = common_paths(args)
+    remote, git_args = fetch_remote_and_args(args.git_args)
+    with gitlab_transport(registry, config_dir, secrets_dir, remote) as (base, env):
+        result = subprocess.run([*base, "-c", "fetch.recurseSubmodules=false", "fetch", *git_args], env=env)
+    if result.returncode != 0:
+        print(
+            "Harr GitLab HTTPS fetch failed. Ensure the stored token has Git-over-HTTPS read permission "
+            "and that the GitLab user can read this repository.",
+            file=sys.stderr,
+        )
+    return result.returncode
+
+
 def publish(args: argparse.Namespace) -> int:
     registry, config_dir, secrets_dir = common_paths(args)
     remote = args.remote or "origin"
@@ -293,6 +325,10 @@ def main() -> int:
     add_transport_args(p_push)
     p_push.add_argument("git_args", nargs=argparse.REMAINDER)
 
+    p_fetch = sub.add_parser("fetch")
+    add_transport_args(p_fetch)
+    p_fetch.add_argument("git_args", nargs=argparse.REMAINDER)
+
     p_publish = sub.add_parser("publish")
     add_transport_args(p_publish)
     p_publish.add_argument("remote", nargs="?", default="origin")
@@ -302,6 +338,10 @@ def main() -> int:
         if ns.git_args and ns.git_args[0] == "--":
             ns.git_args = ns.git_args[1:]
         return push(ns)
+    if ns.command == "fetch":
+        if ns.git_args and ns.git_args[0] == "--":
+            ns.git_args = ns.git_args[1:]
+        return fetch(ns)
     if ns.command == "publish":
         return publish(ns)
     return 2

@@ -27,6 +27,7 @@ Harr Windows CLI
   harr secret set NAME
   harr secret status
   harr secret unset NAME
+  harr git fetch [git-fetch-options] [remote] [refspec...]
   harr git publish [remote]
   harr git push [git-push-options] [remote] [refspec...]
   harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]

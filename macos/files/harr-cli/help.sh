@@ -17,6 +17,7 @@ CLI:
   harr secret set NAME
   harr secret status
   harr secret unset NAME
+  harr git fetch [git-fetch-options] [remote] [refspec...]
   harr git publish [remote]
   harr git push [git-push-options] [remote] [refspec...]
   harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
@@ -38,7 +39,8 @@ With GitLab enabled, `harr git publish [remote]` publishes the current named
 local branch to the same-named remote branch with an explicit HEAD refspec,
 verifies the remote SHA, and fixes stale upstream tracking. It uses the stored
 Harr GitLab PAT through GIT_ASKPASS over HTTPS and never needs an SSH attempt.
-`harr git push` is the lower-level HTTPS/PAT command for custom push refspecs.
+  `harr git fetch` and `harr git push` use the same HTTPS/PAT transport for
+  remote reads and custom push refspecs. Harr never changes global Git URL rewrites.
 
 `harr kube configure` captures the working kubectl configuration as a private
 flattened Harr snapshot. `harr kubectl ...` always runs the real kubectl with

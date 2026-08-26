@@ -11,6 +11,14 @@ cmd_git() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
+    fetch)
+      cmd_git_transport
+      python3 "${HARR_COMMON_DIR}/gitlab/git_https.py" fetch \
+        --registry "$HARR_MCP_EFFECTIVE" \
+        --config-dir "$HARR_MCP_CONFIG_DIR" \
+        --secrets-dir "$HARR_SECRETS_DIR" \
+        -- "$@"
+      ;;
     push)
       cmd_git_transport
       python3 "${HARR_COMMON_DIR}/gitlab/git_https.py" push \
@@ -28,6 +36,6 @@ cmd_git() {
         --secrets-dir "$HARR_SECRETS_DIR" \
         "${1:-origin}"
       ;;
-    *) die 'usage: harr git {publish [remote]|push [git-push-options] [remote] [refspec...]}' ;;
+    *) die 'usage: harr git {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}' ;;
   esac
 }
