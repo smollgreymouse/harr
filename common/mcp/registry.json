@@ -49,13 +49,17 @@
       "label": "Grafana",
       "description": "Grafana dashboards and datasources",
       "required": false,
-      "transport": "stdio",
-      "lifecycle": "on-demand",
+      "transport": "http",
+      "lifecycle": "service",
+      "url": "http://127.0.0.1:3335/mcp",
       "runtime": {
-        "kind": "path",
+        "kind": "uvx",
+        "package": "mcp-grafana",
         "command": "uvx",
-        "args": ["mcp-grafana"],
-        "install_hint": "uvx is required for Grafana MCP; install uv/uvx and rerun the Grafana tool"
+        "args": ["mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"],
+        "prefetch_args": ["mcp-grafana", "--version"],
+        "probe_args": ["--offline", "mcp-grafana", "--version"],
+        "install_hint": "uvx is required for Grafana MCP; install uv/uvx and run `harr install mcp`"
       },
       "env_template": "grafana.env.example",
       "skill_reference": "grafana.md",
@@ -65,7 +69,7 @@
           "file": "grafana-service-account-token",
           "prompt": "Grafana service account token",
           "memento_id": "mcp/grafana/default",
-          "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
+          "target": {"kind": "header", "name": "X-Grafana-Service-Account-Token"}
         }
       ]
     }

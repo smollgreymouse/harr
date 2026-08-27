@@ -42,6 +42,10 @@ install_node_mcp_stack() {
   write_runtime_env "$node_bin"
 }
 
+prefetch_mcp_runtimes() {
+  mcp_manager prefetch-runtimes
+}
+
 leanctx_target() {
   case "$(uname -m)" in
     arm64|aarch64) printf '%s\n' aarch64-apple-darwin ;;
@@ -94,8 +98,8 @@ cmd_install_components() {
   local target="${1:-all}"
   [[ $# -le 1 ]] || die 'usage: harr install [all|leanctx|mcp]'
   case "$target" in
-    all) install_node_mcp_stack; install_leanctx; cmd_leanctx_apply ;;
-    mcp) install_node_mcp_stack ;;
+    all) install_node_mcp_stack; prefetch_mcp_runtimes; install_leanctx; cmd_leanctx_apply ;;
+    mcp) install_node_mcp_stack; prefetch_mcp_runtimes ;;
     leanctx) write_runtime_env; install_leanctx; cmd_leanctx_apply ;;
     *) die 'usage: harr install [all|leanctx|mcp]' ;;
   esac

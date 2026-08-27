@@ -195,7 +195,7 @@ def load_env_file(path: Path, forbidden: set[str]) -> dict[str, str]:
     return result
 
 
-def runtime_command(server: dict) -> list[str]:
+def path_runtime_executable(server: dict) -> str | None:
     runtime = server.get("runtime", {})
     kind = runtime.get("kind")
     command = runtime.get("command")
@@ -207,16 +207,44 @@ def runtime_command(server: dict) -> list[str]:
             candidate = candidate.with_suffix(".cmd")
         if not candidate.exists():
             raise SystemExit(f"MCP {server['name']} runtime is not installed: {candidate}")
-        executable = str(candidate)
-    elif kind == "path":
-        resolved = shutil.which(command)
-        if not resolved:
-            hint = runtime.get("install_hint") or f"required command not found: {command}"
-            raise SystemExit(hint)
-        executable = resolved
-    else:
-        raise SystemExit(f"unsupported runtime kind for MCP {server['name']}: {kind}")
+        return str(candidate)
+    if kind in {"path", "uvx"}:
+        return shutil.which(command)
+    raise SystemExit(f"unsupported runtime kind for MCP {server['name']}: {kind}")
+
+
+def runtime_command(server: dict) -> list[str]:
+    runtime = server.get("runtime", {})
+    executable = path_runtime_executable(server)
+    if not executable:
+        command = runtime.get("command", "")
+        hint = runtime.get("install_hint") or f"required command not found: {command}"
+        raise SystemExit(hint)
     return [executable, *[str(item) for item in runtime.get("args", [])]]
+
+
+def runtime_maintenance_command(server: dict, field: str) -> list[str] | None:
+    runtime = server.get("runtime", {})
+    args = runtime.get(field)
+    if args is None:
+        return None
+    executable = path_runtime_executable(server)
+    if not executable:
+        command = runtime.get("command", "")
+        hint = runtime.get("install_hint") or f"required command not found: {command}"
+        raise SystemExit(hint)
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        raise SystemExit(f"invalid {field} for MCP {server['name']}")
+    return [executable, *args]
+
+
+def prefetch_runtimes(data: dict) -> None:
+    for server in data["servers"]:
+        cmd = runtime_maintenance_command(server, "prefetch_args")
+        if not cmd:
+            continue
+        print(f"Preparing {server['label']} MCP runtime...")
+        subprocess.run(cmd, check=True)
 
 
 def run_server(args: argparse.Namespace, data: dict) -> None:
@@ -263,7 +291,7 @@ def component_rows(args: argparse.Namespace, data: dict) -> None:
     for server in data["servers"]:
         runtime = server.get("runtime", {})
         kind = runtime.get("kind")
-        expected = runtime.get("version") or runtime.get("command") or "-"
+        expected = runtime.get("version") or runtime.get("package") or runtime.get("command") or "-"
         installed = "-"
         state = "missing"
         if kind == "npm" and prefix is not None:
@@ -275,11 +303,25 @@ def component_rows(args: argparse.Namespace, data: dict) -> None:
                 except Exception:
                     installed = "invalid"
                 state = "ok" if installed == expected else "version-mismatch"
-        elif kind == "path":
-            resolved = shutil.which(str(runtime.get("command")))
+        elif kind in {"path", "uvx"}:
+            resolved = path_runtime_executable(server)
             if resolved:
                 installed = resolved
-                state = "available"
+                if kind == "uvx":
+                    probe = runtime_maintenance_command(server, "probe_args")
+                    try:
+                        result = subprocess.run(probe or [], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, timeout=15)
+                    except (OSError, subprocess.TimeoutExpired):
+                        state = "not-ready"
+                    else:
+                        if result.returncode == 0:
+                            version = next((line.strip() for line in result.stdout.splitlines() if line.strip()), "cached")
+                            installed = version
+                            state = "ready"
+                        else:
+                            state = "not-cached"
+                else:
+                    state = "available"
         print(f"{server['name']}\t{expected}\t{state}\t{installed}")
 
 
@@ -292,6 +334,7 @@ def main() -> None:
     p_names.add_argument("--lifecycle")
 
     sub.add_parser("npm-package-json")
+    sub.add_parser("prefetch-runtimes")
 
     p_render = sub.add_parser("render-leanctx")
     p_render.add_argument("--base", required=True)
@@ -329,6 +372,8 @@ def main() -> None:
             print(item["name"])
     elif args.command == "npm-package-json":
         npm_package_json(data)
+    elif args.command == "prefetch-runtimes":
+        prefetch_runtimes(data)
     elif args.command == "render-leanctx":
         render_leanctx(args, data)
     elif args.command == "install-configs":

@@ -61,7 +61,13 @@ For custom push options/refspecs use the lower-level:
 harr git push [git-push-options] [remote] [refspec...]
 ```
 
-Neither command rewrites the repository remote URL or requires an SSH attempt first.
+For remote reads from an isolated agent host, use:
+
+```text
+harr git fetch [remote] [refspec...]
+```
+
+All three commands use the Harr HTTPS/PAT transport. They neither rewrite the repository remote URL nor write global Git URL rewrites, and they do not require an SSH attempt first.
 
 ## Kubernetes / kubectl bridge
 

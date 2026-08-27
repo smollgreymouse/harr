@@ -48,6 +48,10 @@ install_node_mcp_stack() {
   write_runtime_env "$node_bin"
 }
 
+prefetch_mcp_runtimes() {
+  mcp_manager prefetch-runtimes
+}
+
 leanctx_target() {
   local arch libc glibc_ver major minor
   arch="$(uname -m)"
@@ -138,8 +142,8 @@ cmd_install_components() {
   [[ $# -le 1 ]] || die 'usage: harr install [all|leanctx|mcp]'
 
   case "$target" in
-    all) install_node_mcp_stack; install_leanctx; cmd_leanctx_apply ;;
-    mcp) install_node_mcp_stack ;;
+    all) install_node_mcp_stack; prefetch_mcp_runtimes; install_leanctx; cmd_leanctx_apply ;;
+    mcp) install_node_mcp_stack; prefetch_mcp_runtimes ;;
     leanctx) install_leanctx; cmd_leanctx_apply ;;
     *) die 'usage: harr install [all|leanctx|mcp]' ;;
   esac

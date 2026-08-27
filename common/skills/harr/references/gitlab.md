@@ -79,6 +79,22 @@ harr git push [git-push-options] [remote] [refspec...]
 
 This uses the same secure GitLab HTTPS/PAT transport but does not impose the current-branch MR invariant.
 
+### Fetch GitLab refs
+
+For a remote read from an isolated agent host, use:
+
+```text
+harr git fetch [remote] [refspec...]
+```
+
+For example:
+
+```text
+harr git fetch origin master
+```
+
+Harr resolves the selected remote, verifies that its host matches `GITLAB_API_URL`, then runs real `git fetch` over HTTPS with the stored PAT through `GIT_ASKPASS`. It does not change the repository remote URL or write global Git URL rewrites. `--all`, `--multiple`, and recursive-submodule fetch options are refused so the PAT remains scoped to the selected GitLab remote.
+
 ### Repository-file API fallback
 
 Only if Harr Git transport itself cannot be used should repository-file API mirroring be considered.
@@ -107,7 +123,7 @@ Do not query both direct and gateway routes for the same operation unless diagno
 
 ## Scope
 
-Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local/remote Git operations. Use `harr git publish` specifically to publish a GitLab MR source branch safely and `harr git push` for explicit GitLab HTTPS push operations.
+Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local Git operations. Use `harr git fetch` for GitLab remote reads, `harr git publish` specifically to publish a GitLab MR source branch safely, and `harr git push` for explicit GitLab HTTPS push operations.
 
 ## Authentication and permissions
 

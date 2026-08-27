@@ -33,6 +33,6 @@ harr secret status
 
 LeanCTX and CodeGraph are always enabled. Optional MCPs are selected globally with `harr mcp configure`; the same saved selection drives LeanCTX gateway generation, runtime packages, secrets/status, service lifecycle, global routing policy and the installed Harr skill/reference set.
 
-Only enabled registry entries with `lifecycle = service` belong under start/stop/restart/log commands. On-demand stdio servers such as CodeGraph and, when selected, Grafana are spawned through LeanCTX and do not need service commands.
+Only enabled registry entries with `lifecycle = service` belong under start/stop/restart/log commands. CodeGraph is an on-demand stdio server; Grafana and GitLab run as loopback HTTP services.
 
 Do not independently run upstream installers/upgraders for Harr-managed npm components; restore the selected pinned stack with `harr install all`. PATH runtimes declared by enabled registry entries (for example `uvx`) remain external prerequisites and are reported by `harr status` when unavailable.

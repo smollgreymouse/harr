@@ -10,7 +10,7 @@ function Require-GitLabGitTransport {
 
 function Git-Command([string[]]$CommandArgs) {
     if ($CommandArgs.Count -eq 0) {
-        throw 'usage: harr git {publish [remote]|push [git-push-options] [remote] [refspec...]}'
+        throw 'usage: harr git {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}'
     }
 
     $sub = $CommandArgs[0]
@@ -23,7 +23,7 @@ function Git-Command([string[]]$CommandArgs) {
         '--secrets-dir', $SecretsDir
     )
 
-    if ($sub -eq 'push') {
+    if ($sub -in @('fetch','push')) {
         [string[]]$pushArgs = @()
         if ($CommandArgs.Count -gt 1) { $pushArgs = @($CommandArgs[1..($CommandArgs.Count - 1)]) }
         $pythonArgs += '--'
@@ -32,7 +32,7 @@ function Git-Command([string[]]$CommandArgs) {
         if ($CommandArgs.Count -gt 2) { throw 'usage: harr git publish [remote]' }
         $pythonArgs += $(if ($CommandArgs.Count -gt 1) { $CommandArgs[1] } else { 'origin' })
     } else {
-        throw 'usage: harr git {publish [remote]|push [git-push-options] [remote] [refspec...]}'
+        throw 'usage: harr git {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}'
     }
 
     [void](Invoke-Python $pythonArgs)

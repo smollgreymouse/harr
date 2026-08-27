@@ -34,7 +34,24 @@ assert mod.remote_host_and_rewrite("https://gitlab.example.test/group/proj.git",
 )
 assert mod.first_remote_arg(["-u", "origin", "topic"]) == "origin"
 assert mod.first_remote_arg(["--force-with-lease", "origin", "topic"]) == "origin"
+assert mod.first_remote_arg(["--depth", "1", "origin", "master"], fetch=True) == "origin"
 assert mod.publish_refspec("ADSDSP-7737-final-prerank-cleanup") == "HEAD:refs/heads/ADSDSP-7737-final-prerank-cleanup"
+
+old_resolve_remote = mod.resolve_remote
+mod.resolve_remote = lambda _args, **_kwargs: "origin"
+try:
+    assert mod.fetch_remote_and_args([]) == ("origin", ["origin"])
+    assert mod.fetch_remote_and_args(["--prune"]) == ("origin", ["--prune", "origin"])
+    assert mod.fetch_remote_and_args(["origin", "master"]) == ("origin", ["origin", "master"])
+    for option in ("--all", "--multiple", "--recurse-submodules=on-demand"):
+        try:
+            mod.fetch_remote_and_args([option])
+        except RuntimeError as exc:
+            assert "unsupported Harr GitLab fetch option" in str(exc)
+        else:
+            raise AssertionError(f"unsafe fetch option accepted: {option}")
+finally:
+    mod.resolve_remote = old_resolve_remote
 
 try:
     mod.remote_host_and_rewrite("git@evil.example:group/proj.git", api)

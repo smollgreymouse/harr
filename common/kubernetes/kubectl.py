@@ -54,15 +54,17 @@ def resolve_kubectl(explicit: str | None = None) -> str:
     if not candidate:
         fail("kubectl was not found; install kubectl or pass `harr kube configure --kubectl PATH`")
     path = Path(candidate).expanduser()
-    if path.is_absolute() or path.parent != Path("."):
-        resolved = path.resolve()
-        if not resolved.is_file():
-            fail(f"kubectl executable does not exist: {resolved}")
-        return str(resolved)
-    found = shutil.which(str(path))
-    if not found:
-        fail(f"kubectl executable was not found: {candidate}")
-    return str(Path(found).resolve())
+    if not path.is_absolute() and path.parent == Path("."):
+        found = shutil.which(str(path))
+        if not found:
+            fail(f"kubectl executable was not found: {candidate}")
+        path = Path(found)
+    path = path.absolute()
+    if not path.is_file() or not os.access(path, os.X_OK):
+        fail(f"kubectl executable does not exist or is not executable: {path}")
+    # Preserve a command wrapper such as /snap/bin/kubectl. Resolving that
+    # symlink would turn it into /usr/bin/snap and lose the app name.
+    return str(path)
 
 
 def run_capture(command: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
