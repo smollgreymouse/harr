@@ -49,6 +49,11 @@ assert mod.explicit_context(["get", "pods", "--context", "exec"]) == "exec"
 assert mod.explicit_context(["--context=exec", "get", "pods"]) == "exec"
 assert mod.explicit_context(["get", "pods"]) is None
 
+with tempfile.TemporaryDirectory() as tmp_raw:
+    wrapper = Path(tmp_raw) / "kubectl"
+    wrapper.symlink_to(sys.executable)
+    assert mod.resolve_kubectl(str(wrapper)) == str(wrapper)
+
 for args in (["--kubeconfig", "/tmp/other"], ["get", "pods", "--kubeconfig=/tmp/other"]):
     try:
         mod.reject_kubeconfig_override(list(args))
