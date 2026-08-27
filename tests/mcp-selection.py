@@ -76,6 +76,8 @@ def check(spec: str, expected: list[str]) -> None:
         assert "Kubernetes cluster operations" in policy
         assert "harr kubectl ..." in policy
         assert "Do not use a Kubernetes MCP" in policy
+        assert "generated/build/test artifacts inside that workspace are pre-approved" in policy
+        assert "A Git commit or remote publish is pre-approved only" in policy
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("MR source branch is ALWAYS the current named local branch" in policy) == ("gitlab" in expected)
