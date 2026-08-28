@@ -67,6 +67,7 @@ def check(spec: str, expected: list[str]) -> None:
             parsed = tomllib.loads(lean.read_text(encoding="utf-8"))
             assert parsed["gateway"]["top_n"] == 3
             assert "harr" in parsed["shell_allowlist_extra"]
+            assert "clang-format" in parsed["shell_allowlist_extra"]
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
