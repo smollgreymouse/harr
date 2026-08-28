@@ -649,7 +649,7 @@ The permanent policy always keeps the core token-saving rules:
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
 - ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; GitLab remote reads/writes -> HTTPS `harr git fetch` / `harr git publish` / `harr git push`;
-- uncommon LeanCTX capabilities -> `ctx_call`;
+- known, non-editing uncommon LeanCTX capabilities -> `ctx_call`; never use it to discover edit/patch tools;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.

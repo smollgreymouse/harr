@@ -19,7 +19,7 @@ Direct Harr profile:
 - `ctx_tools`
 - `ctx_call`
 
-Uncommon LeanCTX capabilities are reached through `ctx_call`; do not expand the permanent MCP surface. Editing stays native; `ctx_edit`/`ctx_patch` are disabled.
+Use `ctx_call` only for a known, non-editing uncommon capability; do not use it to discover edit/patch tools. Editing stays native; `ctx_edit`/`ctx_patch` are disabled.
 
 Gateway facts:
 

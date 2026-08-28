@@ -13,7 +13,7 @@ Harr intentionally advertises only:
 - `ctx_tools`
 - `ctx_call`
 
-Do not assume other LeanCTX tools are directly exposed. Discover/invoke rarer capabilities through `ctx_call` rather than expanding the agent's permanent MCP surface.
+Do not assume other LeanCTX tools are directly exposed. Use `ctx_call` only for a known, non-editing rare capability rather than expanding the permanent MCP surface. Do not use it to discover edit/patch tools.
 
 Editing stays outside LeanCTX; use the host's native editor.
 

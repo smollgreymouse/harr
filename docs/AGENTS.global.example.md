@@ -16,7 +16,7 @@ For Codex the generated file is equivalent to:
 - A Git commit or remote publish is pre-approved only when the user explicitly requested that exact action; perform it then without an additional confirmation.
 - Use `ctx_read` only for missing exact evidence; `ctx_search` only for a concrete unresolved text/symbol question; `ctx_glob` only for a narrowly scoped unknown path; `ctx_shell` only for runtime/command evidence and Git operations.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
-- Use `ctx_call` for uncommon LeanCTX capabilities instead of expanding the permanent Harr tool surface. Prefer LeanCTX read/search/glob/shell; native equivalents are fallback for config/docs/generated/non-indexed content or when LeanCTX is unavailable. Build/test only on explicit request.
+- Use `ctx_call` only for a known, non-editing LeanCTX capability with no direct `ctx_*` route. Never use it to edit workspace files or discover edit/patch tools; use the native host editor directly. Prefer LeanCTX read/search/glob/shell; native equivalents are fallback for config/docs/generated/non-indexed content or when LeanCTX is unavailable. Build/test only on explicit request.
 <!-- harr-tool-policy:end -->
 
 OpenCode receives the same routing policy with the six LeanCTX ids rendered as `lean-ctx_ctx_*` names and the stricter host rule `Do not use native read/grep/glob/bash.`

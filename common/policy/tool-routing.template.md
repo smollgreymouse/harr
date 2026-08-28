@@ -23,5 +23,5 @@
 <!-- harr-mcp:grafana:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
-- Use `{{CTX_CALL}}` for uncommon LeanCTX capabilities instead of expanding the permanent Harr tool surface. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
+- Use `{{CTX_CALL}}` only for a known, non-editing LeanCTX capability with no direct `ctx_*` route. Never use it to edit workspace files or discover edit/patch tools; use the native host editor directly. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
 <!-- harr-tool-policy:end -->
