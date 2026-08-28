@@ -27,9 +27,9 @@ Harr Windows CLI
   harr secret set NAME
   harr secret status
   harr secret unset NAME
-  harr git fetch [git-fetch-options] [remote] [refspec...]
-  harr git publish [remote]
-  harr git push [git-push-options] [remote] [refspec...]
+  harr gitlab fetch [git-fetch-options] [remote] [refspec...]
+  harr gitlab publish [remote]
+  harr gitlab push [git-push-options] [remote] [refspec...]
   harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
   harr kube sync [--allow-exec] [--no-check]
   harr kube status [--no-check]
@@ -80,7 +80,7 @@ switch ($command) {
         $name = if ($rest.Count -gt 1) { $rest[1] } else { '' }
         Secret-Command $sub $name
     }
-    'git' { Git-Command $rest }
+    'gitlab' { GitLab-Command $rest }
     'kube' { Kube-Command $rest }
     'kubectl' { Kubectl-Command $rest }
     'mcp' {

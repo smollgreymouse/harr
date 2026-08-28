@@ -50,7 +50,7 @@ The same saved selection drives the LeanCTX gateway, npm/path runtime set, secre
 When GitLab is enabled and its Harr secret is configured, Harr can publish Git branches without SSH keys. For an MR source branch use:
 
 ```text
-harr git publish [remote]
+harr gitlab publish [remote]
 ```
 
 This command takes the source name from the current local branch, never from its upstream, and performs a real Git-over-HTTPS push using the stored GitLab PAT through `GIT_ASKPASS`. It pushes `HEAD:refs/heads/<current-local-branch>`, verifies the remote SHA equals local `HEAD`, then sets upstream to the same-named remote branch. A stale upstream such as `origin/master` therefore cannot redirect MR publication to `master`.
@@ -58,13 +58,13 @@ This command takes the source name from the current local branch, never from its
 For custom push options/refspecs use the lower-level:
 
 ```text
-harr git push [git-push-options] [remote] [refspec...]
+harr gitlab push [git-push-options] [remote] [refspec...]
 ```
 
 For remote reads from an isolated agent host, use:
 
 ```text
-harr git fetch [remote] [refspec...]
+harr gitlab fetch [remote] [refspec...]
 ```
 
 All three commands use the Harr HTTPS/PAT transport. They neither rewrite the repository remote URL nor write global Git URL rewrites, and they do not require an SSH attempt first.

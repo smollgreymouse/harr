@@ -1,18 +1,18 @@
 # Harr Git transport helpers. GitLab HTTPS transport preserves the real local commit/SHA.
 
-cmd_git_transport() {
+cmd_gitlab_transport() {
   ensure_mcp_effective
   mcp_manager names | grep -Fxq gitlab || die 'GitLab MCP is disabled; enable it before using Harr GitLab transport'
   require_command git
   require_command python3
 }
 
-cmd_git() {
+cmd_gitlab() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
     fetch)
-      cmd_git_transport
+      cmd_gitlab_transport
       python3 "${HARR_COMMON_DIR}/gitlab/git_https.py" fetch \
         --registry "$HARR_MCP_EFFECTIVE" \
         --config-dir "$HARR_MCP_CONFIG_DIR" \
@@ -20,7 +20,7 @@ cmd_git() {
         -- "$@"
       ;;
     push)
-      cmd_git_transport
+      cmd_gitlab_transport
       python3 "${HARR_COMMON_DIR}/gitlab/git_https.py" push \
         --registry "$HARR_MCP_EFFECTIVE" \
         --config-dir "$HARR_MCP_CONFIG_DIR" \
@@ -28,14 +28,14 @@ cmd_git() {
         -- "$@"
       ;;
     publish)
-      [[ $# -le 1 ]] || die 'usage: harr git publish [remote]'
-      cmd_git_transport
+      [[ $# -le 1 ]] || die 'usage: harr gitlab publish [remote]'
+      cmd_gitlab_transport
       python3 "${HARR_COMMON_DIR}/gitlab/git_https.py" publish \
         --registry "$HARR_MCP_EFFECTIVE" \
         --config-dir "$HARR_MCP_CONFIG_DIR" \
         --secrets-dir "$HARR_SECRETS_DIR" \
         "${1:-origin}"
       ;;
-    *) die 'usage: harr git {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}' ;;
+    *) die 'usage: harr gitlab {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}' ;;
   esac
 }

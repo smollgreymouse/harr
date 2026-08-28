@@ -81,8 +81,8 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("MR source branch is ALWAYS the current named local branch" in policy) == ("gitlab" in expected)
-        assert ("harr git publish [remote]" in policy) == ("gitlab" in expected)
-        assert ("harr git fetch [remote] [refspec...]" in policy) == ("gitlab" in expected)
+        assert ("harr gitlab publish [remote]" in policy) == ("gitlab" in expected)
+        assert ("harr gitlab fetch [remote] [refspec...]" in policy) == ("gitlab" in expected)
         assert ("HEAD:refs/heads/<current-local-branch>" in policy) == ("gitlab" in expected)
         assert ("stale upstream such as `origin/master` must never determine" in policy) == ("gitlab" in expected)
         assert ("no preliminary SSH attempt" in policy) == ("gitlab" in expected)
@@ -109,8 +109,8 @@ def check(spec: str, expected: list[str]) -> None:
         if gitlab_ref.exists():
             gitlab_text = gitlab_ref.read_text(encoding="utf-8")
             assert "gitlab::create_merge_request" in gitlab_text
-            assert "harr git publish [remote]" in gitlab_text
-            assert "harr git fetch [remote] [refspec...]" in gitlab_text
+            assert "harr gitlab publish [remote]" in gitlab_text
+            assert "harr gitlab fetch [remote] [refspec...]" in gitlab_text
             assert "HEAD:refs/heads/<current-local-branch>" in gitlab_text
             assert "never from `branch.<name>.remote`" in gitlab_text
             assert "origin/master" in gitlab_text

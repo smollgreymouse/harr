@@ -37,16 +37,16 @@ Treat a request to create an MR as one workflow spanning local Git and the GitLa
 6. Publish the current local branch with:
 
 ```text
-harr git publish [remote]
+harr gitlab publish [remote]
 ```
 
 7. Create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify it with `gitlab::get_merge_request` before reporting success.
 
-### Why `harr git publish` is mandatory for MR source publication
+### Why `harr gitlab publish` is mandatory for MR source publication
 
 For GitLab MR creation Harr deliberately does **not** use a bare `git push`, because a local feature branch may still track `origin/master` or another target branch. Depending on Git push configuration, an implicit push can therefore target a protected branch.
 
-`harr git publish` is branch-safe and host-independent:
+`harr gitlab publish` is branch-safe and host-independent:
 
 - it takes the MR source name from the current local branch, never from `branch.<name>.remote` / `branch.<name>.merge`;
 - it uses Harr's GitLab HTTPS/PAT transport directly, so no SSH attempt is needed first;
@@ -58,7 +58,7 @@ For GitLab MR creation Harr deliberately does **not** use a bare `git push`, bec
 Example for local branch `ADSDSP-7737-final-prerank-cleanup`:
 
 ```text
-harr git publish origin
+harr gitlab publish origin
 ```
 
 is semantically equivalent to a secure authenticated:
@@ -74,7 +74,7 @@ plus remote-SHA verification and explicit upstream normalization.
 For non-MR workflows or genuinely custom push refspecs/options, Harr also exposes:
 
 ```text
-harr git push [git-push-options] [remote] [refspec...]
+harr gitlab push [git-push-options] [remote] [refspec...]
 ```
 
 This uses the same secure GitLab HTTPS/PAT transport but does not impose the current-branch MR invariant.
@@ -84,13 +84,13 @@ This uses the same secure GitLab HTTPS/PAT transport but does not impose the cur
 For a remote read from an isolated agent host, use:
 
 ```text
-harr git fetch [remote] [refspec...]
+harr gitlab fetch [remote] [refspec...]
 ```
 
 For example:
 
 ```text
-harr git fetch origin master
+harr gitlab fetch origin master
 ```
 
 Harr resolves the selected remote, verifies that its host matches `GITLAB_API_URL`, then runs real `git fetch` over HTTPS with the stored PAT through `GIT_ASKPASS`. It does not change the repository remote URL or write global Git URL rewrites. `--all`, `--multiple`, and recursive-submodule fetch options are refused so the PAT remains scoped to the selected GitLab remote.
@@ -123,7 +123,7 @@ Do not query both direct and gateway routes for the same operation unless diagno
 
 ## Scope
 
-Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local Git operations. Use `harr git fetch` for GitLab remote reads, `harr git publish` specifically to publish a GitLab MR source branch safely, and `harr git push` for explicit GitLab HTTPS push operations.
+Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local Git operations. Use `harr gitlab fetch` for GitLab remote reads, `harr gitlab publish` specifically to publish a GitLab MR source branch safely, and `harr gitlab push` for explicit GitLab HTTPS push operations.
 
 ## Authentication and permissions
 

@@ -8,9 +8,9 @@ function Require-GitLabGitTransport {
     if (-not $git) { throw 'git is required for Harr Git transport' }
 }
 
-function Git-Command([string[]]$CommandArgs) {
+function GitLab-Command([string[]]$CommandArgs) {
     if ($CommandArgs.Count -eq 0) {
-        throw 'usage: harr git {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}'
+        throw 'usage: harr gitlab {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}'
     }
 
     $sub = $CommandArgs[0]
@@ -29,10 +29,10 @@ function Git-Command([string[]]$CommandArgs) {
         $pythonArgs += '--'
         $pythonArgs += $pushArgs
     } elseif ($sub -eq 'publish') {
-        if ($CommandArgs.Count -gt 2) { throw 'usage: harr git publish [remote]' }
+        if ($CommandArgs.Count -gt 2) { throw 'usage: harr gitlab publish [remote]' }
         $pythonArgs += $(if ($CommandArgs.Count -gt 1) { $CommandArgs[1] } else { 'origin' })
     } else {
-        throw 'usage: harr git {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}'
+        throw 'usage: harr gitlab {fetch [git-fetch-options] [remote] [refspec...]|publish [remote]|push [git-push-options] [remote] [refspec...]}'
     }
 
     [void](Invoke-Python $pythonArgs)

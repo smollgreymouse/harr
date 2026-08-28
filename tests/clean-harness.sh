@@ -79,7 +79,7 @@ grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Git repository local state/history/branches/remotes/commits' "${CODEX_HOME}/AGENTS.md"
-grep -q 'harr git fetch' "${CODEX_HOME}/AGENTS.md"
+grep -q 'harr gitlab fetch' "${CODEX_HOME}/AGENTS.md"
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 
