@@ -28,7 +28,7 @@ harr secret set grafana
 harr secret status
 ```
 
-The registry stores it as the `grafana-service-account-token` Harr secret. LeanCTX passes it only as the `X-Grafana-Service-Account-Token` request header to the loopback service; the token is not written to the service environment, `grafana.env`, LeanCTX configuration, or the repository. Do not pass `--disable-write`.
+The registry stores it as the `grafana-service-account-token` Harr secret. Harr passes it to the loopback service as `GRAFANA_SERVICE_ACCOUNT_TOKEN`; the token is not written to `grafana.env`, LeanCTX configuration, or the repository. Do not pass `--disable-write`.
 
 Typical config roots are:
 

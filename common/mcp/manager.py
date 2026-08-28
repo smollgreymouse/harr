@@ -89,10 +89,10 @@ def render_gateway(data: dict, runner_command: str) -> str:
                 secret_headers.append(item)  # type: ignore[arg-type]
             else:
                 raise SystemExit(f"unsupported secret target for MCP {name}: {target.get('kind')}")
-        if secret_env:
+        if secret_env and transport == "stdio":
             lines += ["", "[gateway.servers.secret_env]"]
             lines += [f"{key} = {{ id = {toml_string(secret_id)} }}" for key, secret_id in secret_env]
-        if secret_headers:
+        if secret_headers and transport == "http":
             lines += ["", "[gateway.servers.secret_headers]"]
             lines += [f"{toml_string(key)} = {{ id = {toml_string(secret_id)} }}" for key, secret_id in secret_headers]
         chunks.append("\n".join(lines))
@@ -238,6 +238,26 @@ def runtime_maintenance_command(server: dict, field: str) -> list[str] | None:
     return [executable, *args]
 
 
+def service_secret_env(server: dict) -> dict[str, str]:
+    secret_root = harr_config_dir() / "secrets"
+    result: dict[str, str] = {}
+    for secret in server.get("secrets", []):
+        target = secret.get("target", {})
+        if target.get("kind") != "env":
+            continue
+        name = target.get("name")
+        filename = secret.get("file")
+        if not name or not filename:
+            raise SystemExit(f"invalid env secret target for MCP {server['name']}")
+        path = secret_root / filename
+        if not path.is_file():
+            continue
+        value = path.read_text(encoding="utf-8").strip()
+        if value:
+            result[str(name)] = value
+    return result
+
+
 def prefetch_runtimes(data: dict) -> None:
     for server in data["servers"]:
         cmd = runtime_maintenance_command(server, "prefetch_args")
@@ -260,6 +280,7 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
     if server.get("env_template") and not env_path.exists():
         raise SystemExit(f"MCP {server['name']} configuration is missing: {env_path}")
     env.update(load_env_file(env_path, forbidden))
+    env.update(service_secret_env(server))
     cmd = runtime_command(server)
     if os.name == "nt":
         raise SystemExit(subprocess.call(cmd, env=env))

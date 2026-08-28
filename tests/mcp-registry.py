@@ -41,7 +41,7 @@ assert grafana["secrets"] == [
         "file": "grafana-service-account-token",
         "prompt": "Grafana service account token",
         "memento_id": "mcp/grafana/default",
-        "target": {"kind": "header", "name": "X-Grafana-Service-Account-Token"},
+        "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"},
     }
 ]
 
@@ -60,7 +60,8 @@ for platform in ("linux", "windows"):
         item = rendered["grafana"]
         assert item["transport"] == "http"
         assert item["url"] == "http://127.0.0.1:3335/mcp"
-        assert item["secret_headers"]["X-Grafana-Service-Account-Token"] == {"id": "mcp/grafana/default"}
+        assert "secret_env" not in item
+        assert "secret_headers" not in item
 
 with tempfile.TemporaryDirectory() as tmp:
     target = Path(tmp)
@@ -76,4 +77,10 @@ with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     assert grafana_command == ["/tmp/uvx", "mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"]
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
+with tempfile.TemporaryDirectory() as tmp:
+    secret_dir = Path(tmp) / "secrets"
+    secret_dir.mkdir()
+    (secret_dir / "grafana-service-account-token").write_text("token-value\n", encoding="utf-8")
+    with patch.dict(manager.os.environ, {"HARR_CONFIG_DIR": tmp}):
+        assert manager.service_secret_env(grafana) == {"GRAFANA_SERVICE_ACCOUNT_TOKEN": "token-value"}
 print("cross-platform MCP registry: PASS")

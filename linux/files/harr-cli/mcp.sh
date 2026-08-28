@@ -12,7 +12,10 @@ mcp_endpoint() { mcp_server_field "$1" url 2>/dev/null || true; }
 mcp_endpoint_state() {
   local endpoint="$1"
   [[ -n "$endpoint" ]] || { printf '%s\n' '-'; return; }
-  if command -v curl >/dev/null 2>&1 && curl --silent --show-error --max-time 1 --output /dev/null "$endpoint" 2>/dev/null; then printf '%s\n' reachable; else printf '%s\n' unreachable; fi
+  if ! command -v curl >/dev/null 2>&1; then printf '%s\n' unreachable; return; fi
+  if curl --silent --show-error --max-time 1 --output /dev/null "$endpoint" 2>/dev/null; then printf '%s\n' reachable; return; fi
+  local init_payload='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"harr-status","version":"0"}}}'
+  if curl --silent --show-error --max-time 3 --output /dev/null -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$init_payload" "$endpoint" 2>/dev/null; then printf '%s\n' reachable; else printf '%s\n' unreachable; fi
 }
 mcp_service_state() { systemctl_user is-active "$(mcp_unit "$1")" 2>/dev/null || true; }
 mcp_startup_state() { systemctl_user is-enabled "$(mcp_unit "$1")" 2>/dev/null || true; }

@@ -69,7 +69,7 @@
           "file": "grafana-service-account-token",
           "prompt": "Grafana service account token",
           "memento_id": "mcp/grafana/default",
-          "target": {"kind": "header", "name": "X-Grafana-Service-Account-Token"}
+          "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
         }
       ]
     }

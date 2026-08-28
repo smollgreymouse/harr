@@ -26,8 +26,8 @@ LeanCTX 3.9.15                         required
       |
       +-- HTTP :3334 -----> GitLab MCP 2.1.48     optional
       |
-      +-- stdio -----------> Grafana MCP           optional
-      |                     uvx mcp-grafana
+      +-- HTTP :3335 -----> Grafana MCP           optional
+      |                     uvx mcp-grafana --transport streamable-http
       |
       +-- future MCPs -----> common registry       required/optional metadata
 
@@ -467,7 +467,7 @@ harr uninstall
 
 `harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument applies a non-interactive exact set.
 
-Lifecycle commands apply only to **enabled** registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph and an enabled Grafana are spawned by LeanCTX when called.
+Lifecycle commands apply only to **enabled** registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph are spawned by LeanCTX when called.
 
 Changing the selection reapplies the effective registry, selected runtime package set, LeanCTX gateway, lifecycle registration, global policy and Harr diagnostic skill. Existing env/secret files for disabled MCPs are deliberately preserved.
 
@@ -488,7 +488,7 @@ description: selector/help description
 transport:  stdio | http
 lifecycle:  on-demand | service
 runtime:    npm package | command already available in PATH
-secret:     LeanCTX secret_env | secret_headers
+secret:     env for local services | LeanCTX secret_env | secret_headers
 skill_reference: optional Harr diagnostic reference owned by that MCP
 ```
 
@@ -606,7 +606,7 @@ harr secret set grafana
 harr secret status
 ```
 
-The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` through LeanCTX secret-memento handling while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
+The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP service while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
 
 For dashboard edits, prefer the compact patch-first flow:
 
