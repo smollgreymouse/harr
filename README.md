@@ -559,7 +559,7 @@ GITLAB_PERMISSION_MODE=full
 GITLAB_TOOLSETS=all
 ```
 
-LeanCTX gateway discovery is intentionally compact but not single-result: Harr uses `gateway.top_n = 3`. Discovery is ranked, so absence from one broad result is not proof that a GitLab capability is unavailable; write operations use verb-specific discovery such as `create GitLab merge request` -> `gitlab::create_merge_request`, with one refresh/retry before declaring an expected tool missing.
+LeanCTX gateway discovery is intentionally compact but not single-result: Harr uses `gateway.top_n = 3`. Discovery is ranked, so absence from one broad result is not proof that a GitLab capability is unavailable. When a workflow defines an expected downstream tool, Harr discovers it by its exact bare name, for example `create_merge_request` -> `gitlab::create_merge_request`; otherwise it uses a verb-and-object query. A related result is not a substitute for the expected tool. Harr refreshes and repeats the same query once before declaring an expected tool missing.
 
 MR creation is treated as a combined Git + GitLab workflow. The MR source branch is the **current named local branch**, never its configured upstream. For MR source publication Harr uses:
 

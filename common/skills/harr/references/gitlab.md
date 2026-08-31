@@ -14,16 +14,16 @@ The long-lived MCP service is managed by Harr at `http://127.0.0.1:3334/mcp`.
 
 Use `ctx_tools` to discover/call `gitlab::*` tools when using this route. LeanCTX gateway discovery is ranked and returns only a short top-N list, not the full GitLab catalog. Never conclude that a GitLab capability is unavailable merely because it was absent from a previous broad `find` result.
 
-For an operation whose verb is known, use a targeted discovery query. Examples:
+When the workflow defines an expected downstream tool, use its exact bare name as the discovery query. Otherwise, use a targeted verb-and-object query. Examples:
 
 ```text
-create GitLab merge request -> gitlab::create_merge_request
-update GitLab merge request -> gitlab::update_merge_request
-merge GitLab merge request  -> gitlab::merge_merge_request
-create GitLab issue         -> gitlab::create_issue
+create_merge_request -> gitlab::create_merge_request
+update_merge_request -> gitlab::update_merge_request
+merge_merge_request  -> gitlab::merge_merge_request
+create_issue          -> gitlab::create_issue
 ```
 
-If an expected tool is not returned, call `ctx_tools` with `action="refresh"` once and repeat the targeted `find` before declaring it unavailable.
+A discovery succeeds only when it returns the expected qualified tool. A related result, such as `update_merge_request` while creating an MR, is neither a substitute nor evidence that the expected tool is unavailable. If an expected tool is not returned, call `ctx_tools` with `action="refresh"` once and repeat the same query before declaring it unavailable.
 
 ## Merge request creation workflow
 
@@ -40,7 +40,7 @@ Treat a request to create an MR as one workflow spanning local Git and the GitLa
 harr gitlab publish [remote]
 ```
 
-7. Create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify it with `gitlab::get_merge_request` before reporting success.
+7. Create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch. `gitlab::update_merge_request` is only for an already identified existing MR and is never a fallback for creation. Verify the new MR with `gitlab::get_merge_request` before reporting success.
 
 ### Why `harr gitlab publish` is mandatory for MR source publication
 

@@ -81,6 +81,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert "A Git commit or remote publish is pre-approved only" in policy
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
+        assert ("create_merge_request` -> `gitlab::create_merge_request" in policy) == ("gitlab" in expected)
+        assert ("similar tool is neither a substitute" in policy) == ("gitlab" in expected)
+        assert "create GitLab merge request" not in policy
         assert ("MR source branch is ALWAYS the current named local branch" in policy) == ("gitlab" in expected)
         assert ("harr gitlab publish [remote]" in policy) == ("gitlab" in expected)
         assert ("harr gitlab fetch [remote] [refspec...]" in policy) == ("gitlab" in expected)
@@ -110,6 +113,9 @@ def check(spec: str, expected: list[str]) -> None:
         if gitlab_ref.exists():
             gitlab_text = gitlab_ref.read_text(encoding="utf-8")
             assert "gitlab::create_merge_request" in gitlab_text
+            assert "create_merge_request -> gitlab::create_merge_request" in gitlab_text
+            assert "neither a substitute nor evidence" in gitlab_text
+            assert "create GitLab merge request" not in gitlab_text
             assert "harr gitlab publish [remote]" in gitlab_text
             assert "harr gitlab fetch [remote] [refspec...]" in gitlab_text
             assert "HEAD:refs/heads/<current-local-branch>" in gitlab_text
