@@ -81,6 +81,7 @@ grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGE
 grep -q 'Git repository local state/history/branches/remotes/commits' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr gitlab fetch' "${CODEX_HOME}/AGENTS.md"
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
+grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 
 python3 - <<'PY'
@@ -157,6 +158,7 @@ done
 
 "${ROOT}/linux/install.sh" --harr-only
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
+grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
 for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do

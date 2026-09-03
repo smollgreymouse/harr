@@ -93,6 +93,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("source_branch=<current-local-branch>" in policy) == ("gitlab" in expected)
         assert ("MR author is the authenticated GitLab identity" in policy) == ("gitlab" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
+        assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
+        assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
+        assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"

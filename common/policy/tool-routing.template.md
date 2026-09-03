@@ -19,7 +19,8 @@
 - Do not conflate Git commit author, GitLab MR author, assignee and reviewer. The MR author is the authenticated GitLab identity and is not assignable like a reviewer; resolve requested assignees/reviewers to GitLab user IDs and verify the created MR before claiming those identities were set.
 <!-- harr-mcp:gitlab:end -->
 <!-- harr-mcp:grafana:start -->
-- Grafana dashboard work: use `grafana` through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary.
+- Grafana dashboard work, including a Grafana dashboard URL or `/goto/` short link: FIRST discover and use the relevant `grafana::*` operation through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary. Do not open the dashboard in a browser as the first action.
+- A browser is a Grafana fallback only after the Harr Grafana route cannot resolve the short link or does not expose the required operation; state that limitation before using it.
 <!-- harr-mcp:grafana:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
