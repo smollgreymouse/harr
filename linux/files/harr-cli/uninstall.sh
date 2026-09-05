@@ -20,6 +20,7 @@ cmd_uninstall() {
       systemctl --user disable --now "harr-mcp@${name}.service" >/dev/null 2>&1 || true
     done < <(managed_mcp_names 2>/dev/null || true)
     systemctl --user disable --now harr-mcp-gitlab.service >/dev/null 2>&1 || true
+    systemctl --user disable --now harr-git-host.service >/dev/null 2>&1 || true
   fi
 
   "$HARR_STATE_HELPER" restore

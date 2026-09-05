@@ -79,6 +79,12 @@ def check(spec: str, expected: list[str]) -> None:
         assert "Do not use a Kubernetes MCP" in policy
         assert "generated/build/test artifacts inside that workspace are pre-approved" in policy
         assert "A Git commit or remote publish is pre-approved only" in policy
+        assert "any Git command that can contact a remote" in policy
+        assert "harr git -C /absolute/repository/path" in policy
+        assert "never bare network `git`" in policy
+        assert "do not choose an SSH key" in policy
+        assert "host-git-service ready (ssh-agent: available)" in policy
+        assert "never silently switch between the two identities" in policy
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("create_merge_request` -> `gitlab::create_merge_request" in policy) == ("gitlab" in expected)
@@ -103,6 +109,15 @@ def check(spec: str, expected: list[str]) -> None:
         skill = (filtered_skill / "SKILL.md").read_text(encoding="utf-8")
         assert "harr kube configure" in skill
         assert "harr kubectl <kubectl args...>" in skill
+        assert "## Host Git transport (Linux)" in skill
+        assert "harr git -C /absolute/repository/path" in skill
+        assert "Do not try bare network `git` first" in skill
+        git_ref = filtered_skill / "references" / "git.md"
+        assert git_ref.exists()
+        git_text = git_ref.read_text(encoding="utf-8")
+        assert "No project-specific key policy is needed" in git_text
+        assert "harr git clone" in git_text
+        assert "Never report a remote operation as successful" in git_text
         kube_ref = filtered_skill / "references" / "kubernetes.md"
         assert kube_ref.exists()
         kube_text = kube_ref.read_text(encoding="utf-8")

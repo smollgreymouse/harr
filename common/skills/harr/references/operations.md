@@ -13,6 +13,8 @@ harr leanctx apply
 harr leanctx status
 harr agents apply
 harr agents status
+harr git <git-arguments>
+harr git -C /absolute/repository/path <git-arguments>
 harr mcp available
 harr mcp configure
 harr mcp list
@@ -36,3 +38,11 @@ LeanCTX and CodeGraph are always enabled. Optional MCPs are selected globally wi
 Only enabled registry entries with `lifecycle = service` belong under start/stop/restart/log commands. CodeGraph is an on-demand stdio server; Grafana and GitLab run as loopback HTTP services.
 
 Do not independently run upstream installers/upgraders for Harr-managed npm components; restore the selected pinned stack with `harr install all`. PATH runtimes declared by enabled registry entries (for example `uvx`) remain external prerequisites and are reported by `harr status` when unavailable.
+
+## Git transport routing
+
+- Local-only Git work uses exact `git ...` commands through `ctx_shell`.
+- Linux remote Git using the user's terminal authentication uses exact `harr git ...` commands through `ctx_shell`.
+- When the repository cannot be selected as the LeanCTX cwd, use `harr git -C /absolute/repository/path ...`.
+- GitLab PAT operations use `harr gitlab fetch`, `harr gitlab publish`, or `harr gitlab push`; do not silently substitute this identity for terminal authentication.
+- `harr status` reports the host service and SSH-agent state. Load `git.md` for the full contract and diagnostics.

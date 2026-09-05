@@ -25,6 +25,8 @@ item_target() {
     mcp-runner) printf '%s\n' "${HOME}/.local/bin/harr-mcp-run" ;;
     harr-launcher) printf '%s\n' "${HOME}/.local/bin/harr" ;;
     mcp-unit-template) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp@.service" ;;
+    git-host-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-git-host.service" ;;
+    git-host-enable-link) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/default.target.wants/harr-git-host.service" ;;
     gitlab-unit) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/harr-mcp-gitlab.service" ;;
     gitlab-enable-link) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/systemd/user/default.target.wants/harr-mcp-gitlab.service" ;;
     harr-config-root) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/harr" ;;
@@ -45,7 +47,7 @@ all_items() {
     codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
     codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
     leanctx-config leanctx-launcher codegraph-launcher mcp-runner harr-launcher \
-    mcp-unit-template gitlab-unit gitlab-enable-link \
+    mcp-unit-template git-host-unit git-host-enable-link gitlab-unit gitlab-enable-link \
     harr-config-root harr-libexec-root harr-share-root \
     ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \
     ocwf-command-review ocwf-command-safe ocwf-command-validate
@@ -73,7 +75,7 @@ write_runtime_marker() {
 
 extend_snapshot() {
   local key
-  for key in codex-config mcp-runner mcp-unit-template; do
+  for key in codex-config mcp-runner mcp-unit-template git-host-unit git-host-enable-link; do
     if [[ ! -d "${PRE_HARR}/items/${key}" ]]; then
       snapshot_item "$PRE_HARR" "$key"
       printf 'Extended existing pre-Harr snapshot with %s.\n' "$key"

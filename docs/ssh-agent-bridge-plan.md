@@ -1,5 +1,9 @@
 # План: терминальная SSH-аутентификация для процессов Harr
 
+> Статус: выбран и реализуется fallback B как `harr git …` + loopback host
+> service. Проверка показала, что current sandbox также блокирует доступ к
+> `systemd --user` bus, поэтому transient units не заменяют HTTP transport.
+
 ## Цель
 
 Вернуть процессам, запускаемым через Harr/LeanCTX, то же поведение SSH, что у
@@ -80,39 +84,34 @@ Codex/LeanCTX shell sandbox
   repo-настроек;
 - не трогать `common/gitlab/git_https.py` и `harr gitlab publish`.
 
-### Вариант B — Harr host-execution broker (fallback)
+### Вариант B — Harr host-execution broker (выбран для реализации)
 
 ```text
-Agent → LeanCTX gateway → localhost MCP: harr-host-shell
+Agent → ctx_shell: harr git … → localhost HTTP client
                                       │
                                       ▼
-                         user-session service
+                         harr-git-host user service
                                       │
-                         inherited SSH_AUTH_SOCK
+                    service SSH_AUTH_SOCK + request cwd + argv
                                       │
                                       ▼
-                              git / ssh / scp
+                                  real git
 ```
 
 Сервис стартует один раз на пользовательскую сессию, а не для проекта. Он
 использует существующий терминальный агент и не хранит ключи, токены или
 список репозиториев.
 
-API должен принимать структурированные поля `cwd`, `program`, `argv` и
-ограниченный environment; строка shell не принимается. Минимальный метод:
+API принимает структурированные поля `cwd` и `args`; строка
+shell не принимается. Минимальный запрос:
 
 ```text
-host_shell.execute({ cwd, program: "git", argv: ["push", "origin", "HEAD"] })
+POST /v1/git { cwd, args: ["push", "origin", "HEAD"] }
 ```
 
-У сервиса один глобальный режим, выбранный пользователем при включении:
-
-- `git-only` — запускаются только `git` и его штатные дочерние SSH-процессы;
-- `terminal` — явная capability для произвольных terminal commands.
-
-Это не policy по репозиториям. Режим `terminal` эквивалентен предоставлению
-агенту доверенного локального терминала, поэтому он должен включаться явной
-командой и отображаться в `harr status`.
+Первый релиз реализует только Git. Это не policy по репозиториям: один сервис
+обслуживает любые рабочие каталоги пользователя. Произвольный host shell не
+добавляется.
 
 #### Почему не HTTP proxy для SSH
 

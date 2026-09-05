@@ -19,6 +19,7 @@ CLI:
   harr secret unset NAME
   harr leanctx apply
   harr leanctx status
+  harr git <git-arguments>
   harr gitlab fetch [git-fetch-options] [remote] [refspec...]
   harr gitlab publish [remote]
   harr gitlab push [git-push-options] [remote] [refspec...]
@@ -52,6 +53,12 @@ GitLab transport:
   Harr GitLab PAT through GIT_ASKPASS over HTTPS and never needs an SSH attempt.
   `harr gitlab fetch` and `harr gitlab push` use the same HTTPS/PAT transport for
   remote reads and custom push refspecs. Harr never changes global Git URL rewrites.
+
+Host Git transport:
+  `harr git <git-arguments>` executes Git in the Harr user service outside the
+  agent sandbox. It preserves the current working directory and uses the user
+  service's SSH_AUTH_SOCK, so terminal SSH keys and Git
+  credential helpers work without changing repository or global Git config.
 
 Kubernetes transport:
   `harr kube configure` captures the working kubectl configuration as a private

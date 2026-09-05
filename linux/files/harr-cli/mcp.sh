@@ -102,6 +102,7 @@ cmd_status() {
   printf '== MCP selection ==\n\n'; mcp_available
   printf '\n== Components ==\n\n'; cmd_components_status
   printf '\n== LeanCTX ==\n\n'; cmd_leanctx_status
+  printf '\n== Host Git ==\n\n'; cmd_git_host_status
   printf '\n== Global hosts ==\n\n'; cmd_hosts_status
   printf '\n== Agent policy / diagnostic skills ==\n\n'; cmd_agents_status
   printf '\n== MCP services ==\n\n'; cmd_mcp_status_all

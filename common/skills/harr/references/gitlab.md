@@ -123,7 +123,7 @@ Do not query both direct and gateway routes for the same operation unless diagno
 
 ## Scope
 
-Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local Git operations. Use `harr gitlab fetch` for GitLab remote reads, `harr gitlab publish` specifically to publish a GitLab MR source branch safely, and `harr gitlab push` for explicit GitLab HTTPS push operations.
+Use GitLab MCP for GitLab server/API state and operations. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local Git operations. Use `harr gitlab fetch` for GitLab PAT-authenticated remote reads, `harr gitlab publish` specifically to publish a GitLab MR source branch safely, and `harr gitlab push` for explicit GitLab HTTPS/PAT push operations. If the user explicitly selects their normal terminal Git authentication instead, use `harr git ...`; never silently switch between the PAT identity and the terminal SSH/credential-helper identity.
 
 ## Authentication and permissions
 

@@ -1,0 +1,15 @@
+[Unit]
+Description=Harr host Git execution bridge
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.local/libexec/harr/common/git_host/git_host.py serve
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+NoNewPrivileges=true
+PassEnvironment=SSH_AUTH_SOCK
+
+[Install]
+WantedBy=default.target

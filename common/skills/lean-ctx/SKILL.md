@@ -21,6 +21,14 @@ Direct Harr profile:
 
 Use `ctx_call` only for a known, non-editing uncommon capability; do not use it to discover edit/patch tools. Editing stays native; `ctx_edit`/`ctx_patch` are disabled.
 
+Git routing through `ctx_shell`:
+
+- Local repository operations use one exact `git ...` command.
+- On Linux, remote operations that should use the user's terminal authentication use one exact `harr git ...` command; do not attempt bare network Git first.
+- Preserve repository cwd. If LeanCTX rejects that cwd because it belongs to another project root, use an allowed cwd and pass `harr git -C /absolute/repository/path ...`.
+- GitLab PAT operations remain the distinct `harr gitlab fetch/publish/push` route. Do not silently switch between PAT and terminal identities.
+- Diagnose the host bridge with `harr status`; do not alter remotes, `IdentityFile`, `core.sshCommand`, or agent sockets to work around the sandbox.
+
 Gateway facts:
 
 - CodeGraph: stdio child `codegraph serve --mcp`; inherits LeanCTX cwd, so wrong project binding means diagnose cwd/root rather than creating per-project Harr config.

@@ -78,8 +78,12 @@ grep -q 'codegraph::codegraph_explore' "${CODEX_HOME}/AGENTS.md"
 grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
-grep -q 'Git repository local state/history/branches/remotes/commits' "${CODEX_HOME}/AGENTS.md"
+grep -q 'Git repository local state/history/branches/configuration/commits' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr gitlab fetch' "${CODEX_HOME}/AGENTS.md"
+grep -q 'harr git ...' "${CODEX_HOME}/AGENTS.md"
+grep -q 'harr git -C /absolute/repository/path' "${CODEX_HOME}/AGENTS.md"
+grep -q 'never bare network `git`' "${CODEX_HOME}/AGENTS.md"
+grep -q 'host-git-service ready (ssh-agent: available)' "${CODEX_HOME}/AGENTS.md"
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
@@ -152,11 +156,18 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
+grep -q '## Host Git transport (Linux)' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
+grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"
+grep -q 'do not attempt bare network Git first' "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md"
 
 "${ROOT}/linux/harr" agents status
 "${ROOT}/linux/harr" hosts status
 
 "${ROOT}/linux/install.sh" --harr-only
+[[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
+[[ -f "${XDG_CONFIG_HOME}/systemd/user/harr-git-host.service" ]]
+[[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
+[[ "$(stat -c '%a' "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability")" == 600 ]]
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"

@@ -23,6 +23,7 @@ readonly SECRETS_DIR="${HARR_CONFIG_DIR}/secrets"
 readonly SYSTEMD_USER_DIR="${CONFIG_HOME}/systemd/user"
 readonly MCP_MANAGER="${COMMON_LIB_DIR}/mcp/manager.py"
 readonly MCP_UNIT_TEMPLATE="harr-mcp@.service"
+readonly GIT_HOST_UNIT="harr-git-host.service"
 readonly LEGACY_GITLAB_UNIT="harr-mcp-gitlab.service"
 readonly LEGACY_CODEGRAPH_UNIT="harr-mcp-codegraph.service"
 readonly CLEAN_STATE_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
@@ -116,6 +117,7 @@ install_runtime_files() {
   find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
   find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
   chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"
+  chmod 0755 "${COMMON_LIB_DIR}/git_host/git_host.py"
   install -m 0755 "${SOURCE_DIR}/harr" "${BIN_DIR}/harr"
   install -m 0755 "${FILES_DIR}/mcp/harr-mcp-run" "${BIN_DIR}/harr-mcp-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${BIN_DIR}/codegraph"
@@ -124,6 +126,8 @@ install_runtime_files() {
   install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${MCP_UNIT_TEMPLATE}" "${SYSTEMD_USER_DIR}/${MCP_UNIT_TEMPLATE}"
+  install -m 0644 "${SYSTEMD_SOURCE_DIR}/${GIT_HOST_UNIT}" "${SYSTEMD_USER_DIR}/${GIT_HOST_UNIT}"
+  python3 "${COMMON_LIB_DIR}/git_host/git_host.py" init --secret-file "${SECRETS_DIR}/git-host-capability"
 }
 
 install_mcp_configs() { python3 "$MCP_MANAGER" --registry "$MCP_EFFECTIVE" install-configs --config-dir "$MCP_CONFIG_DIR"; }
@@ -140,7 +144,12 @@ remove_legacy_services() {
 configure_systemd() {
   command -v systemctl >/dev/null 2>&1 || die 'systemctl not found'
   remove_legacy_services
+  if [[ -n "${SSH_AUTH_SOCK:-}" && -S "${SSH_AUTH_SOCK}" ]]; then
+    systemctl --user import-environment SSH_AUTH_SOCK
+  fi
   systemctl --user daemon-reload
+  systemctl --user enable "$GIT_HOST_UNIT" >/dev/null
+  systemctl --user restart "$GIT_HOST_UNIT"
   ((harr_only)) && return
   local name active
   active="$(python3 "$MCP_MANAGER" --registry "$MCP_EFFECTIVE" names --lifecycle service)"
