@@ -1,8 +1,8 @@
 # План: терминальная SSH-аутентификация для процессов Harr
 
-> Статус: выбран и реализуется fallback B как `harr git …` + loopback host
-> service. Проверка показала, что current sandbox также блокирует доступ к
-> `systemd --user` bus, поэтому transient units не заменяют HTTP transport.
+> Статус: fallback B реализован на Linux как `harr git …` + loopback host
+> service; macOS использует тот же broker через LaunchAgent. Windows требует
+> отдельной проверки песочницы по `docs/windows-git-host-handoff.md`.
 
 ## Цель
 
@@ -13,8 +13,8 @@
 - не требуется `core.sshCommand`, `IdentityFile` или policy на уровне репозитория;
 - SSH сам получает список ключей от уже запущенного пользовательского
   `ssh-agent` и выбирает подходящий ключ как в терминале;
-- существующий GitLab HTTPS/PAT transport остаётся отдельным, поддерживаемым
-  вариантом non-interactive аутентификации.
+- GitLab PAT используется GitLab MCP только для API-объектов и не подменяет
+  Git-аутентификацию.
 
 ## Зафиксированные результаты проверки
 
@@ -42,8 +42,8 @@ sandbox запрещает и подключение к socket, и его соз
 2. **Реализуемый внутри Harr fallback:** отдельный host-execution broker.
    Это не передаёт agent в sandbox: Git выполняется в доверенном локальном
    сервисе, у которого есть обычный terminal environment. Для агента это
-   отдельный MCP tool, поэтому полная прозрачность `ctx_shell` недостижима без
-   изменения LeanCTX/platform.
+   команду `harr git …` через `ctx_shell`; она передаёт argv host broker без
+   новых Git-подкоманд.
 
 Не следует реализовывать per-repository key policy как замену этому решению.
 
@@ -82,7 +82,7 @@ Codex/LeanCTX shell sandbox
 - расширить сгенерированную policy инструкцией: когда capability доступна,
   GitHub/GitLab SSH remote обрабатываются обычным `git`, без специальных
   repo-настроек;
-- не трогать `common/gitlab/git_https.py` и `harr gitlab publish`.
+- GitLab MCP оставить в зоне API; Git transport не переносить в MCP.
 
 ### Вариант B — Harr host-execution broker (выбран для реализации)
 
@@ -147,10 +147,9 @@ OpenSSH ожидает `SSH_AUTH_SOCK`; в текущем sandbox нельзя �
    production GitHub в automated tests не использовать.
 4. После успешного теста обновить policy: Git SSH не требует Harr wrapper.
 
-### Этап 3. Реализовать fallback broker только при необходимости
+### Этап 3. Реализовать host Git broker
 
-1. Добавить optional service `host-shell` в `common/mcp/registry.json` или
-   выделенный service catalog, не смешивая его с GitLab API MCP.
+1. Добавить обязательный per-user Git service, не смешивая его с GitLab API MCP.
 2. Добавить service runtime и launcher:
    - Linux: новый systemd user unit рядом с
      `linux/systemd/harr-mcp@.service`;
@@ -161,30 +160,28 @@ OpenSSH ожидает `SSH_AUTH_SOCK`; в текущем sandbox нельзя �
    не гарантированно наследует `SSH_AUTH_SOCK`, поэтому bootstrap должен
    импортировать его из терминальной/графической сессии и проверять доступ
    перед `ready`.
-4. Создать loopback-only MCP endpoint с per-session capability secret;
+4. Создать loopback-only HTTP endpoint с per-session capability secret;
    secret хранить в runtime dir с правами `0600`, не в git repo и не в MCP
    конфигурации.
-5. Реализовать `host_shell.execute` на `execve(program, argv)`:
+5. Реализовать только выполнение `git` с argv:
    - validate `cwd` и executable;
    - передавать минимальный environment и настоящий `SSH_AUTH_SOCK`;
    - поддержать отмену, timeout, exit code и сжатый лог;
    - не поддерживать shell string, redirection или произвольный environment
      override в первом релизе.
-6. Сгенерировать LeanCTX gateway entry и глобальную tool-routing policy для
-   `host_shell` только когда service включён.
-7. Добавить CLI: `harr host-shell enable|disable|status|logs`; включение
-   является единым глобальным действием, не затрагивает репозитории.
+6. Направить сетевые Git-команды через `harr git …` в глобальной policy.
+7. Показывать готовность сервиса и SSH-agent через `harr status`.
 
 ### Этап 4. Интеграция Git и GitLab
 
-1. В режиме platform capability Git продолжает идти через обычный `ctx_shell`.
-2. В режиме fallback Git-команды, которым нужен SSH, вызывают
-   `host_shell.execute`; локальные read-only Git операции остаются в
-   `ctx_shell`.
-3. Сохранить `harr gitlab fetch/push/publish` без изменений: PAT — нужный
-   независимый способ автоматической авторизации, особенно когда пользователь
-   не вошёл в desktop session или агент недоступен.
-4. Не изменять remote URL, global Git config или `.git/config` проектов.
+1. Локальные Git-команды продолжают идти через обычный `ctx_shell`.
+2. Все сетевые Git-команды идут через `harr git …` и используют терминальную
+   SSH/credential-helper конфигурацию host service.
+3. GitLab MCP создаёт и проверяет MR и другие API-объекты, но не публикует refs
+   и не зеркалирует локальные коммиты через repository-file API.
+4. Для MR использовать явный refspec
+   `HEAD:refs/heads/<current-local-branch>`, проверять remote SHA и upstream.
+5. Не изменять remote URL, global Git config или `.git/config` проектов.
 
 ### Этап 5. Проверки и документация
 

@@ -88,6 +88,27 @@ def validate_agent_socket(raw: str | None) -> str:
     return str(path)
 
 
+def refresh_macos_agent_socket() -> None:
+    if sys.platform != "darwin":
+        return
+    try:
+        validate_agent_socket(os.environ.get("SSH_AUTH_SOCK"))
+        return
+    except ValueError:
+        pass
+    probe = subprocess.run(
+        ["launchctl", "getenv", "SSH_AUTH_SOCK"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    candidate = probe.stdout.strip() if probe.returncode == 0 else ""
+    try:
+        os.environ["SSH_AUTH_SOCK"] = validate_agent_socket(candidate)
+    except ValueError:
+        pass
+
+
 def validate_request(value: Any) -> tuple[Path, list[str]]:
     if not isinstance(value, dict):
         raise ValueError("request must be a JSON object")
@@ -242,6 +263,7 @@ def client_health(args: argparse.Namespace) -> int:
 
 
 def serve(args: argparse.Namespace) -> int:
+    refresh_macos_agent_socket()
     token = load_secret(Path(args.secret_file).expanduser())
     server = GitHostServer((args.host, args.port), token)
     print(f"Harr Git host service listening on http://{args.host}:{args.port}", flush=True)

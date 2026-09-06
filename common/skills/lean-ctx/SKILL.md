@@ -24,9 +24,9 @@ Use `ctx_call` only for a known, non-editing uncommon capability; do not use it 
 Git routing through `ctx_shell`:
 
 - Local repository operations use one exact `git ...` command.
-- On Linux, remote operations that should use the user's terminal authentication use one exact `harr git ...` command; do not attempt bare network Git first.
+- Where `harr status` reports a ready host Git service, remote operations use one exact `harr git ...` command; do not attempt bare network Git first.
 - Preserve repository cwd. If LeanCTX rejects that cwd because it belongs to another project root, use an allowed cwd and pass `harr git -C /absolute/repository/path ...`.
-- GitLab PAT operations remain the distinct `harr gitlab fetch/publish/push` route. Do not silently switch between PAT and terminal identities.
+- GitLab MCP owns API objects such as merge requests, pipelines and users; Git/`harr git` own commits, branches, remotes and every fetch/push. Never mirror local commits through GitLab repository-file tools.
 - Diagnose the host bridge with `harr status`; do not alter remotes, `IdentityFile`, `core.sshCommand`, or agent sockets to work around the sandbox.
 
 Gateway facts:

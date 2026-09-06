@@ -1,7 +1,7 @@
 ---
 # Host Git transport
 
-Harr's Linux host Git bridge makes remote Git inside an isolated agent behave like Git in the user's terminal. The sandbox client sends only the working directory and Git argument vector to a loopback-only authenticated service. The service runs the real `git` process in the user session, where the normal SSH agent, SSH configuration, known-hosts files, Git configuration, and credential helpers are available.
+Harr's host Git bridge makes remote Git inside an isolated agent behave like Git in the user's terminal. The sandbox client sends only the working directory and Git argument vector to a loopback-only authenticated service. The service runs the real `git` process in the user session, where the normal SSH agent, SSH configuration, known-hosts files, Git configuration, and credential helpers are available.
 
 No project-specific key policy is needed. Do not configure an `IdentityFile` in Harr, copy private keys into the sandbox, expose the real agent socket, rewrite repository remotes, or set `core.sshCommand`.
 
@@ -39,15 +39,20 @@ harr git -C /absolute/repository/path push origin HEAD
 
 Arguments after `harr git` are passed directly to Git. Do not add a `--` before normal Git options.
 
-## GitLab identity choice
+## GitLab merge-request boundary
 
-`harr git` and `harr gitlab ...` are intentionally different authentication routes:
+Git uses the user's terminal SSH agent or credential helper. The stored GitLab PAT authenticates GitLab MCP API calls only.
 
-- `harr git ...` uses the user's terminal SSH agent or credential helper.
-- `harr gitlab fetch/publish/push` uses Harr's stored GitLab PAT over HTTPS.
-- GitLab MR source publication uses `harr gitlab publish` because it also enforces the current-branch refspec and verifies the remote SHA.
+Before creating an MR:
 
-Preserve the route chosen by the user or required by the workflow. Never silently fall back from one identity to the other.
+1. Read the current named local branch with `git symbolic-ref --quiet --short HEAD`; reject detached HEAD and source=target.
+2. Read local `HEAD` with `git rev-parse HEAD`.
+3. Push with `harr git push --set-upstream <remote> HEAD:refs/heads/<current-branch>`.
+4. Read the exact remote ref with `harr git ls-remote <remote> refs/heads/<current-branch>` and require its SHA to equal local `HEAD`.
+5. Verify the current branch tracks the same-named remote branch.
+6. Create and verify the MR through GitLab MCP.
+
+Never use an implicit push, GitLab `create_branch`, `create_or_update_file`, `push_files`, or repository-file mirroring to upload a local commit.
 
 ## Diagnostics
 

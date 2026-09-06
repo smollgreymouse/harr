@@ -54,29 +54,18 @@ Requirements:
 
 The same saved selection drives the LeanCTX gateway, runtime set, secrets/status, LaunchAgents, global AGENTS routing and installed Harr skill/reference set. Disabled MCP env/secret files are preserved.
 
-## GitLab Git transport
+## Host Git transport
 
-When GitLab is enabled and its Harr secret is configured, Harr can publish Git branches without SSH keys. For an MR source branch use:
+Harr installs the per-user `com.harr.git-host` LaunchAgent. Network Git commands run through `harr git <git-arguments>` in that user service and inherit the terminal SSH agent, SSH configuration and credential helpers without changing repository configuration.
 
-```text
-harr gitlab publish [remote]
-```
-
-This command takes the source name from the current local branch, never from its upstream, and performs a real Git-over-HTTPS push using the stored GitLab PAT through `GIT_ASKPASS`. It pushes `HEAD:refs/heads/<current-local-branch>`, verifies the remote SHA equals local `HEAD`, then sets upstream to the same-named remote branch. A stale upstream such as `origin/master` therefore cannot redirect MR publication to `master`.
-
-For custom push options/refspecs use the lower-level:
+For GitLab MR preparation, push the current named local branch with an explicit destination and verify its remote SHA before creating the MR through GitLab MCP:
 
 ```text
-harr gitlab push [git-push-options] [remote] [refspec...]
+harr git push --set-upstream <remote> HEAD:refs/heads/<current-local-branch>
+harr git ls-remote <remote> refs/heads/<current-local-branch>
 ```
 
-For remote reads from an isolated agent host, use:
-
-```text
-harr gitlab fetch [remote] [refspec...]
-```
-
-All three commands use the Harr HTTPS/PAT transport. They neither rewrite the repository remote URL nor write global Git URL rewrites, and they do not require an SSH attempt first.
+The stored GitLab PAT authenticates GitLab MCP API operations only; it is not used as Git transport.
 
 ## Kubernetes / kubectl bridge
 

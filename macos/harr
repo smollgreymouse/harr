@@ -41,7 +41,7 @@ case "$command" in
   hosts) cmd_hosts "$@" ;;
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
-  gitlab) cmd_gitlab "$@" ;;
+  git) cmd_git "$@" ;;
   kube) cmd_kube "$@" ;;
   kubectl) cmd_kubectl "$@" ;;
   mcp) cmd_mcp "$@" ;;

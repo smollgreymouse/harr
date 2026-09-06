@@ -79,11 +79,13 @@ grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Git repository local state/history/branches/configuration/commits' "${CODEX_HOME}/AGENTS.md"
-grep -q 'harr gitlab fetch' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr git ...' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr git -C /absolute/repository/path' "${CODEX_HOME}/AGENTS.md"
 grep -q 'never bare network `git`' "${CODEX_HOME}/AGENTS.md"
 grep -q 'host-git-service ready (ssh-agent: available)' "${CODEX_HOME}/AGENTS.md"
+grep -q 'Responsibility boundary' "${CODEX_HOME}/AGENTS.md"
+grep -q 'gitlab::get_merge_request' "${CODEX_HOME}/AGENTS.md"
+! grep -q 'harr gitlab publish' "${CODEX_HOME}/AGENTS.md"
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
@@ -156,7 +158,7 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
-grep -q '## Host Git transport (Linux)' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
+grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"
 grep -q 'do not attempt bare network Git first' "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md"
 

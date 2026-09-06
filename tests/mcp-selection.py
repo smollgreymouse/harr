@@ -84,18 +84,19 @@ def check(spec: str, expected: list[str]) -> None:
         assert "never bare network `git`" in policy
         assert "do not choose an SSH key" in policy
         assert "host-git-service ready (ssh-agent: available)" in policy
-        assert "never silently switch between the two identities" in policy
+        assert "If the host Git service is unavailable" in policy
+        assert "harr gitlab publish" not in policy
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("create_merge_request` -> `gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("similar tool is neither a substitute" in policy) == ("gitlab" in expected)
         assert "create GitLab merge request" not in policy
         assert ("MR source branch is ALWAYS the current named local branch" in policy) == ("gitlab" in expected)
-        assert ("harr gitlab publish [remote]" in policy) == ("gitlab" in expected)
-        assert ("harr gitlab fetch [remote] [refspec...]" in policy) == ("gitlab" in expected)
         assert ("HEAD:refs/heads/<current-local-branch>" in policy) == ("gitlab" in expected)
-        assert ("stale upstream such as `origin/master` must never determine" in policy) == ("gitlab" in expected)
-        assert ("no preliminary SSH attempt" in policy) == ("gitlab" in expected)
+        assert ("stale upstream configuration" in policy) == ("gitlab" in expected)
+        assert ("Responsibility boundary" in policy) == ("gitlab" in expected)
+        assert ("Never use `create_branch`, `create_or_update_file`, `push_files`" in policy) == ("gitlab" in expected)
+        assert ("gitlab::get_merge_request" in policy) == ("gitlab" in expected)
         assert ("source_branch=<current-local-branch>" in policy) == ("gitlab" in expected)
         assert ("MR author is the authenticated GitLab identity" in policy) == ("gitlab" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
@@ -109,7 +110,7 @@ def check(spec: str, expected: list[str]) -> None:
         skill = (filtered_skill / "SKILL.md").read_text(encoding="utf-8")
         assert "harr kube configure" in skill
         assert "harr kubectl <kubectl args...>" in skill
-        assert "## Host Git transport (Linux)" in skill
+        assert "## Host Git transport" in skill
         assert "harr git -C /absolute/repository/path" in skill
         assert "Do not try bare network `git` first" in skill
         git_ref = filtered_skill / "references" / "git.md"
@@ -134,14 +135,12 @@ def check(spec: str, expected: list[str]) -> None:
             assert "create_merge_request -> gitlab::create_merge_request" in gitlab_text
             assert "neither a substitute nor evidence" in gitlab_text
             assert "create GitLab merge request" not in gitlab_text
-            assert "harr gitlab publish [remote]" in gitlab_text
-            assert "harr gitlab fetch [remote] [refspec...]" in gitlab_text
+            assert "harr gitlab publish" not in gitlab_text
             assert "HEAD:refs/heads/<current-local-branch>" in gitlab_text
-            assert "never from `branch.<name>.remote`" in gitlab_text
             assert "origin/master" in gitlab_text
-            assert "GIT_ASKPASS" in gitlab_text
-            assert "repository-file deletion is not exposed" in gitlab_text
-            assert "GitLab MR author is the authenticated GitLab identity" in gitlab_text
+            assert "They do not push the caller's local commit" in gitlab_text
+            assert "gitlab::get_merge_request" in gitlab_text
+            assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
         assert "<!-- harr-mcp:" not in skill

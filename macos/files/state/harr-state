@@ -11,10 +11,14 @@ readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/man
 readonly LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 
 service_names() {
+  printf '%s\n' git-host
   [[ -r "$MANAGER" ]] && command -v python3 >/dev/null 2>&1 || return 0
   python3 "$MANAGER" names --lifecycle service
 }
-service_label() { printf 'com.harr.mcp.%s\n' "$1"; }
+service_label() {
+  if [[ "$1" == git-host ]]; then printf '%s\n' 'com.harr.git-host';
+  else printf 'com.harr.mcp.%s\n' "$1"; fi
+}
 service_plist() { printf '%s/%s.plist\n' "$LAUNCH_AGENTS_DIR" "$(service_label "$1")"; }
 service_target() { printf 'gui/%s/%s\n' "$(id -u)" "$(service_label "$1")"; }
 launch_domain() { printf 'gui/%s\n' "$(id -u)"; }

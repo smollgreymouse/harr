@@ -458,9 +458,8 @@ harr secret set grafana
 harr secret unset gitlab
 harr secret unset grafana
 
-harr gitlab fetch [git-fetch-options] [remote] [refspec...]
-harr gitlab publish [remote]
-harr gitlab push [git-push-options] [remote] [refspec...]
+harr git <git-arguments>
+harr git -C /absolute/repository/path <git-arguments>
 
 harr uninstall
 ```
@@ -561,19 +560,20 @@ GITLAB_TOOLSETS=all
 
 LeanCTX gateway discovery is intentionally compact but not single-result: Harr uses `gateway.top_n = 3`. Discovery is ranked, so absence from one broad result is not proof that a GitLab capability is unavailable. When a workflow defines an expected downstream tool, Harr discovers it by its exact bare name, for example `create_merge_request` -> `gitlab::create_merge_request`; otherwise it uses a verb-and-object query. A related result is not a substitute for the expected tool. Harr refreshes and repeats the same query once before declaring an expected tool missing.
 
-MR creation is treated as a combined Git + GitLab workflow. The MR source branch is the **current named local branch**, never its configured upstream. For MR source publication Harr uses:
+MR creation is treated as a combined Git + GitLab workflow. Git owns the repository and remote refs; GitLab MCP owns the MR API object. The MR source branch is the **current named local branch**, never its configured upstream. Publish it with ordinary Git through the host service and an explicit destination:
 
 ```text
-harr gitlab publish [remote]
+harr git push --set-upstream <remote> HEAD:refs/heads/<current-local-branch>
+harr git ls-remote <remote> refs/heads/<current-local-branch>
 ```
 
-`harr gitlab publish` uses the configured Harr GitLab PAT over HTTPS directly, so it does not try SSH first. It pushes the explicit refspec `HEAD:refs/heads/<current-local-branch>`, verifies that the same-named remote branch SHA equals local `HEAD`, and then sets upstream to `<remote>/<current-local-branch>`. Therefore a stale feature-branch upstream such as `origin/master` cannot redirect the publish to protected `master` and cannot determine the MR `source_branch`.
+Read local `HEAD` before the push and require the exact remote ref SHA returned by `ls-remote` to match it. Verify that upstream is `<remote>/<current-local-branch>`. The explicit refspec prevents a stale feature-branch upstream such as `origin/master` from redirecting publication to protected `master` or determining the MR `source_branch`.
 
-After publication, create the MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify the remote source branch and MR. Use `harr gitlab fetch [remote] [refspec...]` for GitLab remote reads and `harr gitlab push [git-push-options] [remote] [refspec...]` for custom pushes. All Harr GitLab network operations use HTTPS/PAT without changing repository remote URLs or global Git URL rewrites. Repository-file API mirroring is only a last resort when Harr GitLab transport itself cannot be used and the installed GitLab MCP can reproduce the local diff exactly.
+After publication, discover and call `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch, then verify it through `gitlab::get_merge_request`. Never substitute `update_merge_request` for creation. GitLab repository-file APIs such as `create_branch`, `create_or_update_file`, and `push_files` create server-side refs or API commits; they must never mirror the local diff or replace Git transport.
 
 Git commit author, GitLab MR author, assignee and reviewer are distinct. The MR author is the authenticated GitLab identity; requested assignees/reviewers are resolved to GitLab user IDs and verified on the resulting MR rather than assumed from a name.
 
-The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined LeanCTX secret-memento handling while GitLab is enabled. The same secret is used by Harr's Git HTTPS transport through `GIT_ASKPASS`; it is not embedded in the repository remote URL, command arguments, shell history or Git config.
+The PAT is stored only locally under the Harr config root; the Harr LeanCTX wrapper supplies it through registry-defined secret-memento handling while GitLab is enabled. Host Git never reads or injects this PAT.
 
 ```text
 harr secret set gitlab
@@ -623,11 +623,13 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 ### Git
 
-Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches. Use `harr git <git-arguments>` for network operations that should inherit normal terminal authentication. The command sends the current working directory and Git arguments to a loopback-only Harr user service, which executes the real Git process outside the agent sandbox with the service's terminal-session environment. Repository remotes, local Git configuration and SSH key selection remain unchanged.
+Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches. Use `harr git <git-arguments>` for network operations. The command sends the current working directory and Git arguments to a loopback-only Harr user service, which executes the real Git process outside the agent sandbox with the service's terminal-session environment. Repository remotes, local Git configuration and SSH key selection remain unchanged.
 
-On Linux the required `harr-git-host.service` is installed and started automatically. A private capability authenticates loopback requests; the capability is generated by Harr and never contains an SSH key. During installation Harr imports the current terminal's valid `SSH_AUTH_SOCK` into the user service manager, and the Git service reports whether that agent remains available.
+On Linux the required `harr-git-host.service` is installed and started automatically. On macOS the equivalent `com.harr.git-host` LaunchAgent is installed and loaded. A private capability authenticates loopback requests; it never contains an SSH key. Harr passes the current terminal's valid `SSH_AUTH_SOCK` to the user service, and `harr status` reports whether that agent remains available.
 
-When GitLab is enabled, `harr gitlab fetch [remote] [refspec...]`, `harr gitlab publish [remote]`, and `harr gitlab push ...` remain the explicit HTTPS/PAT workflows. They work independently of the user's SSH agent. GitLab API operations such as MRs, pipelines, jobs, issues and users continue through `ctx_tools`.
+Windows host Git is not claimed yet. Its current HTTPS/PAT compatibility transport remains platform-local until the real agent sandbox experiments in `docs/windows-git-host-handoff.md` are completed.
+
+When GitLab is enabled, its stored PAT authenticates GitLab MCP API operations such as MRs, pipelines, jobs, issues and users through `ctx_tools`. It is not injected into Git. Git and `harr git` exclusively own commits, branches, remotes, fetch/push and remote-ref verification.
 
 
 
@@ -652,7 +654,7 @@ The permanent policy always keeps the core token-saving rules:
 - cross-file structure/flow/relationships/dependencies/architecture/impact -> **CodeGraph first**;
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
-- ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; terminal-authenticated Git network operations -> `harr git ...`; GitLab PAT reads/writes -> HTTPS `harr gitlab fetch` / `harr gitlab publish` / `harr gitlab push`;
+- ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; Git network operations -> `harr git ...`; GitLab server/API objects -> `gitlab::*` through `ctx_tools`;
 - known, non-editing uncommon LeanCTX capabilities -> `ctx_call`; never use it to discover edit/patch tools;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;

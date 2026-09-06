@@ -10,6 +10,7 @@ cmd_uninstall() {
   local safety='' name
   safety="$($HARR_STATE_HELPER safety-snapshot)"
   [[ -n "$safety" ]] && printf 'Saved current Harr state before rollback: %s\n' "$safety"
+  launchctl bootout "$(git_host_target)" >/dev/null 2>&1 || true
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     launchctl bootout "$(launch_target "$name")" >/dev/null 2>&1 || true

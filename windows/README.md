@@ -67,7 +67,7 @@ For remote reads from an isolated agent host, use:
 harr gitlab fetch [remote] [refspec...]
 ```
 
-All three commands use the Harr HTTPS/PAT transport. They neither rewrite the repository remote URL nor write global Git URL rewrites, and they do not require an SSH attempt first.
+All three commands use the Harr HTTPS/PAT transport. They neither rewrite the repository remote URL nor write global Git URL rewrites, and they do not require an SSH attempt first. This is a temporary Windows compatibility transport, not a GitLab MCP capability. The target responsibility split and required sandbox experiments are recorded in `../docs/windows-git-host-handoff.md`; do not claim Windows host-Git support until that handoff is completed.
 
 ## Kubernetes / kubectl bridge
 

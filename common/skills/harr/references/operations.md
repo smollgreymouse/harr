@@ -44,5 +44,5 @@ Do not independently run upstream installers/upgraders for Harr-managed npm comp
 - Local-only Git work uses exact `git ...` commands through `ctx_shell`.
 - Linux remote Git using the user's terminal authentication uses exact `harr git ...` commands through `ctx_shell`.
 - When the repository cannot be selected as the LeanCTX cwd, use `harr git -C /absolute/repository/path ...`.
-- GitLab PAT operations use `harr gitlab fetch`, `harr gitlab publish`, or `harr gitlab push`; do not silently substitute this identity for terminal authentication.
-- `harr status` reports the host service and SSH-agent state. Load `git.md` for the full contract and diagnostics.
+- GitLab PAT authenticates GitLab MCP API operations; it is never injected into Git by the host bridge.
+- `harr status` reports the host service and SSH-agent state. Load `git.md` for the full Git/MCP boundary and diagnostics.

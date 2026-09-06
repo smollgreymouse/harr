@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Legacy Windows HTTPS/PAT Git transport pending the host-bridge handoff."""
+
 from __future__ import annotations
 
 import argparse

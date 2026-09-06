@@ -16,6 +16,7 @@ readonly HARR_LEANCTX_CONFIG_DIR="${LEAN_CTX_CONFIG_DIR:-${HARR_CONFIG_HOME}/lea
 readonly HARR_LEANCTX_CONFIG="${HARR_LEANCTX_CONFIG_DIR}/config.toml"
 readonly HARR_LAUNCH_AGENTS_DIR="${HARR_LAUNCH_AGENTS_DIR:-${HOME}/Library/LaunchAgents}"
 readonly HARR_LOG_DIR="${HARR_LOG_DIR:-${HOME}/Library/Logs/Harr}"
+readonly HARR_GIT_HOST_LABEL="com.harr.git-host"
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
@@ -43,3 +44,5 @@ mcp_label() { validate_mcp_name "$1"; printf 'com.harr.mcp.%s\n' "$1"; }
 mcp_plist() { printf '%s/%s.plist\n' "$HARR_LAUNCH_AGENTS_DIR" "$(mcp_label "$1")"; }
 launch_domain() { printf 'gui/%s\n' "$(id -u)"; }
 launch_target() { printf '%s/%s\n' "$(launch_domain)" "$(mcp_label "$1")"; }
+git_host_plist() { printf '%s/%s.plist\n' "$HARR_LAUNCH_AGENTS_DIR" "$HARR_GIT_HOST_LABEL"; }
+git_host_target() { printf '%s/%s\n' "$(launch_domain)" "$HARR_GIT_HOST_LABEL"; }

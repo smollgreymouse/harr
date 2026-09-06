@@ -42,7 +42,6 @@ case "$command" in
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
   git) cmd_git "$@" ;;
-  gitlab) cmd_gitlab "$@" ;;
   kube) cmd_kube "$@" ;;
   kubectl) cmd_kubectl "$@" ;;
   mcp) cmd_mcp "$@" ;;

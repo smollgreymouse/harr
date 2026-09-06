@@ -108,6 +108,7 @@ install_runtime_files() {
   find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
   find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
   chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"
+  chmod 0755 "${COMMON_LIB_DIR}/git_host/git_host.py"
   install -m 0755 "${SOURCE_DIR}/harr" "${BIN_DIR}/harr"
   install -m 0755 "${FILES_DIR}/mcp/harr-mcp-run" "${BIN_DIR}/harr-mcp-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${BIN_DIR}/codegraph"
@@ -115,6 +116,7 @@ install_runtime_files() {
   for f in common help components mcp uninstall; do install -m 0644 "${FILES_DIR}/harr-cli/${f}.sh" "${CLI_LIB_DIR}/${f}.sh"; done
   install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
+  python3 "${COMMON_LIB_DIR}/git_host/git_host.py" init --secret-file "${SECRETS_DIR}/git-host-capability"
 }
 
 write_baseline_runtime_env() {
@@ -144,6 +146,56 @@ PY
   chmod 0644 "$plist"
 }
 
+write_git_host_launch_agent() {
+  local plist label script secret out err python_bin agent_sock='' path_env
+  plist="${LAUNCH_AGENTS_DIR}/com.harr.git-host.plist"
+  label="com.harr.git-host"
+  script="${COMMON_LIB_DIR}/git_host/git_host.py"
+  secret="${SECRETS_DIR}/git-host-capability"
+  out="${LOG_DIR}/git-host.out.log"
+  err="${LOG_DIR}/git-host.err.log"
+  python_bin="$(command -v python3)"
+  path_env="$PATH"
+  if [[ -n "${SSH_AUTH_SOCK:-}" && -S "${SSH_AUTH_SOCK}" ]]; then agent_sock="$SSH_AUTH_SOCK"; fi
+  python3 - "$plist" "$label" "$python_bin" "$script" "$secret" "$out" "$err" "$agent_sock" "$path_env" <<'PY'
+import os, plistlib, sys
+
+path, label, python_bin, script, secret, out, err, agent_sock, path_env = sys.argv[1:]
+if not agent_sock and os.path.exists(path):
+    try:
+        with open(path, "rb") as f:
+            old = plistlib.load(f)
+        agent_sock = str((old.get("EnvironmentVariables") or {}).get("SSH_AUTH_SOCK") or "")
+    except (OSError, plistlib.InvalidFileException):
+        pass
+data = {
+    "Label": label,
+    "ProgramArguments": [python_bin, script, "serve", "--secret-file", secret],
+    "RunAtLoad": True,
+    "KeepAlive": True,
+    "ProcessType": "Background",
+    "StandardOutPath": out,
+    "StandardErrorPath": err,
+    "EnvironmentVariables": {"PATH": path_env},
+}
+if agent_sock:
+    data["EnvironmentVariables"]["SSH_AUTH_SOCK"] = agent_sock
+with open(path, "wb") as f:
+    plistlib.dump(data, f, sort_keys=False)
+PY
+  chmod 0644 "$plist"
+}
+
+configure_git_host() {
+  local target
+  write_git_host_launch_agent
+  target="gui/$(id -u)/com.harr.git-host"
+  launchctl bootout "$target" >/dev/null 2>&1 || true
+  launchctl enable "$target" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "${LAUNCH_AGENTS_DIR}/com.harr.git-host.plist"
+  launchctl kickstart -k "$target"
+}
+
 configure_launchd() {
   ((harr_only)) && return
   local name active label
@@ -171,6 +223,7 @@ main() {
   install_runtime_files
   write_baseline_runtime_env
   install_mcp_configs
+  configure_git_host
   configure_launchd
 
   if ((!harr_only)); then

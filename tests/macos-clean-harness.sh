@@ -20,7 +20,11 @@ case "${1:-}" in
   *) exit 0 ;;
 esac
 EOF
-chmod 0755 "${TMP}/bin/launchctl"
+cat >"${TMP}/bin/uname" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -s || $# -eq 0 ]]; then printf 'Darwin\n'; else /usr/bin/uname "$@"; fi
+EOF
+chmod 0755 "${TMP}/bin/launchctl" "${TMP}/bin/uname"
 export PATH="${TMP}/bin:${PATH}"
 
 printf 'OLD CODEX POLICY\n' >"${CODEX_HOME}/AGENTS.md"
@@ -63,9 +67,14 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
 [[ ! -e "${HOME}/Library/LaunchAgents/com.harr.mcp.gitlab.plist" ]]
+[[ -f "${HOME}/Library/LaunchAgents/com.harr.git-host.plist" ]]
+[[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
+[[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
+python3 -c 'import os, stat, sys; assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600' "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability"
+grep -q 'harr git <git-arguments>' "${HOME}/.local/bin/harr" "${HOME}/.local/libexec/harr/cli/help.sh"
 
 python3 - <<'PY'
-import json, os, tomllib
+import json, os, plistlib, tomllib
 from pathlib import Path
 home = Path(os.environ['HOME'])
 config = Path(os.environ['XDG_CONFIG_HOME'])
@@ -78,6 +87,13 @@ selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
 assert selection['enabled'] == ['codegraph']
 assert [item['name'] for item in effective['servers']] == ['codegraph']
+with (home / 'Library/LaunchAgents/com.harr.git-host.plist').open('rb') as f:
+    git_host = plistlib.load(f)
+assert git_host['Label'] == 'com.harr.git-host'
+assert git_host['ProgramArguments'][1].endswith('/common/git_host/git_host.py')
+assert git_host['ProgramArguments'][2:] == [
+    'serve', '--secret-file', str(config / 'harr/secrets/git-host-capability')
+]
 PY
 
 "${HOME}/.local/bin/harr" status >/dev/null
@@ -93,6 +109,7 @@ cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-selection.json" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-registry.json" ]]
 [[ ! -e "${HOME}/.local/libexec/harr" ]]
+[[ ! -e "${HOME}/Library/LaunchAgents/com.harr.git-host.plist" ]]
 [[ ! -e "${HOME}/.local/share/harr-state" ]]
 find "${HOME}/.local/share/harr-uninstall-backups" -mindepth 1 -maxdepth 1 -type d | grep -q .
 

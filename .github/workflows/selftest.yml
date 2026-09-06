@@ -19,7 +19,7 @@ jobs:
           bash -n linux/files/mcp/harr-mcp-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
           for f in linux/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py
+        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py
       - name: MCP registry contract
         run: |
           python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
@@ -32,8 +32,12 @@ jobs:
           python3 tests/mcp-registry.py
       - name: MCP selection and policy contract
         run: python3 tests/mcp-selection.py
-      - name: GitLab HTTPS Git transport contract
+      - name: Windows compatibility HTTPS Git transport contract
         run: python3 tests/gitlab-git-https.py
+      - name: Host Git and MR workflow contracts
+        run: |
+          python3 tests/git-host.py
+          python3 tests/git-mr-workflow.py
       - name: Kubernetes kubectl bridge contract
         run: python3 tests/kubectl-bridge.py
       - name: Clean takeover and rollback
@@ -52,7 +56,7 @@ jobs:
           bash -n macos/files/mcp/harr-mcp-run macos/files/mcp/codegraph-cli macos/files/leanctx/lean-ctx-wrapper
           for f in macos/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py
+        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py
       - name: MCP registry contract
         shell: bash
         run: |
@@ -61,8 +65,12 @@ jobs:
           python3 tests/mcp-registry.py
       - name: MCP selection and policy contract
         run: python3 tests/mcp-selection.py
-      - name: GitLab HTTPS Git transport contract
+      - name: Windows compatibility HTTPS Git transport contract
         run: python3 tests/gitlab-git-https.py
+      - name: Host Git and MR workflow contracts
+        run: |
+          python3 tests/git-host.py
+          python3 tests/git-mr-workflow.py
       - name: Kubernetes kubectl bridge contract
         run: python3 tests/kubectl-bridge.py
       - name: Clean takeover and rollback
@@ -95,7 +103,7 @@ jobs:
           }
       - name: Python syntax
         shell: pwsh
-        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py
+        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py
       - name: MCP registry contract
         shell: pwsh
         run: |
@@ -106,9 +114,12 @@ jobs:
       - name: MCP selection and policy contract
         shell: pwsh
         run: python tests/mcp-selection.py
-      - name: GitLab HTTPS Git transport contract
+      - name: Windows compatibility HTTPS Git transport contract
         shell: pwsh
         run: python tests/gitlab-git-https.py
+      - name: MR Git workflow contract
+        shell: pwsh
+        run: python tests/git-mr-workflow.py
       - name: Kubernetes kubectl bridge contract
         shell: pwsh
         run: python tests/kubectl-bridge.py

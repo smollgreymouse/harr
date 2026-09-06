@@ -105,4 +105,4 @@ with tempfile.TemporaryDirectory() as tmp_raw:
         else:
             os.environ["HARR_GITLAB_PAT_FILE"] = old
 
-print("GitLab HTTPS Git transport: PASS")
+print("Windows compatibility GitLab HTTPS Git transport: PASS")

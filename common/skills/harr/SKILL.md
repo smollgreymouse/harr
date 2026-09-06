@@ -15,7 +15,7 @@ harr agents status
 harr agents apply
 harr leanctx status
 harr leanctx apply
-harr git <git-arguments>  # Linux host-Git bridge
+harr git <git-arguments>  # host-Git bridge
 harr git -C /absolute/repository/path <git-arguments>
 harr kube configure
 harr kube sync
@@ -26,9 +26,6 @@ harr mcp configure
 harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
-harr gitlab fetch [remote] [refspec...]
-harr gitlab publish [remote]
-harr gitlab push [git-push-options] [remote] [refspec...]
 harr mcp status gitlab
 harr mcp logs gitlab
 <!-- harr-mcp:gitlab:end -->
@@ -41,7 +38,7 @@ LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected
 
 Kubernetes is intentionally not an MCP component. `harr kube configure` captures the user's working kubectl configuration into Harr-owned private state, and `harr kubectl ...` executes the real kubectl with that managed config so isolated agent hosts do not need direct access to the original kubeconfig. Load `references/kubernetes.md` only for Kubernetes bridge setup/diagnostics.
 
-## Host Git transport (Linux)
+## Host Git transport
 
 Use ordinary `git ...` through `ctx_shell` for local work such as `status`, `diff`, `log`, `branch`, `add`, `commit`, and configuration inspection.
 
@@ -65,7 +62,20 @@ harr git -C /absolute/repository/path push origin HEAD
 
 Do not try bare network `git` first, manually select an SSH key, expose an agent socket to the sandbox, or fall back to browser authentication. Check `harr status` when diagnosing transport: an SSH-backed operation expects `host-git-service ready (ssh-agent: available)`. If it is unavailable, report that exact condition; `references/git.md` contains repair details. Treat the command as successful only when it exits zero.
 
-When GitLab is enabled, `harr gitlab fetch`, `harr gitlab publish`, and `harr gitlab push` are the separate HTTPS/PAT route. Keep it for users who chose PAT authentication and for the branch-safe MR workflow. `harr gitlab publish` uses the current local branch name, pushes `HEAD` to the same-named remote branch, verifies the remote SHA, and normalizes upstream to that branch. `harr gitlab push` is the lower-level command for custom push options/refspecs. Use `harr git` for a GitLab remote only when the user wants normal terminal authentication. Never silently switch identities or credential routes.
+<!-- harr-mcp:gitlab:start -->
+GitLab's PAT belongs to the GitLab MCP API session, not Git transport. Git and `harr git` own repository state and remote refs; GitLab MCP owns merge requests, pipelines/jobs, issues, projects, users and other server objects. Never replace a Git push with `create_branch`, `create_or_update_file`, `push_files`, or repository-file API mirroring.
+
+For a GitLab MR, reject detached HEAD and source=target, then push the current named branch with an explicit destination:
+
+```text
+git symbolic-ref --quiet --short HEAD
+git rev-parse HEAD
+harr git push --set-upstream <remote> HEAD:refs/heads/<current-branch>
+harr git ls-remote <remote> refs/heads/<current-branch>
+```
+
+Require the remote SHA to equal local `HEAD` and verify same-named upstream tracking before using `gitlab::create_merge_request`. Discover that exact tool name, refresh once and repeat if missing, never substitute `update_merge_request`, and verify the result through `gitlab::get_merge_request`.
+<!-- harr-mcp:gitlab:end -->
 
 Harr owns managed versions/configuration. Do not independently run upstream LeanCTX setup/update, CodeGraph upgrades, or global installs of Harr-managed MCP packages.
 

@@ -17,9 +17,7 @@ CLI:
   harr secret set NAME
   harr secret status
   harr secret unset NAME
-  harr gitlab fetch [git-fetch-options] [remote] [refspec...]
-  harr gitlab publish [remote]
-  harr gitlab push [git-push-options] [remote] [refspec...]
+  harr git <git-arguments>
   harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
   harr kube sync [--allow-exec] [--no-check]
   harr kube status [--no-check]
@@ -35,12 +33,9 @@ CLI:
 LeanCTX and CodeGraph are required. Optional registry MCPs are installed only
 when selected; global policy and Harr skill references follow the same set.
 
-With GitLab enabled, `harr gitlab publish [remote]` publishes the current named
-local branch to the same-named remote branch with an explicit HEAD refspec,
-verifies the remote SHA, and fixes stale upstream tracking. It uses the stored
-Harr GitLab PAT through GIT_ASKPASS over HTTPS and never needs an SSH attempt.
-  `harr gitlab fetch` and `harr gitlab push` use the same HTTPS/PAT transport for
-  remote reads and custom push refspecs. Harr never changes global Git URL rewrites.
+`harr git <git-arguments>` executes Git in a loopback-only Harr user service
+outside the agent sandbox with the terminal SSH agent and credential helpers.
+GitLab PAT secrets authenticate GitLab MCP API operations only.
 
 `harr kube configure` captures the working kubectl configuration as a private
 flattened Harr snapshot. `harr kubectl ...` always runs the real kubectl with
