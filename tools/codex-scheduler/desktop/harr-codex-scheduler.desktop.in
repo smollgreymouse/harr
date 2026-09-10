@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Harr Codex Scheduler
+Comment=Schedule Codex CLI turns and view their output
+Exec=@EXEC@
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
