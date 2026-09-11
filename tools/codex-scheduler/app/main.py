@@ -55,6 +55,23 @@ def state_dir() -> Path:
     return path
 
 
+def safe_filename_part(value: str, fallback: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
+    return value or fallback
+
+
+def unique_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem, suffix = path.stem, path.suffix
+    index = 2
+    while True:
+        candidate = path.with_name(f"{stem}-{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
 class MessageBubble(QFrame):
     def __init__(self, role: str, text: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -203,9 +220,23 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(str(self._resolved_cwd))
             self.status.setText("Project directory copied")
 
+    def default_answer_path(self) -> Path:
+        session_part = safe_filename_part(self.session.text(), "session")
+        scheduled = self.parsed_run_time() or QDateTime.currentDateTime()
+        time_part = scheduled.toString("yyyyMMdd-HHmm")
+        directory = self._resolved_cwd if self._resolved_cwd is not None else Path.cwd()
+        return unique_path(directory / f"codex-{session_part}-{time_part}.md")
+
     def choose_save(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Save Codex answer", str(Path.cwd() / "codex-answer.md"), "Markdown (*.md);;Text (*.txt);;All files (*)")
-        if path: self.save_path.setText(path)
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Codex answer",
+            str(self.default_answer_path()),
+            "Markdown (*.md);;Text (*.txt);;All files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog,
+        )
+        if path:
+            self.save_path.setText(path)
 
     def add_bubble(self, role: str, text: str) -> MessageBubble:
         bubble = MessageBubble(role, text); self.transcript_layout.addWidget(bubble)
