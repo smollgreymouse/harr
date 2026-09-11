@@ -11,7 +11,7 @@ cat > "$TMP/bin/at" <<EOF_AT
 #!/bin/sh
 printf '%s\n' "\$@" > '$TMP/at.args'
 cat > '$TMP/at.job'
-echo 'job 42 at Fri Sep 11 02:05:00 2026' >&2
+echo 'job 42 at future test time' >&2
 EOF_AT
 chmod +x "$TMP/bin/at"
 
@@ -66,12 +66,35 @@ run_wrapper sol gpt-5.6-sol
 run_wrapper terra gpt-5.6-terra
 run_wrapper luna gpt-5.6-luna
 
-"$ROOT/bin/codex-schedule" --model gpt-5.6-sol --reasoning medium --speed fast --timestamp 202609110205 --session s --prompt p --cwd "$TMP/work" --output "$TMP/out.log"
+FUTURE_TS=$(date -d '+1 day' +%Y%m%d%H%M)
+"$ROOT/bin/codex-schedule" --model gpt-5.6-sol --reasoning medium --speed fast --timestamp "$FUTURE_TS" --session s --prompt p --cwd "$TMP/work" --output "$TMP/out.log"
 grep -Fxq -- '-t' "$TMP/at.args"
-grep -Fxq -- '202609110205' "$TMP/at.args"
+grep -Fxq -- "$FUTURE_TS" "$TMP/at.args"
 grep -Fq "cd '$TMP/work'" "$TMP/at.job"
 grep -Fq 'service_tier="fast"' "$TMP/at.job"
 grep -Fq 'model_reasoning_effort="medium"' "$TMP/at.job"
+
+assert_rejected_before_at() {
+  local name=$1; shift
+  rm -f "$TMP/at.args" "$TMP/at.job"
+  if "$ROOT/bin/codex-schedule" "$@" >"$TMP/$name.out" 2>&1; then
+    echo "expected $name to fail" >&2
+    exit 1
+  fi
+  [[ ! -e "$TMP/at.args" ]] || { echo "$name reached at unexpectedly" >&2; exit 1; }
+}
+
+COMMON=(--model gpt-5.6-sol --reasoning high --speed standard --session s --prompt p --cwd "$TMP/work" --output "$TMP/out.log")
+assert_rejected_before_at bad_shape "${COMMON[@]}" --timestamp 20260911123
+assert_rejected_before_at bad_calendar "${COMMON[@]}" --timestamp 202602300205
+PAST_TS=$(date -d '-1 day' +%Y%m%d%H%M)
+assert_rejected_before_at past_time "${COMMON[@]}" --timestamp "$PAST_TS"
+assert_rejected_before_at bad_clock "${COMMON[@]}" --at 25:99
+
+grep -Fq 'expected CCYYMMDDhhmm' "$TMP/bad_shape.out"
+grep -Fq 'invalid calendar date/time' "$TMP/bad_calendar.out"
+grep -Fq 'must be in the future' "$TMP/past_time.out"
+grep -Fq 'invalid HH:MM' "$TMP/bad_clock.out"
 
 mkdir -p "$TMP/wrong"
 git init -q "$TMP/wrong"
