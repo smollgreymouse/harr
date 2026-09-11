@@ -12,10 +12,10 @@ fi
 cat <<'MSG'
 Installed launchers in ~/.local/bin and desktop entry in ~/.local/share/applications.
 Runtime packages on Ubuntu 24.04+:
-  sudo apt install at python3-pyqt6 qt6-gtk-platformtheme
+  sudo apt install at python3-pyqt6 qgnomeplatform-qt6
   sudo systemctl enable --now atd
 
-qt6-gtk-platformtheme lets standard Qt widgets and native dialogs follow the
-GNOME/GTK desktop theme. The app still has a palette fallback if the platform
-theme is unavailable.
+qgnomeplatform-qt6 maps GNOME/Adwaita settings onto Qt widgets. The app also
+normalizes all dark palette surface roles, so a broken half-dark Qt palette
+cannot leave editors, trees or dropdowns white.
 MSG
