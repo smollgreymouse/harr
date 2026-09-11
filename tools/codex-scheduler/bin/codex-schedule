@@ -26,6 +26,42 @@ shell_quote() {
   printf "'%s'" "${value//\'/\'\\\'\'}"
 }
 
+validate_timestamp() {
+  local value=$1 year month day hour minute canonical target_epoch now_epoch human
+  [[ "$value" =~ ^[0-9]{12}$ ]] || {
+    echo "codex-schedule: invalid --timestamp '$value' (expected CCYYMMDDhhmm)" >&2
+    return 2
+  }
+  year=${value:0:4}; month=${value:4:2}; day=${value:6:2}; hour=${value:8:2}; minute=${value:10:2}
+  human="$year-$month-$day $hour:$minute:00"
+  canonical=$(date -d "$human" +%Y%m%d%H%M 2>/dev/null) || {
+    echo "codex-schedule: invalid calendar date/time for --timestamp: $value" >&2
+    return 2
+  }
+  [[ "$canonical" == "$value" ]] || {
+    echo "codex-schedule: invalid calendar date/time for --timestamp: $value" >&2
+    return 2
+  }
+  target_epoch=$(date -d "$human" +%s)
+  now_epoch=$(date +%s)
+  (( target_epoch > now_epoch )) || {
+    echo "codex-schedule: --timestamp must be in the future: $value" >&2
+    return 2
+  }
+}
+
+validate_clock_at_spec() {
+  local value=$1 hour minute
+  if [[ "$value" =~ ^([0-9]{1,2}):([0-9]{2})$ ]]; then
+    hour=$((10#${BASH_REMATCH[1]}))
+    minute=$((10#${BASH_REMATCH[2]}))
+    if (( hour > 23 || minute > 59 )); then
+      echo "codex-schedule: invalid HH:MM --at time: $value" >&2
+      return 2
+    fi
+  fi
+}
+
 model=''
 reasoning='high'
 speed='standard'
@@ -71,6 +107,11 @@ if [[ -n "$at_spec" && -n "$timestamp" ]] || [[ -z "$at_spec" && -z "$timestamp"
 fi
 case "$reasoning" in minimal|low|medium|high|xhigh) ;; *) echo "codex-schedule: unsupported reasoning: $reasoning" >&2; exit 2 ;; esac
 case "$speed" in standard) service_tier='default' ;; fast) service_tier='fast' ;; *) echo "codex-schedule: unsupported speed: $speed" >&2; exit 2 ;; esac
+if [[ -n "$timestamp" ]]; then
+  validate_timestamp "$timestamp"
+else
+  validate_clock_at_spec "$at_spec"
+fi
 
 if [[ -z "$codex_bin" ]]; then
   codex_bin=$(command -v codex || true)
