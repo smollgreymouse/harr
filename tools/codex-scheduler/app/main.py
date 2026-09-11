@@ -38,6 +38,7 @@ except ImportError as exc:
 
 from core import TranscriptEvent, parse_codex_json_line
 from session_cwd import SessionResolutionError, resolve_session_cwd
+from system_theme import install_system_theme
 
 APP_NAME = "Harr Codex Scheduler"
 MODELS = {"Sol": "gpt-5.6-sol", "Terra": "gpt-5.6-terra", "Luna": "gpt-5.6-luna"}
@@ -243,6 +244,9 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv); app.setApplicationName(APP_NAME); app.setQuitOnLastWindowClosed(False)
+    # Keep the watcher alive for the lifetime of QApplication so GNOME/Qt
+    # theme changes are reflected without restarting the scheduler.
+    app._harr_system_theme = install_system_theme(app)  # type: ignore[attr-defined]
     window = MainWindow(); window.show(); return app.exec()
 
 
