@@ -38,17 +38,23 @@ Answer export is one checkable `Save final answer…` button. Choosing a file en
 
 ### Theme and desktop integration
 
-On GNOME the launcher prefers Ubuntu's `qt6-gtk-platformtheme` when it is installed. Standard controls, menus and native dialogs are then drawn through the platform Qt style rather than reimplemented by application CSS. Application QSS is deliberately limited to structural chrome such as sidebar/tabs/message bubbles and flat selector hover states.
+Dark mode is applied at the **application palette** level, not by styling each widget separately. The theme watcher verifies Window, Base, AlternateBase, Button and tooltip surfaces for both active and inactive color groups. This specifically prevents the GNOME/Qt half-dark failure mode where the window is dark but editors, trees and dropdowns remain white.
 
-If GNOME reports `prefer-dark` but Qt still exposes a light palette, `system_theme.py` applies a dark fallback palette. `HARR_CODEX_THEME=dark|light|system` is available for diagnostics.
+On GNOME, `qgnomeplatform-qt6` is used automatically when the distro provides it; it is optional. Application QSS is deliberately limited to structural chrome such as sidebar/tabs/message bubbles and flat selector hover states. Standard controls remain standard Qt widgets.
 
-The app supports close/minimize-to-tray through `QSystemTrayIcon`. The actual timer is still owned by `at`, so a scheduled task does not depend on the GUI staying open.
+`HARR_CODEX_THEME=dark|light|system` is available for diagnostics. The app supports close/minimize-to-tray through `QSystemTrayIcon`; the actual timer is still owned by `at`, so a scheduled task does not depend on the GUI staying open.
 
-Ubuntu dependencies:
+Required Ubuntu packages:
 
 ```bash
-sudo apt install at python3-pyqt6 qt6-gtk-platformtheme
+sudo apt install at python3-pyqt6
 sudo systemctl enable --now atd
+```
+
+Optional on Ubuntu releases that provide it (including 25.10):
+
+```bash
+sudo apt install qgnomeplatform-qt6
 ```
 
 Run without installation:
@@ -67,13 +73,13 @@ Then run `codex-scheduler-ui` or start **Harr Codex Scheduler** from the applica
 
 ## Tests
 
-The tests do not spend Codex quota. Fake Codex/App Server and fake `at` binaries exercise cwd resolution, recent-session listing, scheduler argv, High/Standard selector contracts, timestamp validation and state lifecycle. Qt smoke tests run offscreen on Ubuntu 24.04.
+The tests do not spend Codex quota. Fake Codex/App Server and fake `at` binaries exercise cwd resolution, recent-session listing, scheduler argv, High/Standard selector contracts, timestamp validation and state lifecycle. The Qt smoke test includes a regression case that starts with a deliberately broken half-dark palette (`Window=dark`, `Base=white`) and verifies that editors, trees, dropdowns and the time dialog all normalize to dark surfaces.
 
 ```bash
 bash tools/codex-scheduler/tests/test_cli.sh
 python3 tools/codex-scheduler/tests/test_session_cwd.py
 python3 tools/codex-scheduler/tests/test_task_store.py
 python3 tools/codex-scheduler/tests/test_core.py
-QT_QPA_PLATFORM=offscreen python3 tools/codex-scheduler/tests/test_gui_smoke.py
+QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark python3 tools/codex-scheduler/tests/test_gui_smoke.py
 python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
 ```
