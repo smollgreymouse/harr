@@ -74,6 +74,22 @@ grep -Fq "cd '$TMP/work'" "$TMP/at.job"
 grep -Fq 'service_tier="fast"' "$TMP/at.job"
 grep -Fq 'model_reasoning_effort="medium"' "$TMP/at.job"
 
+cat > "$TMP/task.json" <<'EOF_TASK'
+{"id":"gui-task","status":"scheduled","cancel_requested":false}
+EOF_TASK
+"$ROOT/bin/codex-schedule" --model gpt-5.6-terra --reasoning high --speed standard --timestamp "$FUTURE_TS" --session gui-session --prompt 'GUI task' --cwd "$TMP/work" --log-json "$TMP/gui.jsonl" --task-state "$TMP/task.json"
+grep -Fq -- '--task-state' "$TMP/at.job"
+grep -Fq "$TMP/task.json" "$TMP/at.job"
+sh "$TMP/at.job"
+python3 - "$TMP/task.json" <<'PY'
+import json, sys
+state = json.load(open(sys.argv[1], encoding='utf-8'))
+assert state['status'] == 'completed', state
+assert state['pid'] is None, state
+assert state['started_at'], state
+assert state['finished_at'], state
+PY
+
 assert_rejected_before_at() {
   local name=$1; shift
   rm -f "$TMP/at.args" "$TMP/at.job"
@@ -90,11 +106,13 @@ assert_rejected_before_at bad_calendar "${COMMON[@]}" --timestamp 202602300205
 PAST_TS=$(date -d '-1 day' +%Y%m%d%H%M)
 assert_rejected_before_at past_time "${COMMON[@]}" --timestamp "$PAST_TS"
 assert_rejected_before_at bad_clock "${COMMON[@]}" --at 25:99
+assert_rejected_before_at task_state_without_json --model gpt-5.6-sol --reasoning high --speed standard --session s --prompt p --cwd "$TMP/work" --timestamp "$FUTURE_TS" --task-state "$TMP/task.json" --output "$TMP/out.log"
 
 grep -Fq 'expected CCYYMMDDhhmm' "$TMP/bad_shape.out"
 grep -Fq 'invalid calendar date/time' "$TMP/bad_calendar.out"
 grep -Fq 'must be in the future' "$TMP/past_time.out"
 grep -Fq 'invalid HH:MM' "$TMP/bad_clock.out"
+grep -Fq 'requires --log-json' "$TMP/task_state_without_json.out"
 
 mkdir -p "$TMP/wrong"
 git init -q "$TMP/wrong"
