@@ -12,13 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
 from PyQt6.QtCore import QDateTime, Qt
-from PyQt6.QtGui import QPalette
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication, QDateEdit
 
 import task_page_native as task_page_module
 import workspace as workspace_module
 from datetime_picker import ScheduleTimeDialog, default_run_time
-from system_theme import install_system_theme
+from system_theme import install_system_theme, palette_has_complete_dark_surfaces
 from task_page_native import TaskPage
 from task_store import TaskStore
 from ui_chrome import PlusTabBar, install_app_chrome
@@ -27,8 +27,20 @@ from workspace import MainWindow
 
 def main() -> int:
     app = QApplication.instance() or QApplication([])
+
+    # Regression for Ubuntu/GNOME: some Qt platform themes report a dark
+    # Window while keeping Base white. The application must normalize the
+    # entire palette instead of treating Window alone as proof of dark mode.
+    mixed = QPalette(app.palette())
+    mixed.setColor(QPalette.ColorRole.Window, QColor(34, 34, 34))
+    mixed.setColor(QPalette.ColorRole.WindowText, QColor(240, 240, 240))
+    mixed.setColor(QPalette.ColorRole.Base, QColor(255, 255, 255))
+    mixed.setColor(QPalette.ColorRole.AlternateBase, QColor(250, 250, 250))
+    app.setPalette(mixed)
+
     watcher = install_system_theme(app)
     install_app_chrome(app)
+    assert palette_has_complete_dark_surfaces(app.palette())
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -69,15 +81,15 @@ def main() -> int:
         assert page.save_button.isCheckable()
         assert page.save_button.text() == "Save final answer…"
 
-        # A fresh task starts at the usual five-hour Codex reset + two minutes,
-        # rounded to at(1)'s minute precision.
+        # Editable/view surfaces inherit the normalized dark Base role.
+        assert page.prompt.palette().color(QPalette.ColorRole.Base).lightness() < 128
+        assert window.task_tree.palette().color(QPalette.ColorRole.Base).lightness() < 128
+        assert page.session.palette().color(QPalette.ColorRole.Base).lightness() < 128
+
         assert page._scheduled_time is not None
         delta = QDateTime.currentDateTime().secsTo(page._scheduled_time)
         assert 5 * 3600 + 60 <= delta <= 5 * 3600 + 3 * 60, delta
 
-        # The picker is compact: date is a standard QDateEdit whose calendar
-        # appears only on demand, and time is changed through system buttons /
-        # spin boxes instead of a custom-painted clock.
         picker = ScheduleTimeDialog(default_run_time())
         assert isinstance(picker.date, QDateEdit)
         assert picker.date.calendarPopup()
@@ -89,9 +101,9 @@ def main() -> int:
         picker.minutes.plus.click()
         assert picker.minutes.value.value() == (before_minute + 1) % 60
         assert picker.buttons.button(picker.buttons.StandardButton.Ok).isEnabled()
+        assert picker.palette().color(QPalette.ColorRole.Base).lightness() < 128
         picker.close()
 
-        # Editable recent-session chooser must preserve arbitrary pasted IDs.
         page.session.set_session_id("pasted-session-id")
         page.set_session_choices(sessions, select_latest_if_empty=True)
         assert page.session.session_id() == "pasted-session-id"
@@ -113,8 +125,6 @@ def main() -> int:
         assert page.save_button.isChecked()
         assert page.save_button.toolTip() == str(unique)
 
-        # Sidebar is a toggleable workspace panel and group expansion survives
-        # list refreshes; History is collapsed by default.
         active_root = window.task_tree.topLevelItem(0)
         history_root = window.task_tree.topLevelItem(1)
         assert active_root.isExpanded()
@@ -132,8 +142,6 @@ def main() -> int:
         assert second.task_id != first_id
         assert second.session.session_id() == "session-newest"
 
-        # Closing a tab hides the task only. Persistent state remains and can
-        # be reopened from the tasks sidebar/history.
         window.tabs.setCurrentWidget(page)
         first_index = window.tabs.indexOf(page)
         window.close_tab(first_index)
@@ -149,8 +157,7 @@ def main() -> int:
         assert any(action.text() == "↻ Refresh Codex sessions" for action in window.tasks_menu.actions())
 
         palette = app.palette()
-        assert palette.color(QPalette.ColorRole.Window).lightness() < palette.color(QPalette.ColorRole.WindowText).lightness()
-        assert palette.color(QPalette.ColorRole.Base).lightness() < 128
+        assert palette_has_complete_dark_surfaces(palette)
 
         window.refresh_timer.stop()
         window.session_refresh_timer.stop()
@@ -162,7 +169,7 @@ def main() -> int:
         app.processEvents()
 
     watcher.timer.stop()
-    print("GUI native multi-task + recent sessions + reset-time picker + dark-theme smoke test passed")
+    print("GUI multi-task + mixed-dark-palette regression + native picker smoke test passed")
     return 0
 
 
