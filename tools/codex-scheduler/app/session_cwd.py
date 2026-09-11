@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 
 class SessionResolutionError(RuntimeError):
@@ -34,7 +35,7 @@ def _wait_for_response(proc: subprocess.Popen[str], request_id: int, timeout: fl
             raise SessionResolutionError(f"timed out waiting for codex app-server response id={request_id}")
         line = proc.stdout.readline()
         if line == "":
-            raise SessionResolutionError("codex app-server exited before returning the requested thread")
+            raise SessionResolutionError("codex app-server exited before returning the requested response")
         try:
             message = json.loads(line)
         except json.JSONDecodeError:
@@ -63,17 +64,13 @@ def _read_stderr(stderr_file) -> str:
         return ""
 
 
-def resolve_session_cwd(
-    session: str,
+def _app_server_request(
+    method: str,
+    params: dict[str, Any],
     *,
     codex_bin: str | Path = "codex",
     timeout: float = 10.0,
-    require_git: bool = True,
-) -> Path:
-    session = session.strip()
-    if not session:
-        raise SessionResolutionError("session id is empty")
-
+) -> dict:
     codex = str(codex_bin)
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file:
         try:
@@ -105,15 +102,8 @@ def resolve_session_cwd(
             )
             _wait_for_response(proc, 0, timeout)
             _send(proc, {"method": "initialized", "params": {}})
-            _send(
-                proc,
-                {
-                    "method": "thread/read",
-                    "id": 1,
-                    "params": {"threadId": session, "includeTurns": False},
-                },
-            )
-            result = _wait_for_response(proc, 1, timeout)
+            _send(proc, {"method": method, "id": 1, "params": params})
+            return _wait_for_response(proc, 1, timeout)
         except SessionResolutionError as exc:
             detail = _read_stderr(stderr_file)
             if detail:
@@ -128,6 +118,73 @@ def resolve_session_cwd(
                     proc.kill()
                     proc.wait(timeout=2)
 
+
+def list_codex_sessions(
+    *,
+    codex_bin: str | Path = "codex",
+    timeout: float = 10.0,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return recent non-archived Codex threads, newest activity first.
+
+    Uses only the documented App Server thread/list protocol. This does not
+    start or resume a model turn, so it remains usable when model usage is
+    exhausted as long as the local Codex runtime itself is available.
+    """
+    result = _app_server_request(
+        "thread/list",
+        {
+            "cursor": None,
+            "limit": max(1, min(int(limit), 100)),
+            "sortKey": "recency_at",
+            "sortDirection": "desc",
+            "archived": False,
+            "sourceKinds": ["cli", "vscode", "exec", "appServer"],
+        },
+        codex_bin=codex_bin,
+        timeout=timeout,
+    )
+    data = result.get("data")
+    if not isinstance(data, list):
+        raise SessionResolutionError("thread/list response does not contain a data array")
+    sessions: list[dict[str, Any]] = []
+    for raw in data:
+        if not isinstance(raw, dict):
+            continue
+        session_id = raw.get("id")
+        if not isinstance(session_id, str) or not session_id.strip():
+            continue
+        sessions.append(
+            {
+                "id": session_id,
+                "name": raw.get("name") if isinstance(raw.get("name"), str) else None,
+                "preview": raw.get("preview") if isinstance(raw.get("preview"), str) else "",
+                "cwd": raw.get("cwd") if isinstance(raw.get("cwd"), str) else None,
+                "createdAt": raw.get("createdAt"),
+                "updatedAt": raw.get("updatedAt"),
+                "status": raw.get("status"),
+            }
+        )
+    return sessions
+
+
+def resolve_session_cwd(
+    session: str,
+    *,
+    codex_bin: str | Path = "codex",
+    timeout: float = 10.0,
+    require_git: bool = True,
+) -> Path:
+    session = session.strip()
+    if not session:
+        raise SessionResolutionError("session id is empty")
+
+    result = _app_server_request(
+        "thread/read",
+        {"threadId": session, "includeTurns": False},
+        codex_bin=codex_bin,
+        timeout=timeout,
+    )
     thread = result.get("thread")
     if not isinstance(thread, dict):
         raise SessionResolutionError("thread/read response does not contain a thread object")
@@ -170,25 +227,57 @@ def resolve_session_cwd(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Resolve a Codex session cwd through the documented codex app-server thread/read API"
+        description="Read Codex session metadata through the documented codex app-server API"
     )
-    parser.add_argument("--session", required=True)
+    sub = parser.add_subparsers(dest="command")
+    cwd_parser = sub.add_parser("cwd", help="resolve one session cwd")
+    cwd_parser.add_argument("--session", required=True)
+    cwd_parser.add_argument("--no-git-check", action="store_true")
+    list_parser = sub.add_parser("list", help="list recent sessions")
+    list_parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", "codex"))
     parser.add_argument("--timeout", type=float, default=10.0)
-    parser.add_argument("--no-git-check", action="store_true")
+
+    # Backward compatibility for codex-schedule's original invocation.
+    if len(sys.argv) > 1 and sys.argv[1].startswith("--"):
+        legacy = argparse.ArgumentParser()
+        legacy.add_argument("--session", required=True)
+        legacy.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", "codex"))
+        legacy.add_argument("--timeout", type=float, default=10.0)
+        legacy.add_argument("--no-git-check", action="store_true")
+        args = legacy.parse_args()
+        try:
+            cwd = resolve_session_cwd(
+                args.session,
+                codex_bin=args.codex_bin,
+                timeout=args.timeout,
+                require_git=not args.no_git_check,
+            )
+        except SessionResolutionError as exc:
+            print(f"codex-session-cwd: {exc}", file=sys.stderr)
+            return 2
+        print(cwd)
+        return 0
+
     args = parser.parse_args()
     try:
-        cwd = resolve_session_cwd(
-            args.session,
-            codex_bin=args.codex_bin,
-            timeout=args.timeout,
-            require_git=not args.no_git_check,
-        )
+        if args.command == "list":
+            print(json.dumps(list_codex_sessions(codex_bin=args.codex_bin, timeout=args.timeout, limit=args.limit), ensure_ascii=False))
+            return 0
+        if args.command == "cwd":
+            cwd = resolve_session_cwd(
+                args.session,
+                codex_bin=args.codex_bin,
+                timeout=args.timeout,
+                require_git=not args.no_git_check,
+            )
+            print(cwd)
+            return 0
     except SessionResolutionError as exc:
         print(f"codex-session-cwd: {exc}", file=sys.stderr)
         return 2
-    print(cwd)
-    return 0
+    parser.print_help(sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
