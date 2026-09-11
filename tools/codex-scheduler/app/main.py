@@ -10,14 +10,16 @@ import uuid
 from pathlib import Path
 
 try:
-    from PyQt6.QtCore import QDateTime, QEvent, Qt, QTimer
+    from PyQt6.QtCore import QDateTime, QEvent, Qt, QTime, QTimer
     from PyQt6.QtGui import QAction, QCloseEvent, QIcon, QPalette
     from PyQt6.QtWidgets import (
         QApplication,
+        QCalendarWidget,
         QCheckBox,
         QComboBox,
+        QDialog,
+        QDialogButtonBox,
         QFileDialog,
-        QFormLayout,
         QFrame,
         QHBoxLayout,
         QLabel,
@@ -30,6 +32,7 @@ try:
         QSizePolicy,
         QSystemTrayIcon,
         QTextEdit,
+        QTimeEdit,
         QToolButton,
         QVBoxLayout,
         QWidget,
@@ -70,6 +73,45 @@ def unique_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         index += 1
+
+
+class ScheduleTimeDialog(QDialog):
+    def __init__(self, initial: QDateTime, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Choose run time")
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        self.calendar = QCalendarWidget(self)
+        self.calendar.setMinimumDate(QDateTime.currentDateTime().date())
+        self.calendar.setSelectedDate(initial.date())
+        layout.addWidget(self.calendar)
+
+        time_row = QHBoxLayout()
+        time_row.addWidget(QLabel("Time"))
+        self.time = QTimeEdit(self)
+        self.time.setDisplayFormat("HH:mm")
+        self.time.setTime(initial.time())
+        time_row.addWidget(self.time, 1)
+        layout.addLayout(time_row)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+    def selected_date_time(self) -> QDateTime:
+        return QDateTime(self.calendar.selectedDate(), self.time.time())
+
+    def accept(self) -> None:
+        selected = self.selected_date_time()
+        if not selected.isValid():
+            QMessageBox.warning(self, APP_NAME, "Selected date/time is invalid.")
+            return
+        if selected <= QDateTime.currentDateTime():
+            QMessageBox.warning(self, APP_NAME, "Run time must be in the future.")
+            return
+        super().accept()
 
 
 class MessageBubble(QFrame):
@@ -113,25 +155,30 @@ class MainWindow(QMainWindow):
         self._partial = ""
         self._assistant_bubble: MessageBubble | None = None
         self._resolved_cwd: Path | None = None
+        self._scheduled_time: QDateTime | None = None
 
         root = QWidget()
         outer = QVBoxLayout(root)
-        form = QFormLayout()
 
-        self.model = QComboBox(); self.model.addItems(MODELS.keys()); self.model.setCurrentText("Terra")
-        self.reasoning = QComboBox(); self.reasoning.addItems(REASONING.keys()); self.reasoning.setCurrentText("High")
-        self.speed = QComboBox(); self.speed.addItems(SPEEDS.keys()); self.speed.setCurrentText("Standard")
-        selectors = QWidget(); selectors_layout = QHBoxLayout(selectors); selectors_layout.setContentsMargins(0, 0, 0, 0)
-        selectors_layout.addWidget(self.model); selectors_layout.addWidget(self.reasoning); selectors_layout.addWidget(self.speed)
-        form.addRow("Model / reasoning / speed", selectors)
-        outer.addLayout(form)
+        selectors = QHBoxLayout()
+        self.model = QComboBox(); self.model.addItems(MODELS.keys()); self.model.setCurrentText("Terra"); self.model.setToolTip("Model")
+        self.reasoning = QComboBox(); self.reasoning.addItems(REASONING.keys()); self.reasoning.setCurrentText("High"); self.reasoning.setToolTip("Reasoning")
+        self.speed = QComboBox(); self.speed.addItems(SPEEDS.keys()); self.speed.setCurrentText("Standard"); self.speed.setToolTip("Speed")
+        selectors.addWidget(self.model)
+        selectors.addWidget(self.reasoning)
+        selectors.addWidget(self.speed)
+        outer.addLayout(selectors)
 
         session_row = QHBoxLayout()
         self.session = QLineEdit(); self.session.setPlaceholderText("Session ID")
         self.session.textChanged.connect(self.invalidate_cwd_preview)
         self.session.editingFinished.connect(self.resolve_cwd_preview)
-        self.when = QLineEdit(); self.when.setPlaceholderText("Run at — YYYY-MM-DD HH:MM")
-        self.when.setClearButtonEnabled(True)
+        self.when = QLineEdit(); self.when.setReadOnly(True); self.when.setPlaceholderText("Run at")
+        self.when.setToolTip("Click to choose date and time")
+        self.when.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.when.installEventFilter(self)
+        calendar_action = self.when.addAction(QIcon.fromTheme("x-office-calendar"), QLineEdit.ActionPosition.TrailingPosition)
+        calendar_action.triggered.connect(self.choose_run_time)
         session_row.addWidget(self.session, 3)
         session_row.addWidget(self.when, 2)
 
@@ -189,6 +236,28 @@ class MainWindow(QMainWindow):
         self.tray.activated.connect(lambda reason: self.restore() if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
         if QSystemTrayIcon.isSystemTrayAvailable(): self.tray.show()
 
+    def eventFilter(self, watched: object, event: QEvent) -> bool:
+        if watched is self.when and event.type() == QEvent.Type.MouseButtonPress:
+            self.choose_run_time()
+            return True
+        return super().eventFilter(watched, event)
+
+    def choose_run_time(self) -> None:
+        initial = self._scheduled_time
+        if initial is None or initial <= QDateTime.currentDateTime():
+            initial = QDateTime.currentDateTime().addSecs(5 * 60)
+            initial.setTime(QTime(initial.time().hour(), initial.time().minute()))
+        dialog = ScheduleTimeDialog(initial, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.set_scheduled_time(dialog.selected_date_time())
+
+    def set_scheduled_time(self, scheduled: QDateTime) -> None:
+        if not scheduled.isValid():
+            raise ValueError("invalid schedule time")
+        self._scheduled_time = scheduled
+        self.when.setText(scheduled.toString(TIME_FORMAT))
+
     def invalidate_cwd_preview(self) -> None:
         self._resolved_cwd = None
         self.project_path_action.setText("Project: not resolved")
@@ -222,7 +291,7 @@ class MainWindow(QMainWindow):
 
     def default_answer_path(self) -> Path:
         session_part = safe_filename_part(self.session.text(), "session")
-        scheduled = self.parsed_run_time() or QDateTime.currentDateTime()
+        scheduled = self._scheduled_time or QDateTime.currentDateTime()
         time_part = scheduled.toString("yyyyMMdd-HHmm")
         directory = self._resolved_cwd if self._resolved_cwd is not None else Path.cwd()
         return unique_path(directory / f"codex-{session_part}-{time_part}.md")
@@ -243,22 +312,15 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum()))
         return bubble
 
-    def parsed_run_time(self) -> QDateTime | None:
-        value = self.when.text().strip()
-        if not value:
-            return None
-        parsed = QDateTime.fromString(value, TIME_FORMAT)
-        return parsed if parsed.isValid() else None
-
     def schedule(self) -> None:
         session = self.session.text().strip(); prompt = self.prompt.toPlainText().strip()
         if not session or not prompt:
             QMessageBox.warning(self, APP_NAME, "Session ID and prompt are required."); return
-        scheduled = self.parsed_run_time()
+        scheduled = self._scheduled_time
         if scheduled is None:
-            QMessageBox.warning(self, APP_NAME, f"Enter run time as {TIME_FORMAT}."); return
-        if scheduled <= QDateTime.currentDateTime():
-            QMessageBox.warning(self, APP_NAME, "Run time must be in the future."); return
+            QMessageBox.warning(self, APP_NAME, "Choose a run time first."); return
+        if not scheduled.isValid() or scheduled <= QDateTime.currentDateTime():
+            QMessageBox.warning(self, APP_NAME, "Run time must be a valid future time."); return
         try:
             cwd = resolve_session_cwd(session)
         except SessionResolutionError as exc:
