@@ -14,6 +14,7 @@ Options:
   --output FILE         Redirect plain Codex output to FILE instead of current TTY
   --log-json FILE       Run Codex with --json and persist JSONL for GUI monitoring
   --save-answer FILE    With --log-json, save the clean assistant answer to FILE
+  --task-state FILE     With --log-json, update persistent task status/PID in FILE
   --tty PATH            Override output TTY for plain mode
   --codex-bin PATH      Override codex executable
   --at-bin PATH         Override at executable
@@ -73,6 +74,7 @@ manual_cwd=''
 output=''
 log_json=''
 save_answer=''
+task_state=''
 tty_path=${TTY_PATH:-}
 codex_bin=${CODEX_BIN:-}
 at_bin=${AT_BIN:-}
@@ -90,6 +92,7 @@ while (($#)); do
     --output) output=${2:?missing value for --output}; shift 2 ;;
     --log-json) log_json=${2:?missing value for --log-json}; shift 2 ;;
     --save-answer) save_answer=${2:?missing value for --save-answer}; shift 2 ;;
+    --task-state) task_state=${2:?missing value for --task-state}; shift 2 ;;
     --tty) tty_path=${2:?missing value for --tty}; shift 2 ;;
     --codex-bin) codex_bin=${2:?missing value for --codex-bin}; shift 2 ;;
     --at-bin) at_bin=${2:?missing value for --at-bin}; shift 2 ;;
@@ -103,6 +106,10 @@ done
 [[ -n "$prompt" ]] || { echo 'codex-schedule: --prompt is required' >&2; exit 2; }
 if [[ -n "$at_spec" && -n "$timestamp" ]] || [[ -z "$at_spec" && -z "$timestamp" ]]; then
   echo 'codex-schedule: specify exactly one of --at or --timestamp' >&2
+  exit 2
+fi
+if [[ -n "$task_state" && -z "$log_json" ]]; then
+  echo 'codex-schedule: --task-state requires --log-json' >&2
   exit 2
 fi
 case "$reasoning" in minimal|low|medium|high|xhigh) ;; *) echo "codex-schedule: unsupported reasoning: $reasoning" >&2; exit 2 ;; esac
@@ -174,6 +181,11 @@ if [[ -n "$log_json" ]]; then
     mkdir -p "$(dirname "$save_answer")"
     save_answer=$(realpath -m "$save_answer")
     runner_cmd+=(--answer "$save_answer")
+  fi
+  if [[ -n "$task_state" ]]; then
+    mkdir -p "$(dirname "$task_state")"
+    task_state=$(realpath -m "$task_state")
+    runner_cmd+=(--task-state "$task_state")
   fi
   runner_cmd+=(-- "${cmd[@]}")
   for arg in "${runner_cmd[@]}"; do job+="$(shell_quote "$arg") "; done
