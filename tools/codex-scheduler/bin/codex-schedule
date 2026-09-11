@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  codex-schedule --model MODEL (--at SPEC | --timestamp CCYYMMDDhhmm) \
+    --session SESSION --prompt PROMPT [options]
+
+Options:
+  --reasoning LEVEL     minimal|low|medium|high|xhigh (default: high)
+  --speed SPEED         standard|fast (default: standard)
+  --cwd DIR             Manual cwd override/fallback; normally resolved via Codex app-server
+  --output FILE         Redirect plain Codex output to FILE instead of current TTY
+  --log-json FILE       Run Codex with --json and persist JSONL for GUI monitoring
+  --save-answer FILE    With --log-json, save the clean assistant answer to FILE
+  --task-state FILE     With --log-json, update persistent task status/PID in FILE
+  --tty PATH            Override output TTY for plain mode
+  --codex-bin PATH      Override codex executable
+  --at-bin PATH         Override at executable
+  -h, --help            Show this help
+USAGE
+}
+
+shell_quote() {
+  local value=${1-}
+  printf "'%s'" "${value//\'/\'\\\'\'}"
+}
+
+validate_timestamp() {
+  local value=$1 year month day hour minute canonical target_epoch now_epoch human
+  [[ "$value" =~ ^[0-9]{12}$ ]] || {
+    echo "codex-schedule: invalid --timestamp '$value' (expected CCYYMMDDhhmm)" >&2
+    return 2
+  }
+  year=${value:0:4}; month=${value:4:2}; day=${value:6:2}; hour=${value:8:2}; minute=${value:10:2}
+  human="$year-$month-$day $hour:$minute:00"
+  canonical=$(date -d "$human" +%Y%m%d%H%M 2>/dev/null) || {
+    echo "codex-schedule: invalid calendar date/time for --timestamp: $value" >&2
+    return 2
+  }
+  [[ "$canonical" == "$value" ]] || {
+    echo "codex-schedule: invalid calendar date/time for --timestamp: $value" >&2
+    return 2
+  }
+  target_epoch=$(date -d "$human" +%s)
+  now_epoch=$(date +%s)
+  (( target_epoch > now_epoch )) || {
+    echo "codex-schedule: --timestamp must be in the future: $value" >&2
+    return 2
+  }
+}
+
+validate_clock_at_spec() {
+  local value=$1 hour minute
+  if [[ "$value" =~ ^([0-9]{1,2}):([0-9]{2})$ ]]; then
+    hour=$((10#${BASH_REMATCH[1]}))
+    minute=$((10#${BASH_REMATCH[2]}))
+    if (( hour > 23 || minute > 59 )); then
+      echo "codex-schedule: invalid HH:MM --at time: $value" >&2
+      return 2
+    fi
+  fi
+}
+
+model=''
+reasoning='high'
+speed='standard'
+at_spec=''
+timestamp=''
+session=''
+prompt=''
+manual_cwd=''
+output=''
+log_json=''
+save_answer=''
+task_state=''
+tty_path=${TTY_PATH:-}
+codex_bin=${CODEX_BIN:-}
+at_bin=${AT_BIN:-}
+
+while (($#)); do
+  case "$1" in
+    --model) model=${2:?missing value for --model}; shift 2 ;;
+    --reasoning) reasoning=${2:?missing value for --reasoning}; shift 2 ;;
+    --speed) speed=${2:?missing value for --speed}; shift 2 ;;
+    --at) at_spec=${2:?missing value for --at}; shift 2 ;;
+    --timestamp) timestamp=${2:?missing value for --timestamp}; shift 2 ;;
+    --session) session=${2:?missing value for --session}; shift 2 ;;
+    --prompt) prompt=${2:?missing value for --prompt}; shift 2 ;;
+    --cwd) manual_cwd=${2:?missing value for --cwd}; shift 2 ;;
+    --output) output=${2:?missing value for --output}; shift 2 ;;
+    --log-json) log_json=${2:?missing value for --log-json}; shift 2 ;;
+    --save-answer) save_answer=${2:?missing value for --save-answer}; shift 2 ;;
+    --task-state) task_state=${2:?missing value for --task-state}; shift 2 ;;
+    --tty) tty_path=${2:?missing value for --tty}; shift 2 ;;
+    --codex-bin) codex_bin=${2:?missing value for --codex-bin}; shift 2 ;;
+    --at-bin) at_bin=${2:?missing value for --at-bin}; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "codex-schedule: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+[[ -n "$model" ]] || { echo 'codex-schedule: --model is required' >&2; exit 2; }
+[[ -n "$session" ]] || { echo 'codex-schedule: --session is required' >&2; exit 2; }
+[[ -n "$prompt" ]] || { echo 'codex-schedule: --prompt is required' >&2; exit 2; }
+if [[ -n "$at_spec" && -n "$timestamp" ]] || [[ -z "$at_spec" && -z "$timestamp" ]]; then
+  echo 'codex-schedule: specify exactly one of --at or --timestamp' >&2
+  exit 2
+fi
+if [[ -n "$task_state" && -z "$log_json" ]]; then
+  echo 'codex-schedule: --task-state requires --log-json' >&2
+  exit 2
+fi
+case "$reasoning" in minimal|low|medium|high|xhigh) ;; *) echo "codex-schedule: unsupported reasoning: $reasoning" >&2; exit 2 ;; esac
+case "$speed" in standard) service_tier='default' ;; fast) service_tier='fast' ;; *) echo "codex-schedule: unsupported speed: $speed" >&2; exit 2 ;; esac
+if [[ -n "$timestamp" ]]; then
+  validate_timestamp "$timestamp"
+else
+  validate_clock_at_spec "$at_spec"
+fi
+
+if [[ -z "$codex_bin" ]]; then
+  codex_bin=$(command -v codex || true)
+fi
+if [[ -z "$at_bin" ]]; then
+  at_bin=$(command -v at || true)
+fi
+[[ -n "$codex_bin" && -x "$codex_bin" ]] || { echo 'codex-schedule: codex executable not found' >&2; exit 127; }
+[[ -n "$at_bin" && -x "$at_bin" ]] || { echo 'codex-schedule: at executable not found (install package: at)' >&2; exit 127; }
+codex_bin=$(realpath "$codex_bin")
+at_bin=$(realpath "$at_bin")
+
+app_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")/../app")
+runner="$app_dir/job_runner.py"
+resolver="$app_dir/session_cwd.py"
+
+resolve_err=$(mktemp)
+trap 'rm -f "$resolve_err"' EXIT
+resolved_cwd=''
+if resolved_cwd=$(python3 "$resolver" --session "$session" --codex-bin "$codex_bin" 2>"$resolve_err"); then
+  :
+else
+  if [[ -z "$manual_cwd" ]]; then
+    cat "$resolve_err" >&2
+    echo 'codex-schedule: refusing to schedule without a verified session cwd' >&2
+    exit 2
+  fi
+  cat "$resolve_err" >&2
+  echo 'codex-schedule: warning: Codex app-server could not resolve session cwd; validating explicit --cwd fallback' >&2
+fi
+
+if [[ -n "$manual_cwd" ]]; then
+  [[ -d "$manual_cwd" ]] || { echo "codex-schedule: working directory does not exist: $manual_cwd" >&2; exit 2; }
+  manual_cwd=$(cd "$manual_cwd" && pwd -P)
+  if ! git -C "$manual_cwd" rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "codex-schedule: --cwd is not inside a Git worktree: $manual_cwd" >&2
+    exit 2
+  fi
+  if [[ -n "$resolved_cwd" && "$manual_cwd" != "$resolved_cwd" ]]; then
+    echo "codex-schedule: --cwd mismatch: session says '$resolved_cwd' but override says '$manual_cwd'" >&2
+    exit 2
+  fi
+  cwd=$manual_cwd
+else
+  cwd=$resolved_cwd
+fi
+
+cmd=("$codex_bin" exec -m "$model" -c "service_tier=\"$service_tier\"" -c "model_reasoning_effort=\"$reasoning\"")
+if [[ -n "$log_json" ]]; then
+  cmd+=(--json)
+fi
+cmd+=(resume "$session" "$prompt")
+
+job="cd $(shell_quote "$cwd") || exit 125; "
+if [[ -n "$log_json" ]]; then
+  mkdir -p "$(dirname "$log_json")"
+  log_json=$(realpath -m "$log_json")
+  runner_cmd=(python3 "$runner" --log "$log_json")
+  if [[ -n "$save_answer" ]]; then
+    mkdir -p "$(dirname "$save_answer")"
+    save_answer=$(realpath -m "$save_answer")
+    runner_cmd+=(--answer "$save_answer")
+  fi
+  if [[ -n "$task_state" ]]; then
+    mkdir -p "$(dirname "$task_state")"
+    task_state=$(realpath -m "$task_state")
+    runner_cmd+=(--task-state "$task_state")
+  fi
+  runner_cmd+=(-- "${cmd[@]}")
+  for arg in "${runner_cmd[@]}"; do job+="$(shell_quote "$arg") "; done
+else
+  for arg in "${cmd[@]}"; do job+="$(shell_quote "$arg") "; done
+  if [[ -n "$output" ]]; then
+    mkdir -p "$(dirname "$output")"
+    output=$(realpath -m "$output")
+    job+="> $(shell_quote "$output") 2>&1"
+  else
+    if [[ -z "$tty_path" ]]; then
+      tty_path=$(tty 2>/dev/null || true)
+    fi
+    [[ -n "$tty_path" && "$tty_path" != 'not a tty' ]] || {
+      echo 'codex-schedule: no TTY available; use --output or --log-json' >&2
+      exit 2
+    }
+    job+="> $(shell_quote "$tty_path") 2>&1"
+  fi
+fi
+
+if [[ -n "$timestamp" ]]; then
+  schedule_output=$(printf '%s\n' "$job" | "$at_bin" -t "$timestamp" 2>&1) || {
+    rc=$?; printf '%s\n' "$schedule_output" >&2; exit "$rc";
+  }
+else
+  schedule_output=$(printf '%s\n' "$job" | "$at_bin" "$at_spec" 2>&1) || {
+    rc=$?; printf '%s\n' "$schedule_output" >&2; exit "$rc";
+  }
+fi
+printf 'session cwd: %s\n' "$cwd"
+printf '%s\n' "$schedule_output"

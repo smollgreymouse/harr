@@ -56,7 +56,7 @@ def check_git_execution() -> None:
         fake_git = binary_dir / "git"
         fake_git.write_text(
             "#!/bin/sh\n"
-            "printf 'cwd=%s\\n' \"$PWD\"\n"
+            "printf 'cwd=%s\\n' \"$(pwd)\"\n"
             "printf 'agent=%s\\n' \"${SSH_AUTH_SOCK:-}\"\n"
             "printf 'args=%s\\n' \"$*\"\n",
             encoding="utf-8",
