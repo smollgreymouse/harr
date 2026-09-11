@@ -30,9 +30,9 @@ The UI is task-oriented rather than single-job:
 
 Codex session selection is an editable dropdown. It is filled through the documented App Server `thread/list` API, newest activity first. A fresh task automatically selects the newest session when available, while Ctrl+V/manual session IDs continue to work. Reading the session list does not start a model turn.
 
-The schedule picker defaults to **current local time + 05:02**, rounded to whole-minute `at` precision. It uses standard Qt widgets: a `QDateEdit` with native calendar popup and click-first hour/minute steppers built from `QSpinBox`/`QToolButton`. The popup calendar uses the system locale and Monday as the first day of the week. Past times are rejected inside the picker; `codex-schedule` independently validates absolute timestamps before invoking `at` so CLI use remains protected too.
+The schedule picker defaults to **current local time + 05:02**, rounded to whole-minute `at` precision. It uses standard Qt widgets: a `QDateEdit` with native calendar popup and click-first hour/minute steppers built from `QSpinBox`/`QToolButton`. The calendar uses the system locale and Monday as the first day of the week. Past times are rejected inside the picker; `codex-schedule` independently validates absolute timestamps before invoking `at` so CLI use remains protected too.
 
-Model/reasoning/speed selectors are Sol/Terra/Luna, Minimal/Low/Medium/High/Extra High and Standard/Fast. The selector chrome is intentionally flat until hover/focus; the standard widgets themselves are still drawn by the active Qt platform style.
+Model/reasoning/speed selectors are Sol/Terra/Luna, Minimal/Low/Medium/High/Extra High and Standard/Fast. Their chrome is intentionally flat until hover/focus; the standard widgets themselves are still drawn by the active Qt platform style.
 
 Answer export is one checkable `Save final answer…` button. Choosing a file enables export; clicking the enabled button again disables it. Default names are unique and include session ID plus schedule time, e.g. `codex-SESSION-20260911-1019.md`.
 
