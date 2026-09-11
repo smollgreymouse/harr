@@ -11,7 +11,11 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 cat <<'MSG'
 Installed launchers in ~/.local/bin and desktop entry in ~/.local/share/applications.
-Runtime packages on Ubuntu 24.04:
-  sudo apt install at python3-pyqt6
+Runtime packages on Ubuntu 24.04+:
+  sudo apt install at python3-pyqt6 qt6-gtk-platformtheme
   sudo systemctl enable --now atd
+
+qt6-gtk-platformtheme lets standard Qt widgets and native dialogs follow the
+GNOME/GTK desktop theme. The app still has a palette fallback if the platform
+theme is unavailable.
 MSG
