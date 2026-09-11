@@ -22,7 +22,6 @@ def _env_override() -> Optional[bool]:
 def _gnome_prefers_dark() -> Optional[bool]:
     if shutil.which("gsettings") is None:
         return None
-
     try:
         proc = subprocess.run(
             ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
@@ -34,7 +33,6 @@ def _gnome_prefers_dark() -> Optional[bool]:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-
     if proc.returncode != 0:
         return None
     value = proc.stdout.strip().strip("'\"").lower()
@@ -59,59 +57,54 @@ def _qt_prefers_dark(app: QApplication) -> Optional[bool]:
     return None
 
 
+def palette_is_dark(palette: QPalette) -> bool:
+    return palette.color(QPalette.ColorRole.Window).lightness() < palette.color(QPalette.ColorRole.WindowText).lightness()
+
+
 def system_prefers_dark(app: QApplication) -> bool:
     override = _env_override()
     if override is not None:
         return override
-
-    # GNOME's Qt platform integration does not always propagate prefer-dark to
-    # QStyleHints. Prefer the desktop's public GSettings value when available.
-    gnome = _gnome_prefers_dark()
-    if gnome is not None:
-        return gnome
-
     qt = _qt_prefers_dark(app)
     if qt is not None:
         return qt
-
-    palette = app.palette()
-    return palette.color(QPalette.ColorRole.Window).lightness() < 128
+    gnome = _gnome_prefers_dark()
+    if gnome is not None:
+        return gnome
+    return palette_is_dark(app.palette())
 
 
 def _dark_palette(source: QPalette) -> QPalette:
+    """Last-resort palette for Qt builds that ignore GNOME prefer-dark.
+
+    Standard widgets are still painted by the current QStyle; this only fixes
+    the color roles when the platform theme failed to supply dark ones.
+    """
     palette = QPalette(source)
     window = QColor(36, 36, 36)
     base = QColor(30, 30, 30)
     alternate = QColor(46, 46, 46)
     text = QColor(238, 238, 238)
     disabled = QColor(145, 145, 145)
-
-    palette.setColor(QPalette.ColorRole.Window, window)
-    palette.setColor(QPalette.ColorRole.WindowText, text)
-    palette.setColor(QPalette.ColorRole.Base, base)
-    palette.setColor(QPalette.ColorRole.AlternateBase, alternate)
-    palette.setColor(QPalette.ColorRole.ToolTipBase, alternate)
-    palette.setColor(QPalette.ColorRole.ToolTipText, text)
-    palette.setColor(QPalette.ColorRole.Text, text)
-    palette.setColor(QPalette.ColorRole.Button, alternate)
-    palette.setColor(QPalette.ColorRole.ButtonText, text)
-    palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 255, 255))
-    palette.setColor(QPalette.ColorRole.PlaceholderText, disabled)
-
-    # Keep the platform/accent highlight supplied by Qt instead of inventing a
-    # separate application accent colour.
+    for role, color in (
+        (QPalette.ColorRole.Window, window),
+        (QPalette.ColorRole.WindowText, text),
+        (QPalette.ColorRole.Base, base),
+        (QPalette.ColorRole.AlternateBase, alternate),
+        (QPalette.ColorRole.ToolTipBase, alternate),
+        (QPalette.ColorRole.ToolTipText, text),
+        (QPalette.ColorRole.Text, text),
+        (QPalette.ColorRole.Button, alternate),
+        (QPalette.ColorRole.ButtonText, text),
+        (QPalette.ColorRole.PlaceholderText, disabled),
+    ):
+        palette.setColor(role, color)
     highlight = source.color(QPalette.ColorRole.Highlight)
     if not highlight.isValid():
         highlight = QColor(53, 132, 228)
     palette.setColor(QPalette.ColorRole.Highlight, highlight)
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
-
-    for role in (
-        QPalette.ColorRole.WindowText,
-        QPalette.ColorRole.Text,
-        QPalette.ColorRole.ButtonText,
-        QPalette.ColorRole.PlaceholderText,
-    ):
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText, QPalette.ColorRole.PlaceholderText):
         palette.setColor(QPalette.ColorGroup.Disabled, role, disabled)
     return palette
 
@@ -119,12 +112,11 @@ def _dark_palette(source: QPalette) -> QPalette:
 class SystemThemeWatcher:
     def __init__(self, app: QApplication) -> None:
         self.app = app
-        self._light_palette = QPalette(app.style().standardPalette())
-        self._dark: Optional[bool] = None
+        self._platform_palette = QPalette(app.palette())
+        self._last_requested: Optional[bool] = None
         self.timer = QTimer(app)
         self.timer.setInterval(3000)
         self.timer.timeout.connect(self.refresh)
-
         signal = getattr(app.styleHints(), "colorSchemeChanged", None)
         if signal is not None:
             try:
@@ -137,11 +129,28 @@ class SystemThemeWatcher:
         self.timer.start()
 
     def refresh(self, force: bool = False) -> None:
-        dark = system_prefers_dark(self.app)
-        if not force and dark == self._dark:
+        desired_dark = system_prefers_dark(self.app)
+        if not force and desired_dark == self._last_requested:
             return
-        self._dark = dark
-        self.app.setPalette(_dark_palette(self._light_palette) if dark else QPalette(self._light_palette))
+        self._last_requested = desired_dark
+
+        # If the platform theme already did the right thing, leave its palette
+        # untouched. That preserves native GTK/Qt color roles and accents.
+        current = self.app.palette()
+        if palette_is_dark(current) == desired_dark:
+            self._platform_palette = QPalette(current)
+            return
+
+        override = _env_override()
+        gnome = _gnome_prefers_dark()
+        if override is None and gnome is None:
+            return
+
+        if desired_dark:
+            self.app.setPalette(_dark_palette(self._platform_palette))
+        else:
+            self.app.setPalette(QPalette(self.app.style().standardPalette()))
+            self._platform_palette = QPalette(self.app.palette())
 
 
 def install_system_theme(app: QApplication) -> SystemThemeWatcher:
