@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from session_cwd import SessionResolutionError, list_codex_sessions
-from task_page import STATUS_ICON, TaskPage, task_display_title, task_status_text
+from task_page_native import STATUS_ICON, TaskPage, task_display_title, task_status_text
 from task_store import ACTIVE_STATUSES, FINISHED_STATUSES, TaskStore
 from ui_chrome import PlusTabBar, set_tab_close_button
 
@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         self.new_button.clicked.connect(self.new_task)
         self.tasks_button = QToolButton(sidebar)
         self.tasks_button.setText("⋮")
+        self.tasks_button.setAutoRaise(True)
         self.tasks_button.setToolTip("All tasks")
         self.tasks_menu = QMenu(self.tasks_button)
         self.tasks_menu.aboutToShow.connect(self.rebuild_tasks_menu)
@@ -128,6 +129,8 @@ class MainWindow(QMainWindow):
 
         self.sidebar_toggle = QToolButton(self.tabs)
         self.sidebar_toggle.setText("☰")
+        self.sidebar_toggle.setProperty("chromeRole", "sidebarToggle")
+        self.sidebar_toggle.setAutoRaise(True)
         self.sidebar_toggle.setToolTip("Toggle tasks sidebar")
         self.sidebar_toggle.setCheckable(True)
         self.sidebar_toggle.setChecked(True)
@@ -161,9 +164,12 @@ class MainWindow(QMainWindow):
         self.tray = QSystemTrayIcon(icon, self)
         self.tray.setToolTip(APP_NAME)
         menu = QMenu(self)
-        show_action = QAction("Show", self); show_action.triggered.connect(self.restore)
-        new_action = QAction("New task", self); new_action.triggered.connect(self.new_task)
-        quit_action = QAction("Quit", self); quit_action.triggered.connect(self.quit_app)
+        show_action = QAction("Show", self)
+        show_action.triggered.connect(self.restore)
+        new_action = QAction("New task", self)
+        new_action.triggered.connect(self.new_task)
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(self.quit_app)
         menu.addAction(show_action)
         menu.addAction(new_action)
         menu.addSeparator()
@@ -213,6 +219,10 @@ class MainWindow(QMainWindow):
         if task is None:
             return
         page = TaskPage(self.store, task, self.task_changed, self.tabs)
+        for selector in (page.model, page.reasoning, page.speed):
+            selector.setProperty("chromeRole", "selector")
+            selector.style().unpolish(selector)
+            selector.style().polish(selector)
         self._page_by_id[task_id] = page
         index = self.tabs.addTab(page, self.tab_title(task))
         self.tabs.setTabToolTip(index, self.tab_tooltip(task))
