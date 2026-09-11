@@ -255,6 +255,8 @@ class MainWindow(QMainWindow):
     def set_scheduled_time(self, scheduled: QDateTime) -> None:
         if not scheduled.isValid():
             raise ValueError("invalid schedule time")
+        if scheduled <= QDateTime.currentDateTime():
+            raise ValueError("schedule time must be in the future")
         self._scheduled_time = scheduled
         self.when.setText(scheduled.toString(TIME_FORMAT))
 
@@ -319,8 +321,6 @@ class MainWindow(QMainWindow):
         scheduled = self._scheduled_time
         if scheduled is None:
             QMessageBox.warning(self, APP_NAME, "Choose a run time first."); return
-        if not scheduled.isValid() or scheduled <= QDateTime.currentDateTime():
-            QMessageBox.warning(self, APP_NAME, "Run time must be a valid future time."); return
         try:
             cwd = resolve_session_cwd(session)
         except SessionResolutionError as exc:
