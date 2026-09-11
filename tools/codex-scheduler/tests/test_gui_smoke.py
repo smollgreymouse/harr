@@ -22,13 +22,21 @@ def main() -> int:
     assert window.model.currentText() == "Terra"
     assert window.reasoning.currentText() == "High"
     assert window.speed.currentText() == "Standard"
-    assert window.prompt.isEnabled()
+    assert window.session.text() == ""
+    assert window.session.placeholderText() == "Session ID"
+    assert window.when.text() == ""
+    assert "Run at" in window.when.placeholderText()
+    assert window.prompt.placeholderText() == "Prompt"
+    assert not hasattr(window, "cwd")
+    assert window.project_button.text() == "⋮"
+    assert window.project_path_action.text() == "Project: not resolved"
+    assert not window.copy_project_action.isEnabled()
     palette = app.palette()
     assert palette.color(QPalette.ColorRole.Window).lightness() < palette.color(QPalette.ColorRole.WindowText).lightness()
     assert palette.color(QPalette.ColorRole.Base).lightness() < 128
     watcher.timer.stop()
     window._quitting = True; window.tray.hide(); window.close(); app.processEvents()
-    print("GUI dark-theme smoke test passed")
+    print("GUI compact-controls + dark-theme smoke test passed")
     return 0
 
 
