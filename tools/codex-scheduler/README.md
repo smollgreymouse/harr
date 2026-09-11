@@ -33,7 +33,7 @@ codex-schedule \
 
 ## Desktop app
 
-`app/main.py` is a native Qt 6 desktop front end using the Ubuntu-packaged PyQt6 bindings. It provides model (Sol/Terra/Luna), reasoning (Minimal/Low/Medium/High/Extra High), speed (Standard/Fast), session ID, prompt and exact local run time. The working directory is read-only in the UI and is resolved/validated from Codex App Server's `thread/read` response. Output is rendered as a user/Codex transcript from `codex exec --json`, with optional clean final-answer export to Markdown/text.
+`app/main.py` is a native Qt 6 desktop front end using the Ubuntu-packaged PyQt6 bindings. It provides model (Sol/Terra/Luna), reasoning (Minimal/Low/Medium/High/Extra High), speed (Standard/Fast), session ID, prompt and exact local run time. Session ID and run time share one compact row and use placeholders instead of side labels. The resolved Codex project directory is not shown as a permanent field; the small `⋮` menu on that row shows it on demand and can copy or refresh it. Output is rendered as a user/Codex transcript from `codex exec --json`, with optional clean final-answer export to Markdown/text.
 
 The app follows the desktop light/dark preference. Qt's native `QStyleHints.colorScheme()` is used where the platform plugin exposes it; on GNOME, where distro Qt can remain light while GTK/libadwaita applications are dark, the app falls back to the public `org.gnome.desktop.interface color-scheme` GSettings key and applies a dark Qt palette while retaining the platform accent highlight. The preference is rechecked while the app is running, so switching GNOME between light and dark does not require a restart. `HARR_CODEX_THEME=dark|light|system` is available as a diagnostic override.
 
@@ -58,7 +58,7 @@ Ubuntu's default GNOME session includes AppIndicator integration; on a custom GN
 
 ## Tests
 
-The tests do not spend Codex quota. They use a fake Codex executable that implements the documented App Server handshake and `thread/read`, plus fake `at`; they inspect the generated job, execute it, and verify the exact model/reasoning/service-tier argv. Resolver tests verify successful cwd lookup, nested cwd preservation, missing-thread failure, and non-Git refusal. The Python tests also cover JSONL parsing, clean-answer export, and a Qt dark-theme smoke test.
+The tests do not spend Codex quota. They use a fake Codex executable that implements the documented App Server handshake and `thread/read`, plus fake `at`; they inspect the generated job, execute it, and verify the exact model/reasoning/service-tier argv. Resolver tests verify successful cwd lookup, nested cwd preservation, missing-thread failure, and non-Git refusal. The Python tests also cover JSONL parsing, clean-answer export, the compact form, and a Qt dark-theme smoke test.
 
 ```bash
 bash tools/codex-scheduler/tests/test_cli.sh
