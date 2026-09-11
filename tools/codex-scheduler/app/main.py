@@ -15,7 +15,6 @@ try:
     from PyQt6.QtWidgets import (
         QApplication,
         QCalendarWidget,
-        QCheckBox,
         QComboBox,
         QDialog,
         QDialogButtonBox,
@@ -156,6 +155,7 @@ class MainWindow(QMainWindow):
         self._assistant_bubble: MessageBubble | None = None
         self._resolved_cwd: Path | None = None
         self._scheduled_time: QDateTime | None = None
+        self._answer_path: Path | None = None
 
         root = QWidget()
         outer = QVBoxLayout(root)
@@ -201,14 +201,11 @@ class MainWindow(QMainWindow):
         self.prompt = QTextEdit(); self.prompt.setPlaceholderText("Prompt"); self.prompt.setMinimumHeight(110)
         outer.addWidget(self.prompt)
 
-        save_row = QWidget(); save_layout = QHBoxLayout(save_row); save_layout.setContentsMargins(0, 0, 0, 0)
-        self.save = QCheckBox("Save final answer")
-        self.save_path = QLineEdit(); self.save_path.setPlaceholderText("Output file"); self.save_path.setEnabled(False)
-        save_button = QPushButton("Browse…"); save_button.setEnabled(False)
-        self.save.toggled.connect(self.save_path.setEnabled); self.save.toggled.connect(save_button.setEnabled)
-        save_button.clicked.connect(self.choose_save)
-        save_layout.addWidget(self.save); save_layout.addWidget(self.save_path); save_layout.addWidget(save_button)
-        outer.addWidget(save_row)
+        self.save_button = QPushButton("Save final answer…")
+        self.save_button.setCheckable(True)
+        self.save_button.setToolTip("Enable saving and choose the output file")
+        self.save_button.clicked.connect(self.toggle_save_answer)
+        outer.addWidget(self.save_button)
 
         controls = QHBoxLayout()
         self.schedule_button = QPushButton("Schedule"); self.schedule_button.clicked.connect(self.schedule)
@@ -298,7 +295,23 @@ class MainWindow(QMainWindow):
         directory = self._resolved_cwd if self._resolved_cwd is not None else Path.cwd()
         return unique_path(directory / f"codex-{session_part}-{time_part}.md")
 
-    def choose_save(self) -> None:
+    def set_save_button_state(self, path: Path | None) -> None:
+        self._answer_path = path
+        checked = path is not None
+        self.save_button.blockSignals(True)
+        self.save_button.setChecked(checked)
+        self.save_button.blockSignals(False)
+        if path is None:
+            self.save_button.setText("Save final answer…")
+            self.save_button.setToolTip("Enable saving and choose the output file")
+        else:
+            self.save_button.setText(f"✓ Save final answer — {path.name}")
+            self.save_button.setToolTip(str(path))
+
+    def toggle_save_answer(self, checked: bool) -> None:
+        if not checked:
+            self.set_save_button_state(None)
+            return
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Codex answer",
@@ -306,8 +319,10 @@ class MainWindow(QMainWindow):
             "Markdown (*.md);;Text (*.txt);;All files (*)",
             options=QFileDialog.Option.DontUseNativeDialog,
         )
-        if path:
-            self.save_path.setText(path)
+        if not path:
+            self.set_save_button_state(None)
+            return
+        self.set_save_button_state(Path(path).expanduser())
 
     def add_bubble(self, role: str, text: str) -> MessageBubble:
         bubble = MessageBubble(role, text); self.transcript_layout.addWidget(bubble)
@@ -326,9 +341,7 @@ class MainWindow(QMainWindow):
         except SessionResolutionError as exc:
             QMessageBox.critical(self, APP_NAME, f"Cannot safely resolve the session working directory:\n{exc}"); return
         self.set_resolved_cwd(cwd)
-        answer_path = Path(self.save_path.text()).expanduser() if self.save.isChecked() and self.save_path.text().strip() else None
-        if self.save.isChecked() and answer_path is None:
-            QMessageBox.warning(self, APP_NAME, "Choose a file for the saved answer."); return
+        answer_path = self._answer_path if self.save_button.isChecked() else None
 
         job_id = uuid.uuid4().hex
         jobs = state_dir() / "jobs"; jobs.mkdir(parents=True, exist_ok=True)
