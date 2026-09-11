@@ -16,7 +16,6 @@ try:
         QApplication,
         QCheckBox,
         QComboBox,
-        QDateTimeEdit,
         QFileDialog,
         QFormLayout,
         QFrame,
@@ -24,12 +23,14 @@ try:
         QLabel,
         QLineEdit,
         QMainWindow,
+        QMenu,
         QMessageBox,
         QPushButton,
         QScrollArea,
         QSizePolicy,
         QSystemTrayIcon,
         QTextEdit,
+        QToolButton,
         QVBoxLayout,
         QWidget,
     )
@@ -44,6 +45,7 @@ APP_NAME = "Harr Codex Scheduler"
 MODELS = {"Sol": "gpt-5.6-sol", "Terra": "gpt-5.6-terra", "Luna": "gpt-5.6-luna"}
 REASONING = {"Minimal": "minimal", "Low": "low", "Medium": "medium", "High": "high", "Extra High": "xhigh"}
 SPEEDS = {"Standard": "standard", "Fast": "fast"}
+TIME_FORMAT = "yyyy-MM-dd HH:mm"
 
 
 def state_dir() -> Path:
@@ -93,6 +95,7 @@ class MainWindow(QMainWindow):
         self._log_offset = 0
         self._partial = ""
         self._assistant_bubble: MessageBubble | None = None
+        self._resolved_cwd: Path | None = None
 
         root = QWidget()
         outer = QVBoxLayout(root)
@@ -104,26 +107,44 @@ class MainWindow(QMainWindow):
         selectors = QWidget(); selectors_layout = QHBoxLayout(selectors); selectors_layout.setContentsMargins(0, 0, 0, 0)
         selectors_layout.addWidget(self.model); selectors_layout.addWidget(self.reasoning); selectors_layout.addWidget(self.speed)
         form.addRow("Model / reasoning / speed", selectors)
+        outer.addLayout(form)
 
-        self.session = QLineEdit(); self.session.setPlaceholderText("01a08c7c-df16-74c3-9357-a6cac183895c")
+        session_row = QHBoxLayout()
+        self.session = QLineEdit(); self.session.setPlaceholderText("Session ID")
+        self.session.textChanged.connect(self.invalidate_cwd_preview)
         self.session.editingFinished.connect(self.resolve_cwd_preview)
-        form.addRow("Session", self.session)
-        self.cwd = QLineEdit(); self.cwd.setReadOnly(True); self.cwd.setPlaceholderText("Resolved from the saved Codex session")
-        form.addRow("Session working directory", self.cwd)
-        self.when = QDateTimeEdit(QDateTime.currentDateTime().addSecs(300)); self.when.setCalendarPopup(True); self.when.setDisplayFormat("yyyy-MM-dd HH:mm")
-        form.addRow("Run at", self.when)
-        self.prompt = QTextEdit(); self.prompt.setPlaceholderText("Продолжай"); self.prompt.setMinimumHeight(110)
-        form.addRow("Prompt", self.prompt)
+        self.when = QLineEdit(); self.when.setPlaceholderText("Run at — YYYY-MM-DD HH:MM")
+        self.when.setClearButtonEnabled(True)
+        session_row.addWidget(self.session, 3)
+        session_row.addWidget(self.when, 2)
+
+        self.project_menu = QMenu(self)
+        self.project_path_action = QAction("Project: not resolved", self); self.project_path_action.setEnabled(False)
+        self.copy_project_action = QAction("Copy project directory", self); self.copy_project_action.setEnabled(False)
+        self.copy_project_action.triggered.connect(self.copy_project_directory)
+        self.refresh_project_action = QAction("Refresh project directory", self); self.refresh_project_action.triggered.connect(self.resolve_cwd_preview)
+        self.project_menu.addAction(self.project_path_action)
+        self.project_menu.addSeparator()
+        self.project_menu.addAction(self.copy_project_action)
+        self.project_menu.addAction(self.refresh_project_action)
+        self.project_button = QToolButton(); self.project_button.setText("⋮")
+        self.project_button.setToolTip("Session project")
+        self.project_button.setMenu(self.project_menu)
+        self.project_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        session_row.addWidget(self.project_button)
+        outer.addLayout(session_row)
+
+        self.prompt = QTextEdit(); self.prompt.setPlaceholderText("Prompt"); self.prompt.setMinimumHeight(110)
+        outer.addWidget(self.prompt)
 
         save_row = QWidget(); save_layout = QHBoxLayout(save_row); save_layout.setContentsMargins(0, 0, 0, 0)
         self.save = QCheckBox("Save final answer")
-        self.save_path = QLineEdit(); self.save_path.setEnabled(False)
+        self.save_path = QLineEdit(); self.save_path.setPlaceholderText("Output file"); self.save_path.setEnabled(False)
         save_button = QPushButton("Browse…"); save_button.setEnabled(False)
         self.save.toggled.connect(self.save_path.setEnabled); self.save.toggled.connect(save_button.setEnabled)
         save_button.clicked.connect(self.choose_save)
         save_layout.addWidget(self.save); save_layout.addWidget(self.save_path); save_layout.addWidget(save_button)
-        form.addRow("Output", save_row)
-        outer.addLayout(form)
+        outer.addWidget(save_row)
 
         controls = QHBoxLayout()
         self.schedule_button = QPushButton("Schedule"); self.schedule_button.clicked.connect(self.schedule)
@@ -144,7 +165,6 @@ class MainWindow(QMainWindow):
         self.tray = QSystemTrayIcon(icon, self); self.tray.setToolTip(APP_NAME)
         menu = self.tray.contextMenu()
         if menu is None:
-            from PyQt6.QtWidgets import QMenu
             menu = QMenu(self); self.tray.setContextMenu(menu)
         show_action = QAction("Show", self); show_action.triggered.connect(self.restore)
         quit_action = QAction("Quit", self); quit_action.triggered.connect(self.quit_app)
@@ -152,19 +172,36 @@ class MainWindow(QMainWindow):
         self.tray.activated.connect(lambda reason: self.restore() if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
         if QSystemTrayIcon.isSystemTrayAvailable(): self.tray.show()
 
+    def invalidate_cwd_preview(self) -> None:
+        self._resolved_cwd = None
+        self.project_path_action.setText("Project: not resolved")
+        self.copy_project_action.setEnabled(False)
+        self.project_button.setToolTip("Session project")
+
+    def set_resolved_cwd(self, cwd: Path) -> None:
+        self._resolved_cwd = cwd
+        self.project_path_action.setText(f"Project: {cwd}")
+        self.copy_project_action.setEnabled(True)
+        self.project_button.setToolTip(str(cwd))
+
     def resolve_cwd_preview(self) -> None:
         session = self.session.text().strip()
         if not session:
-            self.cwd.clear()
+            self.invalidate_cwd_preview()
             return
         try:
             cwd = resolve_session_cwd(session)
         except SessionResolutionError as exc:
-            self.cwd.clear()
+            self.invalidate_cwd_preview()
             self.status.setText(str(exc)[:220])
             return
-        self.cwd.setText(str(cwd))
+        self.set_resolved_cwd(cwd)
         self.status.setText("Session directory verified")
+
+    def copy_project_directory(self) -> None:
+        if self._resolved_cwd is not None:
+            QApplication.clipboard().setText(str(self._resolved_cwd))
+            self.status.setText("Project directory copied")
 
     def choose_save(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Save Codex answer", str(Path.cwd() / "codex-answer.md"), "Markdown (*.md);;Text (*.txt);;All files (*)")
@@ -175,17 +212,27 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum()))
         return bubble
 
+    def parsed_run_time(self) -> QDateTime | None:
+        value = self.when.text().strip()
+        if not value:
+            return None
+        parsed = QDateTime.fromString(value, TIME_FORMAT)
+        return parsed if parsed.isValid() else None
+
     def schedule(self) -> None:
         session = self.session.text().strip(); prompt = self.prompt.toPlainText().strip()
         if not session or not prompt:
-            QMessageBox.warning(self, APP_NAME, "Session and prompt are required."); return
+            QMessageBox.warning(self, APP_NAME, "Session ID and prompt are required."); return
+        scheduled = self.parsed_run_time()
+        if scheduled is None:
+            QMessageBox.warning(self, APP_NAME, f"Enter run time as {TIME_FORMAT}."); return
+        if scheduled <= QDateTime.currentDateTime():
+            QMessageBox.warning(self, APP_NAME, "Run time must be in the future."); return
         try:
             cwd = resolve_session_cwd(session)
         except SessionResolutionError as exc:
             QMessageBox.critical(self, APP_NAME, f"Cannot safely resolve the session working directory:\n{exc}"); return
-        self.cwd.setText(str(cwd))
-        if self.when.dateTime() <= QDateTime.currentDateTime():
-            QMessageBox.warning(self, APP_NAME, "Run time must be in the future."); return
+        self.set_resolved_cwd(cwd)
         answer_path = Path(self.save_path.text()).expanduser() if self.save.isChecked() and self.save_path.text().strip() else None
         if self.save.isChecked() and answer_path is None:
             QMessageBox.warning(self, APP_NAME, "Choose a file for the saved answer."); return
@@ -194,14 +241,14 @@ class MainWindow(QMainWindow):
         jobs = state_dir() / "jobs"; jobs.mkdir(parents=True, exist_ok=True)
         log_path = jobs / f"{job_id}.jsonl"; metadata_path = jobs / f"{job_id}.json"
         scheduler = Path(__file__).resolve().parents[1] / "bin" / "codex-schedule"
-        timestamp = self.when.dateTime().toString("yyyyMMddHHmm")
+        timestamp = scheduled.toString("yyyyMMddHHmm")
         args = [str(scheduler), "--model", MODELS[self.model.currentText()], "--reasoning", REASONING[self.reasoning.currentText()], "--speed", SPEEDS[self.speed.currentText()], "--timestamp", timestamp, "--session", session, "--prompt", prompt, "--log-json", str(log_path)]
         if answer_path: args += ["--save-answer", str(answer_path)]
         proc = subprocess.run(args, text=True, capture_output=True); combined = (proc.stdout + proc.stderr).strip()
         if proc.returncode != 0:
             QMessageBox.critical(self, APP_NAME, combined or f"Scheduler failed with exit code {proc.returncode}"); return
         match = re.search(r"\bjob\s+(\d+)\b", combined)
-        metadata = {"id": job_id, "at_job": match.group(1) if match else None, "scheduled": self.when.dateTime().toString(Qt.DateFormat.ISODate), "session": session, "model": MODELS[self.model.currentText()], "reasoning": REASONING[self.reasoning.currentText()], "speed": SPEEDS[self.speed.currentText()], "cwd": str(cwd), "prompt": prompt, "log": str(log_path), "answer": str(answer_path) if answer_path else None}
+        metadata = {"id": job_id, "at_job": match.group(1) if match else None, "scheduled": scheduled.toString(Qt.DateFormat.ISODate), "session": session, "model": MODELS[self.model.currentText()], "reasoning": REASONING[self.reasoning.currentText()], "speed": SPEEDS[self.speed.currentText()], "cwd": str(cwd), "prompt": prompt, "log": str(log_path), "answer": str(answer_path) if answer_path else None}
         metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         self._log_path = log_path; self._log_offset = 0; self._partial = ""; self._assistant_bubble = None
         self.add_bubble("user", prompt); self.status.setText(combined or "Scheduled")
