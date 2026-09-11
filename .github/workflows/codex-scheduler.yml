@@ -27,8 +27,10 @@ jobs:
           bash -n tools/codex-scheduler/tests/test_cli.sh
       - name: Python syntax
         run: python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
-      - name: Session cwd resolver contract
+      - name: Session metadata API contract
         run: python3 tools/codex-scheduler/tests/test_session_cwd.py
+      - name: Persistent task lifecycle
+        run: python3 tools/codex-scheduler/tests/test_task_store.py
       - name: CLI scheduling contract
         run: bash tools/codex-scheduler/tests/test_cli.sh
       - name: JSONL and answer contract
