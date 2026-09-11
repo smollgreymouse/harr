@@ -37,6 +37,7 @@ except ImportError as exc:
     raise SystemExit("PyQt6 is required. On Ubuntu 24.04: sudo apt install python3-pyqt6") from exc
 
 from core import TranscriptEvent, parse_codex_json_line
+from session_cwd import SessionResolutionError, resolve_session_cwd
 
 APP_NAME = "Harr Codex Scheduler"
 MODELS = {"Sol": "gpt-5.6-sol", "Terra": "gpt-5.6-terra", "Luna": "gpt-5.6-luna"}
@@ -104,12 +105,10 @@ class MainWindow(QMainWindow):
         form.addRow("Model / reasoning / speed", selectors)
 
         self.session = QLineEdit(); self.session.setPlaceholderText("01a08c7c-df16-74c3-9357-a6cac183895c")
+        self.session.editingFinished.connect(self.resolve_cwd_preview)
         form.addRow("Session", self.session)
-        cwd_row = QWidget(); cwd_layout = QHBoxLayout(cwd_row); cwd_layout.setContentsMargins(0, 0, 0, 0)
-        self.cwd = QLineEdit(str(Path.cwd()))
-        cwd_button = QPushButton("Browse…"); cwd_button.clicked.connect(self.choose_cwd)
-        cwd_layout.addWidget(self.cwd); cwd_layout.addWidget(cwd_button)
-        form.addRow("Working directory", cwd_row)
+        self.cwd = QLineEdit(); self.cwd.setReadOnly(True); self.cwd.setPlaceholderText("Resolved from the saved Codex session")
+        form.addRow("Session working directory", self.cwd)
         self.when = QDateTimeEdit(QDateTime.currentDateTime().addSecs(300)); self.when.setCalendarPopup(True); self.when.setDisplayFormat("yyyy-MM-dd HH:mm")
         form.addRow("Run at", self.when)
         self.prompt = QTextEdit(); self.prompt.setPlaceholderText("Продолжай"); self.prompt.setMinimumHeight(110)
@@ -152,9 +151,19 @@ class MainWindow(QMainWindow):
         self.tray.activated.connect(lambda reason: self.restore() if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
         if QSystemTrayIcon.isSystemTrayAvailable(): self.tray.show()
 
-    def choose_cwd(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Working directory", self.cwd.text())
-        if path: self.cwd.setText(path)
+    def resolve_cwd_preview(self) -> None:
+        session = self.session.text().strip()
+        if not session:
+            self.cwd.clear()
+            return
+        try:
+            cwd = resolve_session_cwd(session)
+        except SessionResolutionError as exc:
+            self.cwd.clear()
+            self.status.setText(str(exc)[:220])
+            return
+        self.cwd.setText(str(cwd))
+        self.status.setText("Session directory verified")
 
     def choose_save(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Save Codex answer", str(Path.cwd() / "codex-answer.md"), "Markdown (*.md);;Text (*.txt);;All files (*)")
@@ -166,11 +175,14 @@ class MainWindow(QMainWindow):
         return bubble
 
     def schedule(self) -> None:
-        session = self.session.text().strip(); prompt = self.prompt.toPlainText().strip(); cwd = Path(self.cwd.text()).expanduser()
+        session = self.session.text().strip(); prompt = self.prompt.toPlainText().strip()
         if not session or not prompt:
             QMessageBox.warning(self, APP_NAME, "Session and prompt are required."); return
-        if not cwd.is_dir():
-            QMessageBox.warning(self, APP_NAME, f"Working directory does not exist:\n{cwd}"); return
+        try:
+            cwd = resolve_session_cwd(session)
+        except SessionResolutionError as exc:
+            QMessageBox.critical(self, APP_NAME, f"Cannot safely resolve the session working directory:\n{exc}"); return
+        self.cwd.setText(str(cwd))
         if self.when.dateTime() <= QDateTime.currentDateTime():
             QMessageBox.warning(self, APP_NAME, "Run time must be in the future."); return
         answer_path = Path(self.save_path.text()).expanduser() if self.save.isChecked() and self.save_path.text().strip() else None
@@ -182,7 +194,7 @@ class MainWindow(QMainWindow):
         log_path = jobs / f"{job_id}.jsonl"; metadata_path = jobs / f"{job_id}.json"
         scheduler = Path(__file__).resolve().parents[1] / "bin" / "codex-schedule"
         timestamp = self.when.dateTime().toString("yyyyMMddHHmm")
-        args = [str(scheduler), "--model", MODELS[self.model.currentText()], "--reasoning", REASONING[self.reasoning.currentText()], "--speed", SPEEDS[self.speed.currentText()], "--timestamp", timestamp, "--session", session, "--prompt", prompt, "--cwd", str(cwd), "--log-json", str(log_path)]
+        args = [str(scheduler), "--model", MODELS[self.model.currentText()], "--reasoning", REASONING[self.reasoning.currentText()], "--speed", SPEEDS[self.speed.currentText()], "--timestamp", timestamp, "--session", session, "--prompt", prompt, "--log-json", str(log_path)]
         if answer_path: args += ["--save-answer", str(answer_path)]
         proc = subprocess.run(args, text=True, capture_output=True); combined = (proc.stdout + proc.stderr).strip()
         if proc.returncode != 0:

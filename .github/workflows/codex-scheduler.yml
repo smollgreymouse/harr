@@ -27,6 +27,8 @@ jobs:
           bash -n tools/codex-scheduler/tests/test_cli.sh
       - name: Python syntax
         run: python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
+      - name: Session cwd resolver contract
+        run: python3 tools/codex-scheduler/tests/test_session_cwd.py
       - name: CLI scheduling contract
         run: bash tools/codex-scheduler/tests/test_cli.sh
       - name: JSONL and answer contract

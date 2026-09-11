@@ -10,7 +10,7 @@ Usage:
 Options:
   --reasoning LEVEL     minimal|low|medium|high|xhigh (default: high)
   --speed SPEED         standard|fast (default: standard)
-  --cwd DIR             Codex working directory (default: current directory)
+  --cwd DIR             Manual cwd override/fallback; normally auto-resolved from SESSION
   --output FILE         Redirect plain Codex output to FILE instead of current TTY
   --log-json FILE       Run Codex with --json and persist JSONL for GUI monitoring
   --save-answer FILE    With --log-json, save the clean assistant answer to FILE
@@ -33,7 +33,7 @@ at_spec=''
 timestamp=''
 session=''
 prompt=''
-cwd=$(pwd -P)
+manual_cwd=''
 output=''
 log_json=''
 save_answer=''
@@ -50,7 +50,7 @@ while (($#)); do
     --timestamp) timestamp=${2:?missing value for --timestamp}; shift 2 ;;
     --session) session=${2:?missing value for --session}; shift 2 ;;
     --prompt) prompt=${2:?missing value for --prompt}; shift 2 ;;
-    --cwd) cwd=${2:?missing value for --cwd}; shift 2 ;;
+    --cwd) manual_cwd=${2:?missing value for --cwd}; shift 2 ;;
     --output) output=${2:?missing value for --output}; shift 2 ;;
     --log-json) log_json=${2:?missing value for --log-json}; shift 2 ;;
     --save-answer) save_answer=${2:?missing value for --save-answer}; shift 2 ;;
@@ -71,8 +71,6 @@ if [[ -n "$at_spec" && -n "$timestamp" ]] || [[ -z "$at_spec" && -z "$timestamp"
 fi
 case "$reasoning" in minimal|low|medium|high|xhigh) ;; *) echo "codex-schedule: unsupported reasoning: $reasoning" >&2; exit 2 ;; esac
 case "$speed" in standard) service_tier='default' ;; fast) service_tier='fast' ;; *) echo "codex-schedule: unsupported speed: $speed" >&2; exit 2 ;; esac
-[[ -d "$cwd" ]] || { echo "codex-schedule: working directory does not exist: $cwd" >&2; exit 2; }
-cwd=$(cd "$cwd" && pwd -P)
 
 if [[ -z "$codex_bin" ]]; then
   codex_bin=$(command -v codex || true)
@@ -85,7 +83,41 @@ fi
 codex_bin=$(realpath "$codex_bin")
 at_bin=$(realpath "$at_bin")
 
-runner=$(realpath "$(dirname "${BASH_SOURCE[0]}")/../app/job_runner.py")
+app_dir=$(realpath "$(dirname "${BASH_SOURCE[0]}")/../app")
+runner="$app_dir/job_runner.py"
+resolver="$app_dir/session_cwd.py"
+
+resolve_err=$(mktemp)
+trap 'rm -f "$resolve_err"' EXIT
+resolved_cwd=''
+if resolved_cwd=$(python3 "$resolver" --session "$session" 2>"$resolve_err"); then
+  :
+else
+  if [[ -z "$manual_cwd" ]]; then
+    cat "$resolve_err" >&2
+    echo 'codex-schedule: refusing to schedule without a verified session cwd' >&2
+    exit 2
+  fi
+  cat "$resolve_err" >&2
+  echo 'codex-schedule: warning: session cwd could not be auto-resolved; validating explicit --cwd fallback' >&2
+fi
+
+if [[ -n "$manual_cwd" ]]; then
+  [[ -d "$manual_cwd" ]] || { echo "codex-schedule: working directory does not exist: $manual_cwd" >&2; exit 2; }
+  manual_cwd=$(cd "$manual_cwd" && pwd -P)
+  if ! git -C "$manual_cwd" rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "codex-schedule: --cwd is not inside a Git worktree: $manual_cwd" >&2
+    exit 2
+  fi
+  if [[ -n "$resolved_cwd" && "$manual_cwd" != "$resolved_cwd" ]]; then
+    echo "codex-schedule: --cwd mismatch: session says '$resolved_cwd' but override says '$manual_cwd'" >&2
+    exit 2
+  fi
+  cwd=$manual_cwd
+else
+  cwd=$resolved_cwd
+fi
+
 cmd=("$codex_bin" exec -m "$model" -c "service_tier=\"$service_tier\"" -c "model_reasoning_effort=\"$reasoning\"")
 if [[ -n "$log_json" ]]; then
   cmd+=(--json)
@@ -131,4 +163,5 @@ else
     rc=$?; printf '%s\n' "$schedule_output" >&2; exit "$rc";
   }
 fi
+printf 'session cwd: %s\n' "$cwd"
 printf '%s\n' "$schedule_output"
