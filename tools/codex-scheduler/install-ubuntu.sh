@@ -11,11 +11,15 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 cat <<'MSG'
 Installed launchers in ~/.local/bin and desktop entry in ~/.local/share/applications.
-Runtime packages on Ubuntu 24.04+:
-  sudo apt install at python3-pyqt6 qgnomeplatform-qt6
+Required runtime packages on Ubuntu 24.04+:
+  sudo apt install at python3-pyqt6
   sudo systemctl enable --now atd
 
-qgnomeplatform-qt6 maps GNOME/Adwaita settings onto Qt widgets. The app also
-normalizes all dark palette surface roles, so a broken half-dark Qt palette
-cannot leave editors, trees or dropdowns white.
+On Ubuntu releases that provide it (including 25.10), qgnomeplatform-qt6 is an
+optional GNOME/Adwaita integration improvement:
+  sudo apt install qgnomeplatform-qt6
+
+It is not required for dark mode. The app normalizes all dark palette surface
+roles itself, so editors, trees, dropdowns and dialogs cannot remain white in
+a half-dark Qt palette.
 MSG
