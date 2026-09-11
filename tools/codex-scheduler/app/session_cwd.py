@@ -4,8 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import select
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 
@@ -13,135 +16,172 @@ class SessionResolutionError(RuntimeError):
     pass
 
 
-def _codex_home(explicit: Path | None = None) -> Path:
-    if explicit is not None:
-        return explicit.expanduser()
-    configured = os.environ.get("CODEX_HOME")
-    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+def _send(proc: subprocess.Popen[str], message: dict) -> None:
+    assert proc.stdin is not None
+    proc.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+    proc.stdin.flush()
 
 
-def _session_meta(path: Path, session: str) -> tuple[Path, str | None] | None:
+def _wait_for_response(proc: subprocess.Popen[str], request_id: int, timeout: float) -> dict:
+    assert proc.stdout is not None
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise SessionResolutionError(f"timed out waiting for codex app-server response id={request_id}")
+        ready, _, _ = select.select([proc.stdout], [], [], remaining)
+        if not ready:
+            raise SessionResolutionError(f"timed out waiting for codex app-server response id={request_id}")
+        line = proc.stdout.readline()
+        if line == "":
+            raise SessionResolutionError("codex app-server exited before returning the requested thread")
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if message.get("id") != request_id:
+            continue
+        if "error" in message:
+            error = message.get("error")
+            if isinstance(error, dict):
+                detail = error.get("message") or json.dumps(error, ensure_ascii=False)
+            else:
+                detail = str(error)
+            raise SessionResolutionError(f"codex app-server request failed: {detail}")
+        result = message.get("result")
+        if not isinstance(result, dict):
+            raise SessionResolutionError("codex app-server returned a malformed result")
+        return result
+
+
+def _read_stderr(stderr_file) -> str:
     try:
-        with path.open("r", encoding="utf-8-sig", errors="replace") as fh:
-            for index, line in enumerate(fh):
-                if index >= 128:
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if record.get("type") != "session_meta":
-                    continue
-                payload = record.get("payload")
-                if not isinstance(payload, dict):
-                    return None
-                nested = payload.get("meta")
-                meta = nested if isinstance(nested, dict) else payload
-                ids = {str(meta[key]) for key in ("id", "session_id") if meta.get(key) is not None}
-                if ids and session not in ids:
-                    return None
-                cwd = meta.get("cwd")
-                if not isinstance(cwd, str) or not cwd.strip():
-                    raise SessionResolutionError(f"session metadata has no cwd: {path}")
-                candidate = Path(cwd).expanduser()
-                if not candidate.is_absolute():
-                    raise SessionResolutionError(
-                        f"session cwd is relative and cannot be resumed safely: {cwd!r} ({path})"
-                    )
-                version = meta.get("cli_version")
-                return candidate, str(version) if version is not None else None
-    except OSError as exc:
-        raise SessionResolutionError(f"cannot read session rollout {path}: {exc}") from exc
-    return None
-
-
-def validate_git_worktree(cwd: Path) -> Path:
-    try:
-        resolved = cwd.resolve(strict=True)
-    except OSError as exc:
-        raise SessionResolutionError(f"saved session cwd does not exist: {cwd}") from exc
-    if not resolved.is_dir():
-        raise SessionResolutionError(f"saved session cwd is not a directory: {resolved}")
-    try:
-        probe = subprocess.run(
-            ["git", "-C", str(resolved), "rev-parse", "--show-toplevel"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise SessionResolutionError("git executable not found; cannot verify saved session cwd") from exc
-    if probe.returncode != 0:
-        detail = probe.stderr.strip() or "not inside a Git worktree"
-        raise SessionResolutionError(f"saved session cwd is not a usable Git worktree: {resolved}: {detail}")
-    return resolved
+        stderr_file.flush()
+        stderr_file.seek(0)
+        return stderr_file.read().strip()
+    except OSError:
+        return ""
 
 
 def resolve_session_cwd(
     session: str,
     *,
-    codex_home: Path | None = None,
+    codex_bin: str | Path = "codex",
+    timeout: float = 10.0,
     require_git: bool = True,
 ) -> Path:
     session = session.strip()
-    if not session or "/" in session or "\\" in session:
-        raise SessionResolutionError(f"invalid session id: {session!r}")
+    if not session:
+        raise SessionResolutionError("session id is empty")
 
-    home = _codex_home(codex_home)
-    roots = [home / "sessions", home / "archived_sessions"]
-    candidates: list[Path] = []
-    for root in roots:
-        if root.is_dir():
-            candidates.extend(root.rglob(f"*-{session}.jsonl"))
-    if not candidates:
-        raise SessionResolutionError(
-            f"cannot find local rollout for session {session} under {home}; "
-            "Codex may have changed its local session format"
-        )
-
-    found: list[tuple[Path, Path, str | None]] = []
-    for rollout in sorted(set(candidates)):
-        result = _session_meta(rollout, session)
-        if result is None:
-            continue
-        raw_cwd, version = result
+    codex = str(codex_bin)
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file:
         try:
-            canonical = raw_cwd.resolve(strict=True)
-        except OSError as exc:
-            raise SessionResolutionError(
-                f"session {session} points to missing cwd {raw_cwd} in {rollout}"
-            ) from exc
-        found.append((rollout, canonical, version))
+            proc = subprocess.Popen(
+                [codex, "app-server"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=stderr_file,
+                text=True,
+                bufsize=1,
+            )
+        except FileNotFoundError as exc:
+            raise SessionResolutionError(f"codex executable not found: {codex}") from exc
 
-    if not found:
+        try:
+            _send(
+                proc,
+                {
+                    "method": "initialize",
+                    "id": 0,
+                    "params": {
+                        "clientInfo": {
+                            "name": "harr_codex_scheduler",
+                            "title": "Harr Codex Scheduler",
+                            "version": "1.0.0",
+                        }
+                    },
+                },
+            )
+            _wait_for_response(proc, 0, timeout)
+            _send(proc, {"method": "initialized", "params": {}})
+            _send(
+                proc,
+                {
+                    "method": "thread/read",
+                    "id": 1,
+                    "params": {"threadId": session, "includeTurns": False},
+                },
+            )
+            result = _wait_for_response(proc, 1, timeout)
+        except SessionResolutionError as exc:
+            detail = _read_stderr(stderr_file)
+            if detail:
+                raise SessionResolutionError(f"{exc}; app-server stderr: {detail}") from exc
+            raise
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
+
+    thread = result.get("thread")
+    if not isinstance(thread, dict):
+        raise SessionResolutionError("thread/read response does not contain a thread object")
+    returned_id = str(thread.get("id", ""))
+    if returned_id and returned_id != session:
         raise SessionResolutionError(
-            f"rollout file(s) for session {session} were found, but compatible session_meta.cwd was not; "
-            "refusing to guess after a possible Codex format change"
+            f"thread/read returned unexpected thread id {returned_id!r} for requested {session!r}"
         )
+    cwd_value = thread.get("cwd")
+    if not isinstance(cwd_value, str) or not cwd_value.strip():
+        raise SessionResolutionError("thread/read response does not contain thread.cwd")
 
-    unique = {str(cwd) for _, cwd, _ in found}
-    if len(unique) != 1:
-        details = "; ".join(f"{rollout}: {cwd}" for rollout, cwd, _ in found)
-        raise SessionResolutionError(f"conflicting cwd values for session {session}: {details}")
+    cwd = Path(cwd_value).expanduser()
+    if not cwd.is_absolute():
+        raise SessionResolutionError(f"thread/read returned non-absolute cwd: {cwd_value!r}")
+    try:
+        cwd = cwd.resolve(strict=True)
+    except OSError as exc:
+        raise SessionResolutionError(f"saved session cwd does not exist: {cwd}") from exc
+    if not cwd.is_dir():
+        raise SessionResolutionError(f"saved session cwd is not a directory: {cwd}")
 
-    cwd = found[0][1]
-    return validate_git_worktree(cwd) if require_git else cwd
+    if require_git:
+        try:
+            probe = subprocess.run(
+                ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise SessionResolutionError("git executable not found; cannot verify session cwd") from exc
+        if probe.returncode != 0:
+            detail = probe.stderr.strip() or "not inside a Git worktree"
+            raise SessionResolutionError(f"session cwd is not a usable Git worktree: {cwd}: {detail}")
+
+    return cwd
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Resolve and validate the saved cwd of a local Codex session")
+    parser = argparse.ArgumentParser(
+        description="Resolve a Codex session cwd through the documented codex app-server thread/read API"
+    )
     parser.add_argument("--session", required=True)
-    parser.add_argument("--codex-home", type=Path)
+    parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", "codex"))
+    parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--no-git-check", action="store_true")
     args = parser.parse_args()
     try:
         cwd = resolve_session_cwd(
             args.session,
-            codex_home=args.codex_home,
+            codex_bin=args.codex_bin,
+            timeout=args.timeout,
             require_git=not args.no_git_check,
         )
     except SessionResolutionError as exc:

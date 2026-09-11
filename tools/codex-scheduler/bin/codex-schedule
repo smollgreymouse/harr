@@ -10,7 +10,7 @@ Usage:
 Options:
   --reasoning LEVEL     minimal|low|medium|high|xhigh (default: high)
   --speed SPEED         standard|fast (default: standard)
-  --cwd DIR             Manual cwd override/fallback; normally auto-resolved from SESSION
+  --cwd DIR             Manual cwd override/fallback; normally resolved via Codex app-server
   --output FILE         Redirect plain Codex output to FILE instead of current TTY
   --log-json FILE       Run Codex with --json and persist JSONL for GUI monitoring
   --save-answer FILE    With --log-json, save the clean assistant answer to FILE
@@ -90,7 +90,7 @@ resolver="$app_dir/session_cwd.py"
 resolve_err=$(mktemp)
 trap 'rm -f "$resolve_err"' EXIT
 resolved_cwd=''
-if resolved_cwd=$(python3 "$resolver" --session "$session" 2>"$resolve_err"); then
+if resolved_cwd=$(python3 "$resolver" --session "$session" --codex-bin "$codex_bin" 2>"$resolve_err"); then
   :
 else
   if [[ -z "$manual_cwd" ]]; then
@@ -99,7 +99,7 @@ else
     exit 2
   fi
   cat "$resolve_err" >&2
-  echo 'codex-schedule: warning: session cwd could not be auto-resolved; validating explicit --cwd fallback' >&2
+  echo 'codex-schedule: warning: Codex app-server could not resolve session cwd; validating explicit --cwd fallback' >&2
 fi
 
 if [[ -n "$manual_cwd" ]]; then

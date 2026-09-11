@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin" "$TMP/work" "$TMP/codex-home/sessions/2026/09/11"
+mkdir -p "$TMP/bin" "$TMP/work"
 git init -q "$TMP/work"
 : > "$TMP/tty"
 
@@ -14,22 +14,35 @@ cat > '$TMP/at.job'
 echo 'job 42 at Fri Sep 11 02:05:00 2026' >&2
 EOF_AT
 chmod +x "$TMP/bin/at"
-cat > "$TMP/bin/codex" <<EOF_CODEX
-#!/bin/sh
-printf '%s\n' "\$@" > '$TMP/codex.args'
+
+cat > "$TMP/bin/codex" <<'EOF_CODEX'
+#!/usr/bin/env python3
+import json
+import os
+import sys
+
+if len(sys.argv) > 1 and sys.argv[1] == "app-server":
+    cwd = os.environ["FAKE_CODEX_CWD"]
+    for line in sys.stdin:
+        msg = json.loads(line)
+        method = msg.get("method")
+        if method == "initialize":
+            print(json.dumps({"id": msg["id"], "result": {"userAgent": "fake", "codexHome": "/tmp", "platformFamily": "unix", "platformOs": "linux"}}), flush=True)
+        elif method == "initialized":
+            pass
+        elif method == "thread/read":
+            sid = msg["params"]["threadId"]
+            print(json.dumps({"id": msg["id"], "result": {"thread": {"id": sid, "cwd": cwd, "ephemeral": False, "status": {"type": "notLoaded"}}}}), flush=True)
+    raise SystemExit(0)
+
+with open(os.environ["FAKE_CODEX_ARGS"], "w", encoding="utf-8") as fh:
+    for arg in sys.argv[1:]:
+        fh.write(arg + "\n")
 EOF_CODEX
 chmod +x "$TMP/bin/codex"
 
-write_rollout() {
-  local session=$1
-  cat > "$TMP/codex-home/sessions/2026/09/11/rollout-2026-09-11T02-05-00-$session.jsonl" <<EOF_JSON
-{"timestamp":"2026-09-11T02:05:00Z","type":"session_meta","payload":{"id":"$session","session_id":"$session","cwd":"$TMP/work","cli_version":"0.153.4","source":"cli"}}
-EOF_JSON
-}
-
-write_rollout session-123
-write_rollout s
-export AT_BIN="$TMP/bin/at" CODEX_BIN="$TMP/bin/codex" CODEX_HOME="$TMP/codex-home" TTY_PATH="$TMP/tty"
+export AT_BIN="$TMP/bin/at" CODEX_BIN="$TMP/bin/codex" TTY_PATH="$TMP/tty"
+export FAKE_CODEX_CWD="$TMP/work" FAKE_CODEX_ARGS="$TMP/codex.args"
 
 run_wrapper() {
   local selector=$1 expected_model=$2

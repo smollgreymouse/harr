@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -13,23 +15,34 @@ sys.path.insert(0, str(ROOT / "app"))
 from session_cwd import SessionResolutionError, resolve_session_cwd
 
 
-def write_rollout(home: Path, session: str, cwd: Path, suffix: str = "") -> Path:
-    target = home / "sessions" / "2026" / "09" / "11"
-    target.mkdir(parents=True, exist_ok=True)
-    path = target / f"rollout-2026-09-11T02-05-00{suffix}-{session}.jsonl"
-    record = {
-        "timestamp": "2026-09-11T02:05:00Z",
-        "type": "session_meta",
-        "payload": {
-            "id": session,
-            "session_id": session,
-            "cwd": str(cwd),
-            "cli_version": "0.153.4",
-            "source": "cli",
-        },
-    }
-    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
-    return path
+FAKE_CODEX = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+if len(sys.argv) < 2 or sys.argv[1] != "app-server":
+    raise SystemExit(64)
+
+sessions = json.loads(os.environ["FAKE_CODEX_SESSIONS"])
+for line in sys.stdin:
+    msg = json.loads(line)
+    method = msg.get("method")
+    if method == "initialize":
+        print(json.dumps({"id": msg["id"], "result": {"userAgent": "fake", "codexHome": "/tmp", "platformFamily": "unix", "platformOs": "linux"}}), flush=True)
+    elif method == "initialized":
+        pass
+    elif method == "thread/read":
+        session = msg["params"]["threadId"]
+        if session not in sessions:
+            print(json.dumps({"id": msg["id"], "error": {"code": -32000, "message": "thread not found"}}), flush=True)
+        else:
+            print(json.dumps({"id": msg["id"], "result": {"thread": {"id": session, "cwd": sessions[session], "ephemeral": False, "status": {"type": "notLoaded"}}}}), flush=True)
+'''
+
+
+def make_fake_codex(path: Path) -> None:
+    path.write_text(FAKE_CODEX, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
 def git_init(path: Path) -> None:
@@ -40,41 +53,39 @@ def git_init(path: Path) -> None:
 def main() -> int:
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
-        home = root / "codex"
+        fake = root / "codex"
         repo = root / "repo"
         git_init(repo)
-        session = "01a08c7c-df16-74c3-9357-a6cac183895c"
-        write_rollout(home, session, repo)
-        assert resolve_session_cwd(session, codex_home=home) == repo.resolve()
-
         nested = repo / "subdir"
         nested.mkdir()
-        session_nested = "01a08c7c-df16-74c3-9357-a6cac183895d"
-        write_rollout(home, session_nested, nested, "-nested")
-        assert resolve_session_cwd(session_nested, codex_home=home) == nested.resolve()
-
-        other = root / "other"
-        git_init(other)
-        write_rollout(home, session, other, "-conflict")
-        try:
-            resolve_session_cwd(session, codex_home=home)
-        except SessionResolutionError as exc:
-            assert "conflicting cwd" in str(exc)
-        else:
-            raise AssertionError("conflicting session cwd must fail closed")
-
         nongit = root / "nongit"
         nongit.mkdir()
-        nongit_session = "01a08c7c-df16-74c3-9357-a6cac183895e"
-        write_rollout(home, nongit_session, nongit, "-nongit")
+        make_fake_codex(fake)
+
+        os.environ["FAKE_CODEX_SESSIONS"] = json.dumps({
+            "session-root": str(repo),
+            "session-nested": str(nested),
+            "session-nongit": str(nongit),
+        })
+
+        assert resolve_session_cwd("session-root", codex_bin=fake) == repo.resolve()
+        assert resolve_session_cwd("session-nested", codex_bin=fake) == nested.resolve()
+
         try:
-            resolve_session_cwd(nongit_session, codex_home=home)
+            resolve_session_cwd("missing", codex_bin=fake)
+        except SessionResolutionError as exc:
+            assert "thread not found" in str(exc)
+        else:
+            raise AssertionError("missing thread must fail")
+
+        try:
+            resolve_session_cwd("session-nongit", codex_bin=fake)
         except SessionResolutionError as exc:
             assert "Git worktree" in str(exc)
         else:
-            raise AssertionError("non-Git session cwd must fail closed")
+            raise AssertionError("non-Git cwd must fail")
 
-    print("session cwd resolver tests passed")
+    print("session cwd app-server resolver tests passed")
     return 0
 
 
