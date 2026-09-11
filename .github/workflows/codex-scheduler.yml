@@ -19,7 +19,7 @@ jobs:
       - name: Install GUI runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pyqt6
+          sudo apt-get install -y python3-pyqt6 qt6-gtk-platformtheme
       - name: Shell syntax
         run: |
           bash -n tools/codex-scheduler/bin/*
