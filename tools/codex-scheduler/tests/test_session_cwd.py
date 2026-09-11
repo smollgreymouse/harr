@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
-from session_cwd import SessionResolutionError, resolve_session_cwd
+from session_cwd import SessionResolutionError, list_codex_sessions, resolve_session_cwd
 
 
 FAKE_CODEX = r'''#!/usr/bin/env python3
@@ -37,6 +37,24 @@ for line in sys.stdin:
             print(json.dumps({"id": msg["id"], "error": {"code": -32000, "message": "thread not found"}}), flush=True)
         else:
             print(json.dumps({"id": msg["id"], "result": {"thread": {"id": session, "cwd": sessions[session], "ephemeral": False, "status": {"type": "notLoaded"}}}}), flush=True)
+    elif method == "thread/list":
+        params = msg["params"]
+        if params.get("sortKey") != "recency_at" or params.get("sortDirection") != "desc":
+            print(json.dumps({"id": msg["id"], "error": {"code": -32001, "message": "wrong sort"}}), flush=True)
+        else:
+            ids = list(sessions.keys())
+            data = []
+            for index, session in enumerate(ids):
+                data.append({
+                    "id": session,
+                    "cwd": sessions[session],
+                    "preview": "Preview " + session,
+                    "name": "Name " + session if index == 0 else None,
+                    "createdAt": 100 + index,
+                    "updatedAt": 200 + index,
+                    "status": {"type": "notLoaded"},
+                })
+            print(json.dumps({"id": msg["id"], "result": {"data": data, "nextCursor": None}}), flush=True)
 '''
 
 
@@ -71,6 +89,12 @@ def main() -> int:
         assert resolve_session_cwd("session-root", codex_bin=fake) == repo.resolve()
         assert resolve_session_cwd("session-nested", codex_bin=fake) == nested.resolve()
 
+        recent = list_codex_sessions(codex_bin=fake, limit=20)
+        assert [item["id"] for item in recent] == ["session-root", "session-nested", "session-nongit"]
+        assert recent[0]["name"] == "Name session-root"
+        assert recent[0]["preview"] == "Preview session-root"
+        assert recent[0]["cwd"] == str(repo)
+
         try:
             resolve_session_cwd("missing", codex_bin=fake)
         except SessionResolutionError as exc:
@@ -85,7 +109,7 @@ def main() -> int:
         else:
             raise AssertionError("non-Git cwd must fail")
 
-    print("session cwd app-server resolver tests passed")
+    print("session cwd + recent thread/list app-server tests passed")
     return 0
 
 
