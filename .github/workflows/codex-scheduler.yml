@@ -19,7 +19,7 @@ jobs:
       - name: Install GUI runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pyqt6 qt6-gtk-platformtheme
+          sudo apt-get install -y python3-pyqt6 qgnomeplatform-qt6
       - name: Shell syntax
         run: |
           bash -n tools/codex-scheduler/bin/*
@@ -38,4 +38,5 @@ jobs:
       - name: Qt GUI smoke test
         env:
           QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
         run: python3 tools/codex-scheduler/tests/test_gui_smoke.py
