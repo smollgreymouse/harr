@@ -35,7 +35,9 @@ codex-schedule \
 
 `app/main.py` is a native Qt 6 desktop front end using the Ubuntu-packaged PyQt6 bindings. It provides model (Sol/Terra/Luna), reasoning (Minimal/Low/Medium/High/Extra High), speed (Standard/Fast), session ID, prompt and exact local run time. The working directory is read-only in the UI and is resolved/validated from Codex App Server's `thread/read` response. Output is rendered as a user/Codex transcript from `codex exec --json`, with optional clean final-answer export to Markdown/text.
 
-The app follows the system Qt palette and supports minimize/close-to-tray via `QSystemTrayIcon`, with Show/Quit actions. The scheduled job remains external to the GUI: `at` starts Codex at the requested time, so quota exhaustion in Codex App does not prevent the timer from existing. Per-job JSONL is stored under `$XDG_STATE_HOME/harr-codex-scheduler/jobs` (normally `~/.local/state/...`) and tailed while the app is running or hidden. If "Save final answer" is enabled, the scheduled job itself writes the clean answer, so saving does not depend on the GUI remaining open.
+The app follows the desktop light/dark preference. Qt's native `QStyleHints.colorScheme()` is used where the platform plugin exposes it; on GNOME, where distro Qt can remain light while GTK/libadwaita applications are dark, the app falls back to the public `org.gnome.desktop.interface color-scheme` GSettings key and applies a dark Qt palette while retaining the platform accent highlight. The preference is rechecked while the app is running, so switching GNOME between light and dark does not require a restart. `HARR_CODEX_THEME=dark|light|system` is available as a diagnostic override.
+
+The app supports minimize/close-to-tray via `QSystemTrayIcon`, with Show/Quit actions. The scheduled job remains external to the GUI: `at` starts Codex at the requested time, so quota exhaustion in Codex App does not prevent the timer from existing. Per-job JSONL is stored under `$XDG_STATE_HOME/harr-codex-scheduler/jobs` (normally `~/.local/state/...`) and tailed while the app is running or hidden. If "Save final answer" is enabled, the scheduled job itself writes the clean answer, so saving does not depend on the GUI remaining open.
 
 Ubuntu 24.04 dependencies:
 
@@ -56,7 +58,7 @@ Ubuntu's default GNOME session includes AppIndicator integration; on a custom GN
 
 ## Tests
 
-The tests do not spend Codex quota. They use a fake Codex executable that implements the documented App Server handshake and `thread/read`, plus fake `at`; they inspect the generated job, execute it, and verify the exact model/reasoning/service-tier argv. Resolver tests verify successful cwd lookup, nested cwd preservation, missing-thread failure, and non-Git refusal. The Python tests also cover JSONL parsing and clean-answer export.
+The tests do not spend Codex quota. They use a fake Codex executable that implements the documented App Server handshake and `thread/read`, plus fake `at`; they inspect the generated job, execute it, and verify the exact model/reasoning/service-tier argv. Resolver tests verify successful cwd lookup, nested cwd preservation, missing-thread failure, and non-Git refusal. The Python tests also cover JSONL parsing, clean-answer export, and a Qt dark-theme smoke test.
 
 ```bash
 bash tools/codex-scheduler/tests/test_cli.sh
