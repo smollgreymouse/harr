@@ -8,10 +8,8 @@ from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtWidgets import QApplication, QStyle, QTabBar, QToolButton, QWidget
 
 
-# Keep application styling limited to workspace chrome and geometry.  Standard
+# Keep application styling limited to workspace chrome and geometry. Standard
 # input widgets still use the active platform QStyle and application palette.
-# The goal here is to remove the extra Qt "panel" lines and make all controls
-# sit on one compact OpenCode-like grid.
 APP_QSS = r"""
 QWidget#sidebar {
     border: 0;
@@ -41,7 +39,6 @@ QLabel#taskStatus {
     padding: 0 4px;
 }
 
-/* Lists and transcript are workspace surfaces, not framed form fields. */
 QTreeWidget {
     border: 0;
     outline: 0;
@@ -55,7 +52,6 @@ QFrame#messageBubble {
     border-radius: 7px;
 }
 
-/* Remove QTabWidget/QTabBar panel seams and align tabs with adjacent tools. */
 QTabWidget::pane {
     border: 0;
     top: 0;
@@ -78,12 +74,14 @@ QTabBar::tab:selected {
     background: palette(alternate-base);
     border-radius: 5px;
 }
-QTabBar::tab:hover:!selected {
+QTabBar::tab:hover {
     background: palette(alternate-base);
     border-radius: 5px;
 }
 
-/* Three top selectors deliberately share one width/height. */
+QComboBox {
+    min-height: 28px;
+}
 QComboBox[chromeRole="selector"] {
     border: 1px solid transparent;
     background: transparent;
@@ -103,8 +101,6 @@ QComboBox[chromeRole="selector"]:focus {
     border-radius: 4px;
 }
 
-/* Keep normal form/action controls on the same vertical rhythm. */
-QComboBox:not([chromeRole="selector"]),
 QLineEdit,
 QPushButton {
     min-height: 28px;
@@ -142,8 +138,6 @@ def install_app_chrome(app: QApplication) -> None:
 
 
 class TabCloseButton(QToolButton):
-    """Small close button using the current platform's standard close icon."""
-
     def __init__(self, on_click: Callable[[], None], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setProperty("chromeRole", "tabClose")
@@ -157,8 +151,6 @@ class TabCloseButton(QToolButton):
 
 
 class PlusTabBar(QTabBar):
-    """System QToolButton placed immediately after the last real tab."""
-
     plusClicked = pyqtSignal()
     BAR_HEIGHT = 34
     PLUS_WIDTH = 28
@@ -176,6 +168,7 @@ class PlusTabBar(QTabBar):
         self.plus_button.setText("+")
         self.plus_button.setToolTip("New task")
         self.plus_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.plus_button.setFixedSize(self.PLUS_WIDTH, 28)
         self.plus_button.clicked.connect(self.plusClicked.emit)
         QTimer.singleShot(0, self._position_plus)
 
@@ -187,7 +180,7 @@ class PlusTabBar(QTabBar):
             left = 2
         height = 28
         top = (self.BAR_HEIGHT - height) // 2
-        self.plus_button.setGeometry(left, top, self.PLUS_WIDTH, height)
+        self.plus_button.move(left, top)
         self.plus_button.raise_()
         self.plus_button.show()
 
