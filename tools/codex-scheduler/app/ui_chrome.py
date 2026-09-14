@@ -8,57 +8,131 @@ from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtWidgets import QApplication, QStyle, QTabBar, QToolButton, QWidget
 
 
-# Standard widgets keep the active platform QStyle.  QSS is intentionally
-# limited to application structure and the few "flat" controls that make up
-# the OpenCode-like chrome.
+# Keep application styling limited to workspace chrome and geometry.  Standard
+# input widgets still use the active platform QStyle and application palette.
+# The goal here is to remove the extra Qt "panel" lines and make all controls
+# sit on one compact OpenCode-like grid.
 APP_QSS = r"""
 QWidget#sidebar {
-    border-right: 1px solid palette(mid);
+    border: 0;
 }
+QSplitter::handle:horizontal {
+    width: 1px;
+    margin: 0;
+    background: palette(mid);
+}
+
 QPushButton#newTaskButton {
     text-align: left;
     border: 1px solid transparent;
     background: transparent;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 6px;
 }
 QPushButton#newTaskButton:hover {
     background: palette(alternate-base);
+    border-radius: 4px;
 }
 QLabel#emptyHint, QLabel#sidebarStatus {
     color: palette(mid);
 }
 QLabel#taskStatus {
-    padding: 2px 4px;
+    padding: 0 4px;
+}
+
+/* Lists and transcript are workspace surfaces, not framed form fields. */
+QTreeWidget {
+    border: 0;
+    outline: 0;
+    background: transparent;
+}
+QScrollArea {
+    border: 0;
+    background: transparent;
 }
 QFrame#messageBubble {
     border-radius: 7px;
 }
+
+/* Remove QTabWidget/QTabBar panel seams and align tabs with adjacent tools. */
 QTabWidget::pane {
     border: 0;
+    top: 0;
 }
+QTabBar {
+    border: 0;
+    min-height: 34px;
+    max-height: 34px;
+}
+QTabBar::tab {
+    border: 0;
+    background: transparent;
+    min-height: 28px;
+    max-height: 28px;
+    margin-top: 3px;
+    margin-bottom: 3px;
+    padding: 0 6px 0 9px;
+}
+QTabBar::tab:selected {
+    background: palette(alternate-base);
+    border-radius: 5px;
+}
+QTabBar::tab:hover:!selected {
+    background: palette(alternate-base);
+    border-radius: 5px;
+}
+
+/* Three top selectors deliberately share one width/height. */
 QComboBox[chromeRole="selector"] {
     border: 1px solid transparent;
     background: transparent;
-    padding: 4px 24px 4px 7px;
+    min-width: 108px;
+    max-width: 108px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 24px 0 7px;
 }
 QComboBox[chromeRole="selector"]:hover {
     border: 1px solid palette(mid);
     background: palette(alternate-base);
+    border-radius: 4px;
 }
 QComboBox[chromeRole="selector"]:focus {
     border: 1px solid palette(highlight);
+    border-radius: 4px;
 }
+
+/* Keep normal form/action controls on the same vertical rhythm. */
+QComboBox:not([chromeRole="selector"]),
+QLineEdit,
+QPushButton {
+    min-height: 28px;
+}
+
 QToolButton[chromeRole="tabClose"],
 QToolButton[chromeRole="tabPlus"],
 QToolButton[chromeRole="sidebarToggle"] {
     border: 1px solid transparent;
     background: transparent;
-    padding: 2px;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0;
+}
+QToolButton[chromeRole="tabClose"] {
+    min-width: 18px;
+    max-width: 18px;
+    min-height: 18px;
+    max-height: 18px;
 }
 QToolButton[chromeRole="tabClose"]:hover,
 QToolButton[chromeRole="tabPlus"]:hover,
 QToolButton[chromeRole="sidebarToggle"]:hover {
     border: 1px solid palette(mid);
     background: palette(alternate-base);
+    border-radius: 4px;
 }
 """
 
@@ -75,8 +149,8 @@ class TabCloseButton(QToolButton):
         self.setProperty("chromeRole", "tabClose")
         self.setAutoRaise(True)
         self.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarCloseButton))
-        self.setIconSize(QSize(12, 12))
-        self.setFixedSize(20, 20)
+        self.setIconSize(QSize(10, 10))
+        self.setFixedSize(18, 18)
         self.setToolTip("Close tab")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clicked.connect(on_click)
@@ -86,6 +160,7 @@ class PlusTabBar(QTabBar):
     """System QToolButton placed immediately after the last real tab."""
 
     plusClicked = pyqtSignal()
+    BAR_HEIGHT = 34
     PLUS_WIDTH = 28
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -93,6 +168,7 @@ class PlusTabBar(QTabBar):
         self.setExpanding(False)
         self.setDrawBase(False)
         self.setDocumentMode(True)
+        self.setFixedHeight(self.BAR_HEIGHT)
 
         self.plus_button = QToolButton(self)
         self.plus_button.setProperty("chromeRole", "tabPlus")
@@ -106,22 +182,22 @@ class PlusTabBar(QTabBar):
     def _position_plus(self) -> None:
         if self.count():
             last = self.tabRect(self.count() - 1)
-            left = last.right() + 4
+            left = last.right() + 3
         else:
             left = 2
-        height = max(22, min(28, self.height() - 2))
-        top = max(0, (self.height() - height) // 2)
+        height = 28
+        top = (self.BAR_HEIGHT - height) // 2
         self.plus_button.setGeometry(left, top, self.PLUS_WIDTH, height)
         self.plus_button.raise_()
         self.plus_button.show()
 
     def sizeHint(self) -> QSize:
         hint = super().sizeHint()
-        return QSize(hint.width() + self.PLUS_WIDTH + 6, hint.height())
+        return QSize(hint.width() + self.PLUS_WIDTH + 5, self.BAR_HEIGHT)
 
     def minimumSizeHint(self) -> QSize:
         hint = super().minimumSizeHint()
-        return QSize(hint.width() + self.PLUS_WIDTH + 6, hint.height())
+        return QSize(hint.width() + self.PLUS_WIDTH + 5, self.BAR_HEIGHT)
 
     def tabLayoutChange(self) -> None:
         super().tabLayoutChange()
