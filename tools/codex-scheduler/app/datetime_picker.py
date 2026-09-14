@@ -75,18 +75,26 @@ class ScheduleTimeDialog(QDialog):
     """Compact native-widget date/time chooser."""
 
     LABEL_WIDTH = 42
+    PRESET_WIDTH = 108
 
     def __init__(self, initial: QDateTime, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Choose run time")
         self.setModal(True)
-        self.setMinimumWidth(350)
+        self.setMinimumWidth(430)
         if not initial.isValid() or initial <= QDateTime.currentDateTime():
             initial = default_run_time()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(9)
+
+        content = QHBoxLayout()
+        content.setSpacing(12)
+
+        # Left side: the actual date/time editor.
+        editor = QVBoxLayout()
+        editor.setSpacing(9)
 
         date_row = QHBoxLayout()
         date_row.setSpacing(8)
@@ -104,23 +112,7 @@ class ScheduleTimeDialog(QDialog):
             calendar.setLocale(QLocale.system())
             calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
         date_row.addWidget(self.date, 1)
-        outer.addLayout(date_row)
-
-        quick = QHBoxLayout()
-        quick.setSpacing(6)
-        today = QPushButton("Today", self)
-        tomorrow = QPushButton("Tomorrow", self)
-        reset = QPushButton("Now + 5:02", self)
-        for button in (today, tomorrow, reset):
-            button.setMinimumHeight(30)
-            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        today.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date()))
-        tomorrow.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date().addDays(1)))
-        reset.clicked.connect(self.use_reset_time)
-        quick.addWidget(today, 1)
-        quick.addWidget(tomorrow, 1)
-        quick.addWidget(reset, 1)
-        outer.addLayout(quick)
+        editor.addLayout(date_row)
 
         time_row = QHBoxLayout()
         time_row.setSpacing(8)
@@ -137,11 +129,35 @@ class ScheduleTimeDialog(QDialog):
         time_row.addWidget(colon)
         time_row.addWidget(self.minutes)
         time_row.addStretch(1)
-        outer.addLayout(time_row)
+        editor.addLayout(time_row)
 
         self.summary = QLabel(self)
         self.summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        outer.addWidget(self.summary)
+        editor.addWidget(self.summary)
+        editor.addStretch(1)
+        content.addLayout(editor, 1)
+
+        # Right side: frequently used presets, vertically stacked so they do
+        # not steal horizontal space from the date/time controls.
+        presets = QVBoxLayout()
+        presets.setSpacing(6)
+        self.today_button = QPushButton("Today", self)
+        self.tomorrow_button = QPushButton("Tomorrow", self)
+        self.reset_button = QPushButton("Now + 5:02", self)
+        for button in (self.today_button, self.tomorrow_button, self.reset_button):
+            button.setFixedWidth(self.PRESET_WIDTH)
+            button.setMinimumHeight(30)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.today_button.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date()))
+        self.tomorrow_button.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date().addDays(1)))
+        self.reset_button.clicked.connect(self.use_reset_time)
+        presets.addWidget(self.today_button)
+        presets.addWidget(self.tomorrow_button)
+        presets.addWidget(self.reset_button)
+        presets.addStretch(1)
+        content.addLayout(presets)
+
+        outer.addLayout(content)
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
