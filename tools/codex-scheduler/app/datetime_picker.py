@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QToolButton,
     QVBoxLayout,
@@ -31,10 +32,15 @@ def default_run_time() -> QDateTime:
 
 
 class NumberStepper(QWidget):
-    """Click-first numeric stepper built only from standard Qt widgets."""
+    """Click-first vertical numeric stepper with one consistent column width."""
+
+    WIDTH = 54
+    BUTTON_HEIGHT = 26
+    VALUE_HEIGHT = 30
 
     def __init__(self, minimum: int, maximum: int, value: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setFixedWidth(self.WIDTH)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
@@ -42,6 +48,8 @@ class NumberStepper(QWidget):
         self.plus = QToolButton(self)
         self.plus.setText("+")
         self.plus.setToolTip("Increase")
+        self.plus.setFixedSize(self.WIDTH, self.BUTTON_HEIGHT)
+
         self.value = QSpinBox(self)
         self.value.setRange(minimum, maximum)
         self.value.setValue(value)
@@ -49,10 +57,12 @@ class NumberStepper(QWidget):
         self.value.setReadOnly(True)
         self.value.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.value.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.value.setMinimumWidth(58)
+        self.value.setFixedSize(self.WIDTH, self.VALUE_HEIGHT)
+
         self.minus = QToolButton(self)
         self.minus.setText("−")
         self.minus.setToolTip("Decrease")
+        self.minus.setFixedSize(self.WIDTH, self.BUTTON_HEIGHT)
 
         self.plus.clicked.connect(self.value.stepUp)
         self.minus.clicked.connect(self.value.stepDown)
@@ -62,58 +72,66 @@ class NumberStepper(QWidget):
 
 
 class ScheduleTimeDialog(QDialog):
-    """Compact native-widget date/time chooser.
+    """Compact native-widget date/time chooser."""
 
-    The calendar is a standard QDateEdit popup rather than an always-visible
-    calendar.  Hours/minutes use QSpinBox plus system QToolButtons, so the
-    frequent operation is click-first without a custom-painted clock widget.
-    """
+    LABEL_WIDTH = 42
 
     def __init__(self, initial: QDateTime, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Choose run time")
         self.setModal(True)
+        self.setMinimumWidth(350)
         if not initial.isValid() or initial <= QDateTime.currentDateTime():
             initial = default_run_time()
 
         outer = QVBoxLayout(self)
-        outer.setSpacing(10)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(9)
 
         date_row = QHBoxLayout()
-        date_row.addWidget(QLabel("Date"))
+        date_row.setSpacing(8)
+        date_label = QLabel("Date", self)
+        date_label.setFixedWidth(self.LABEL_WIDTH)
+        date_row.addWidget(date_label)
         self.date = QDateEdit(initial.date(), self)
         self.date.setLocale(QLocale.system())
         self.date.setCalendarPopup(True)
         self.date.setMinimumDate(QDateTime.currentDateTime().date())
         self.date.setDisplayFormat(QLocale.system().dateFormat(QLocale.FormatType.ShortFormat))
+        self.date.setMinimumHeight(30)
         calendar = self.date.calendarWidget()
         if calendar is not None:
             calendar.setLocale(QLocale.system())
-            # Match the user's expected RU/EU week layout even on a machine
-            # whose locale is temporarily different.
             calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
         date_row.addWidget(self.date, 1)
         outer.addLayout(date_row)
 
         quick = QHBoxLayout()
+        quick.setSpacing(6)
         today = QPushButton("Today", self)
         tomorrow = QPushButton("Tomorrow", self)
         reset = QPushButton("Now + 5:02", self)
+        for button in (today, tomorrow, reset):
+            button.setMinimumHeight(30)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         today.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date()))
         tomorrow.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date().addDays(1)))
         reset.clicked.connect(self.use_reset_time)
-        quick.addWidget(today)
-        quick.addWidget(tomorrow)
-        quick.addStretch(1)
-        quick.addWidget(reset)
+        quick.addWidget(today, 1)
+        quick.addWidget(tomorrow, 1)
+        quick.addWidget(reset, 1)
         outer.addLayout(quick)
 
         time_row = QHBoxLayout()
-        time_row.addWidget(QLabel("Time"))
+        time_row.setSpacing(8)
+        time_label = QLabel("Time", self)
+        time_label.setFixedWidth(self.LABEL_WIDTH)
+        time_row.addWidget(time_label)
         time_row.addStretch(1)
         self.hours = NumberStepper(0, 23, initial.time().hour(), self)
         colon = QLabel(":", self)
         colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        colon.setFixedWidth(12)
         self.minutes = NumberStepper(0, 59, initial.time().minute(), self)
         time_row.addWidget(self.hours)
         time_row.addWidget(colon)
