@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import QApplication, QDateEdit
 
 import task_page_native as task_page_module
 import workspace as workspace_module
-from datetime_picker import ScheduleTimeDialog, default_run_time
+from datetime_picker import NumberStepper, ScheduleTimeDialog, default_run_time
 from system_theme import install_system_theme, palette_has_complete_dark_surfaces
 from task_page_native import TaskPage
 from task_store import TaskStore
@@ -58,8 +58,13 @@ def main() -> int:
         window.refresh_codex_sessions()
 
         assert window.tabs.count() == 1
-        assert isinstance(window.tabs.tabBar(), PlusTabBar)
-        assert window.tabs.tabBar().plus_button.text() == "+"
+        tab_bar = window.tabs.tabBar()
+        assert isinstance(tab_bar, PlusTabBar)
+        assert tab_bar.plus_button.text() == "+"
+        assert tab_bar.minimumHeight() == PlusTabBar.BAR_HEIGHT
+        assert tab_bar.maximumHeight() == PlusTabBar.BAR_HEIGHT
+        assert tab_bar.plus_button.minimumHeight() == 28
+        assert tab_bar.plus_button.maximumHeight() == 28
         assert window.new_button.text().endswith("New task")
         assert window.search.placeholderText() == "Search tasks"
         assert window.sidebar.isVisibleTo(window)
@@ -97,6 +102,11 @@ def main() -> int:
         assert calendar is not None
         assert calendar.firstDayOfWeek() == Qt.DayOfWeek.Monday
         assert not calendar.isVisible()
+        assert isinstance(picker.hours, NumberStepper)
+        assert picker.hours.minimumWidth() == NumberStepper.WIDTH
+        assert picker.hours.maximumWidth() == NumberStepper.WIDTH
+        assert picker.hours.plus.minimumWidth() == NumberStepper.WIDTH
+        assert picker.minutes.minus.maximumWidth() == NumberStepper.WIDTH
         before_minute = picker.minutes.value.value()
         picker.minutes.plus.click()
         assert picker.minutes.value.value() == (before_minute + 1) % 60
@@ -169,7 +179,7 @@ def main() -> int:
         app.processEvents()
 
     watcher.timer.stop()
-    print("GUI multi-task + mixed-dark-palette regression + native picker smoke test passed")
+    print("GUI multi-task + polished chrome + mixed-dark-palette regression + native picker smoke test passed")
     return 0
 
 
