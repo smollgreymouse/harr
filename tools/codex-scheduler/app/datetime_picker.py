@@ -75,26 +75,18 @@ class ScheduleTimeDialog(QDialog):
     """Compact native-widget date/time chooser."""
 
     LABEL_WIDTH = 42
-    PRESET_WIDTH = 108
 
     def __init__(self, initial: QDateTime, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Choose run time")
         self.setModal(True)
-        self.setMinimumWidth(430)
+        self.setMinimumWidth(330)
         if not initial.isValid() or initial <= QDateTime.currentDateTime():
             initial = default_run_time()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(9)
-
-        content = QHBoxLayout()
-        content.setSpacing(12)
-
-        # Left side: the actual date/time editor.
-        editor = QVBoxLayout()
-        editor.setSpacing(9)
 
         date_row = QHBoxLayout()
         date_row.setSpacing(8)
@@ -112,7 +104,30 @@ class ScheduleTimeDialog(QDialog):
             calendar.setLocale(QLocale.system())
             calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
         date_row.addWidget(self.date, 1)
-        editor.addLayout(date_row)
+        outer.addLayout(date_row)
+
+        # Presets live directly below the date field.  Keep the left label
+        # gutter empty so the buttons line up with the date editor instead of
+        # making the dialog wider with a separate side column.
+        presets_row = QHBoxLayout()
+        presets_row.setSpacing(8)
+        presets_row.addSpacing(self.LABEL_WIDTH)
+        presets = QVBoxLayout()
+        presets.setSpacing(6)
+        self.today_button = QPushButton("Today", self)
+        self.tomorrow_button = QPushButton("Tomorrow", self)
+        self.reset_button = QPushButton("Now + 5:02", self)
+        for button in (self.today_button, self.tomorrow_button, self.reset_button):
+            button.setMinimumHeight(30)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.today_button.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date()))
+        self.tomorrow_button.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date().addDays(1)))
+        self.reset_button.clicked.connect(self.use_reset_time)
+        presets.addWidget(self.today_button)
+        presets.addWidget(self.tomorrow_button)
+        presets.addWidget(self.reset_button)
+        presets_row.addLayout(presets, 1)
+        outer.addLayout(presets_row)
 
         time_row = QHBoxLayout()
         time_row.setSpacing(8)
@@ -129,35 +144,11 @@ class ScheduleTimeDialog(QDialog):
         time_row.addWidget(colon)
         time_row.addWidget(self.minutes)
         time_row.addStretch(1)
-        editor.addLayout(time_row)
+        outer.addLayout(time_row)
 
         self.summary = QLabel(self)
         self.summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        editor.addWidget(self.summary)
-        editor.addStretch(1)
-        content.addLayout(editor, 1)
-
-        # Right side: frequently used presets, vertically stacked so they do
-        # not steal horizontal space from the date/time controls.
-        presets = QVBoxLayout()
-        presets.setSpacing(6)
-        self.today_button = QPushButton("Today", self)
-        self.tomorrow_button = QPushButton("Tomorrow", self)
-        self.reset_button = QPushButton("Now + 5:02", self)
-        for button in (self.today_button, self.tomorrow_button, self.reset_button):
-            button.setFixedWidth(self.PRESET_WIDTH)
-            button.setMinimumHeight(30)
-            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.today_button.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date()))
-        self.tomorrow_button.clicked.connect(lambda: self.date.setDate(QDateTime.currentDateTime().date().addDays(1)))
-        self.reset_button.clicked.connect(self.use_reset_time)
-        presets.addWidget(self.today_button)
-        presets.addWidget(self.tomorrow_button)
-        presets.addWidget(self.reset_button)
-        presets.addStretch(1)
-        content.addLayout(presets)
-
-        outer.addLayout(content)
+        outer.addWidget(self.summary)
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
