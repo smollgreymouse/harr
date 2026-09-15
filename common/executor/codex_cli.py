@@ -25,6 +25,7 @@ class CodexCliResult:
     session_id: str
     packet: dict
     stdout_events: tuple[dict, ...]
+    usage: dict[str, int]
     stderr: str
 
 
@@ -165,7 +166,7 @@ Return only the JSON object required by the output schema.
             except json.JSONDecodeError as exc:
                 raise CodexCliError(f"invalid Codex terminal JSON: {exc}") from exc
             self._validate_packet(packet)
-            return CodexCliResult(session_id=effective_session, packet=packet, stdout_events=events, stderr=proc.stderr)
+            return CodexCliResult(session_id=effective_session, packet=packet, stdout_events=events, usage=self._usage(events), stderr=proc.stderr)
 
     @staticmethod
     def _parse_jsonl(text: str) -> Iterable[dict]:
@@ -179,6 +180,20 @@ Return only the JSON object required by the output schema.
                 continue
             if isinstance(value, dict):
                 yield value
+
+    @staticmethod
+    def _usage(events: Iterable[dict]) -> dict[str, int]:
+        latest: dict[str, int] = {}
+        for event in events:
+            if event.get("type") != "turn.completed":
+                continue
+            usage = event.get("usage")
+            if isinstance(usage, dict):
+                latest = {
+                    key: int(usage.get(key, 0) or 0)
+                    for key in ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens")
+                }
+        return latest
 
     @staticmethod
     def _thread_id(events: Iterable[dict]) -> str | None:
@@ -238,7 +253,7 @@ def _main() -> int:
         result = adapter.start(repo_root=args.repo, execution_contract=args.contract.read_text(encoding="utf-8"))
     else:
         result = adapter.resume(repo_root=args.repo, session_id=args.session, resolution_delta=args.resolution.read_text(encoding="utf-8"))
-    print(json.dumps({"session_id": result.session_id, "packet": result.packet}, indent=2))
+    print(json.dumps({"session_id": result.session_id, "usage": result.usage, "packet": result.packet}, indent=2))
     return 0
 
 
