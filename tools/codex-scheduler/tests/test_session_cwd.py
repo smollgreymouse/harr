@@ -41,6 +41,8 @@ for line in sys.stdin:
         params = msg["params"]
         if params.get("sortKey") != "recency_at" or params.get("sortDirection") != "desc":
             print(json.dumps({"id": msg["id"], "error": {"code": -32001, "message": "wrong sort"}}), flush=True)
+        elif params.get("archived") is not False:
+            print(json.dumps({"id": msg["id"], "error": {"code": -32002, "message": "archived filter missing"}}), flush=True)
         else:
             ids = list(sessions.keys())
             data = []
@@ -53,6 +55,7 @@ for line in sys.stdin:
                     "createdAt": 100 + index,
                     "updatedAt": 200 + index,
                     "status": {"type": "notLoaded"},
+                    "archived": session == "session-archived",
                 })
             print(json.dumps({"id": msg["id"], "result": {"data": data, "nextCursor": None}}), flush=True)
 '''
@@ -78,12 +81,15 @@ def main() -> int:
         nested.mkdir()
         nongit = root / "nongit"
         nongit.mkdir()
+        archived = root / "archived"
+        archived.mkdir()
         make_fake_codex(fake)
 
         os.environ["FAKE_CODEX_SESSIONS"] = json.dumps({
             "session-root": str(repo),
             "session-nested": str(nested),
             "session-nongit": str(nongit),
+            "session-archived": str(archived),
         })
 
         assert resolve_session_cwd("session-root", codex_bin=fake) == repo.resolve()
@@ -91,6 +97,7 @@ def main() -> int:
 
         recent = list_codex_sessions(codex_bin=fake, limit=20)
         assert [item["id"] for item in recent] == ["session-root", "session-nested", "session-nongit"]
+        assert all(item["archived"] is False for item in recent)
         assert recent[0]["name"] == "Name session-root"
         assert recent[0]["preview"] == "Preview session-root"
         assert recent[0]["cwd"] == str(repo)
@@ -109,7 +116,7 @@ def main() -> int:
         else:
             raise AssertionError("non-Git cwd must fail")
 
-    print("session cwd + recent thread/list app-server tests passed")
+    print("session cwd + non-archived thread/list app-server tests passed")
     return 0
 
 
