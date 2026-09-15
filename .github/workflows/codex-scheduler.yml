@@ -29,6 +29,10 @@ jobs:
         run: python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
       - name: Session metadata API contract
         run: python3 tools/codex-scheduler/tests/test_session_cwd.py
+      - name: Session selector titles
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python3 tools/codex-scheduler/tests/test_session_selector.py
       - name: Persistent task lifecycle
         run: python3 tools/codex-scheduler/tests/test_task_store.py
       - name: CLI scheduling contract
@@ -40,3 +44,8 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           HARR_CODEX_THEME: dark
         run: python3 tools/codex-scheduler/tests/test_gui_smoke.py
+      - name: GUI signal shutdown
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
+        run: python3 tools/codex-scheduler/tests/test_main_shutdown.py
