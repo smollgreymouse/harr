@@ -37,8 +37,9 @@ bash -n "$TMP/root/usr/bin/"{harr-codex-scheduler,codex-schedule,sol,terra,luna}
 bash -n "$TMP/root/usr/lib/harr-codex-scheduler/bin/"*
 python3 -m py_compile "$TMP/root/usr/lib/harr-codex-scheduler/app/"*.py
 
-tar -tzf "$TGZ" | grep -q "^harr-codex-scheduler-${VERSION}-linux/harr-codex-scheduler$"
-tar -tzf "$TGZ" | grep -q "^harr-codex-scheduler-${VERSION}-linux/app/main.py$"
-tar -tzf "$TGZ" | grep -q "^harr-codex-scheduler-${VERSION}-linux/bin/terra$"
+tar -tzf "$TGZ" > "$TMP/tar-list.txt"
+grep -qx "harr-codex-scheduler-${VERSION}-linux/harr-codex-scheduler" "$TMP/tar-list.txt"
+grep -qx "harr-codex-scheduler-${VERSION}-linux/app/main.py" "$TMP/tar-list.txt"
+grep -qx "harr-codex-scheduler-${VERSION}-linux/bin/terra" "$TMP/tar-list.txt"
 
 printf 'packaging tests passed: %s and %s\n' "$(basename "$DEB")" "$(basename "$TGZ")"
