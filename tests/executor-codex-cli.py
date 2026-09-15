@@ -30,7 +30,11 @@ last = pathlib.Path(args[args.index("--output-last-message") + 1])
 model = args[args.index("--model") + 1]
 assert model == "gpt-5.6-luna"
 assert args[args.index("--sandbox") + 1] == "workspace-write"
+assert "agents.enabled=false" in args
 assert "features.multi_agent=false" in args
+assert "features.multi_agent_v2.enabled=false" in args
+assert "sandbox_workspace_write.network_access=false" in args
+assert 'web_search="disabled"' in args
 assert os.environ.get("HARR_EXECUTOR_CHILD") == "1"
 prompt = sys.stdin.read()
 resume = "resume" in args
