@@ -17,6 +17,7 @@ except ImportError as exc:
 import task_page_native
 from session_selector import SessionComboBox
 from system_theme import install_system_theme
+from tray_workflow import TrayWorkflow
 from ui_chrome import install_app_chrome
 from workspace import APP_NAME, MainWindow
 
@@ -36,6 +37,7 @@ def main() -> int:
     install_app_chrome(app)
 
     window = MainWindow()
+    window._tray_workflow = TrayWorkflow(window)  # type: ignore[attr-defined]
     window.show()
 
     def request_quit(_signum: int, _frame: object) -> None:
