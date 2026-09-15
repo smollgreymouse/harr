@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 BIN=${HARR_CODEX_SCHEDULER_BIN:-}
-
-if [[ -z "$BIN" && -x "$DIR/../build/harr-codex-scheduler" ]]; then
-  BIN="$DIR/../build/harr-codex-scheduler"
-fi
 if [[ -z "$BIN" ]]; then
-  BIN=$(command -v harr-codex-scheduler || true)
+  for candidate in "$DIR/../build/harr-codex-scheduler" "$DIR/../harr-codex-scheduler"; do
+    if [[ -x "$candidate" ]]; then BIN="$candidate"; break; fi
+  done
 fi
-[[ -n "$BIN" && -x "$BIN" ]] || {
-  echo 'codex-schedule: C++ scheduler binary not found; build with CMake first' >&2
+if [[ -z "$BIN" ]]; then BIN=$(command -v harr-codex-scheduler || true); fi
+if [[ -z "$BIN" || ! -x "$BIN" ]]; then
+  echo 'codex-schedule: C++ scheduler binary not found' >&2
   exit 127
-}
-
+fi
 exec "$BIN" schedule "$@"
