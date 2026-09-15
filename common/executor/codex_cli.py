@@ -113,7 +113,7 @@ class CodexCliAdapter:
         return {"available": proc.returncode == 0, "command": resolved, "version": (proc.stdout or proc.stderr).strip(), "model": self.model, "resume": True, "structured_output": True, "cancel": True}
 
     def start(self, *, repo_root: Path, execution_contract: str, cancel_event: threading.Event | None = None) -> CodexCliResult:
-        return self._run(repo_root=repo_root, prompt=f"{EXECUTOR_RULES}\n\n{execution_contract.strip()}\n", session_id=None, cancel_event=cancel_event)
+        return self._run(repo_root=repo_root, prompt=f"{EXECUTOR_RULES}\n\n{execution_contract.strip()}\n", session_id=None, cancel_event=cancel_event, allow_protocol_repair=True)
 
     def resume(self, *, repo_root: Path, session_id: str, resolution_delta: str, cancel_event: threading.Event | None = None) -> CodexCliResult:
         prompt = f"""\
@@ -124,9 +124,9 @@ Return only the JSON object required by the output schema.
 
 {resolution_delta.strip()}
 """
-        return self._run(repo_root=repo_root, prompt=prompt, session_id=session_id, cancel_event=cancel_event)
+        return self._run(repo_root=repo_root, prompt=prompt, session_id=session_id, cancel_event=cancel_event, allow_protocol_repair=True)
 
-    def _run(self, *, repo_root: Path, prompt: str, session_id: str | None, cancel_event: threading.Event | None) -> CodexCliResult:
+    def _run(self, *, repo_root: Path, prompt: str, session_id: str | None, cancel_event: threading.Event | None, allow_protocol_repair: bool) -> CodexCliResult:
         root = repo_root.resolve()
         if not root.is_dir():
             raise CodexCliError(f"repository root does not exist: {root}")
@@ -181,14 +181,49 @@ Return only the JSON object required by the output schema.
             assert effective_session is not None
             if proc.returncode != 0:
                 raise CodexCliError(self._failure(f"codex exec exited {proc.returncode}", proc))
-            if not last_message.is_file():
-                raise CodexCliError(self._failure("codex produced no --output-last-message file", proc))
+            raw_final = last_message.read_text(encoding="utf-8", errors="replace") if last_message.is_file() else ""
             try:
-                packet = json.loads(last_message.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                raise CodexCliError(f"invalid Codex terminal JSON: {exc}") from exc
-            self._validate_packet(packet)
+                if not raw_final:
+                    raise CodexCliError("codex produced no --output-last-message file")
+                packet = json.loads(raw_final)
+                self._validate_packet(packet)
+            except (json.JSONDecodeError, CodexCliError) as exc:
+                if not allow_protocol_repair:
+                    raise CodexCliError(f"executor terminal protocol invalid after repair: {exc}") from exc
+                repair_prompt = self._repair_prompt(str(exc), raw_final)
+                repaired = self._run(
+                    repo_root=root,
+                    prompt=repair_prompt,
+                    session_id=effective_session,
+                    cancel_event=cancel_event,
+                    allow_protocol_repair=False,
+                )
+                return CodexCliResult(
+                    session_id=repaired.session_id,
+                    packet=repaired.packet,
+                    stdout_events=events + repaired.stdout_events,
+                    usage=self._merge_usage(self._usage(events), repaired.usage),
+                    stderr="\n".join(part for part in (proc.stderr, repaired.stderr) if part),
+                )
             return CodexCliResult(session_id=effective_session, packet=packet, stdout_events=events, usage=self._usage(events), stderr=proc.stderr)
+
+    @staticmethod
+    def _repair_prompt(error: str, raw_final: str) -> str:
+        excerpt = raw_final[:4000]
+        return f"""\
+Your previous final response violated the Harr terminal protocol.
+Do NOT make any more code changes, run any more commands, or redo completed work.
+Using only the state already present in this same executor session, return one corrected terminal JSON object matching the output schema.
+Preserve the real DONE/BLOCKED/FAILED state, completed steps, changed files and validation facts. Do not invent PASS results.
+
+Protocol error: {error[:1000]}
+Previous final output excerpt:
+{excerpt}
+"""
+
+    @staticmethod
+    def _merge_usage(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
+        return {key: int(first.get(key, 0)) + int(second.get(key, 0)) for key in set(first) | set(second)}
 
     @staticmethod
     def _execute(argv: list[str], prompt: str, env: dict[str, str], cancel_event: threading.Event | None) -> subprocess.CompletedProcess[str]:
