@@ -136,7 +136,33 @@ Return only the JSON object required by the output schema.
             schema_file = tmp / "terminal-schema.json"
             last_message = tmp / "last-message.json"
             schema_file.write_text(json.dumps(TERMINAL_SCHEMA, indent=2) + "\n", encoding="utf-8")
-            argv = [resolved, "exec", "--json", "--output-schema", str(schema_file), "--output-last-message", str(last_message), "--model", self.model, "--sandbox", "workspace-write", "--cd", str(root), "--config", f'model_reasoning_effort="{self.reasoning_effort}"', "--config", "features.multi_agent=false"]
+            argv = [
+                resolved,
+                "exec",
+                "--json",
+                "--output-schema",
+                str(schema_file),
+                "--output-last-message",
+                str(last_message),
+                "--model",
+                self.model,
+                "--sandbox",
+                "workspace-write",
+                "--cd",
+                str(root),
+                "--config",
+                f'model_reasoning_effort="{self.reasoning_effort}"',
+                "--config",
+                "agents.enabled=false",
+                "--config",
+                "features.multi_agent=false",
+                "--config",
+                "features.multi_agent_v2.enabled=false",
+                "--config",
+                "sandbox_workspace_write.network_access=false",
+                "--config",
+                'web_search="disabled"',
+            ]
             for item in self.extra_config:
                 argv += ["--config", item]
             if session_id is not None:
