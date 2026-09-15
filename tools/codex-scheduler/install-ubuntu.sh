@@ -28,7 +28,7 @@ for tool in dpkg-deb apt-get; do
   }
 done
 
-"$ROOT/packaging/build-release.sh" "$VERSION"
+bash "$ROOT/packaging/build-release.sh" "$VERSION"
 
 printf '\nInstalling %s with apt...\n' "$DEB"
 sudo apt-get install -y "$DEB"
