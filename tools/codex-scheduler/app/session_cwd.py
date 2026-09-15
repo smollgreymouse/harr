@@ -151,6 +151,12 @@ def list_codex_sessions(
     for raw in data:
         if not isinstance(raw, dict):
             continue
+        # thread/list is already requested with archived=false. Keep this local
+        # guard as a UI invariant so archived threads never leak into the
+        # session dropdown or tray even if a future App Server version returns
+        # mixed data unexpectedly.
+        if raw.get("archived") is True:
+            continue
         session_id = raw.get("id")
         if not isinstance(session_id, str) or not session_id.strip():
             continue
@@ -163,6 +169,7 @@ def list_codex_sessions(
                 "createdAt": raw.get("createdAt"),
                 "updatedAt": raw.get("updatedAt"),
                 "status": raw.get("status"),
+                "archived": False,
             }
         )
     return sessions
