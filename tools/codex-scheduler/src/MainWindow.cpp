@@ -33,6 +33,12 @@ namespace harr {
 
 static constexpr int GROUP_ROLE = Qt::UserRole + 1;
 
+class WorkspaceTabWidget final : public QTabWidget {
+public:
+    using QTabWidget::QTabWidget;
+    void installTabBar(QTabBar *bar) { setTabBar(bar); }
+};
+
 MainWindow::MainWindow(TaskStore *store)
     : m_ownedStore(store ? nullptr : std::make_unique<TaskStore>()),
       m_store(store ? store : m_ownedStore.get())
@@ -144,10 +150,11 @@ void MainWindow::buildWorkspace()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_tabs = new QTabWidget(host);
+    auto *tabs = new WorkspaceTabWidget(host);
+    m_tabs = tabs;
     auto *bar = new PlusTabBar(m_tabs);
     bar->onPlus = [this] { newTask(); };
-    m_tabs->setTabBar(bar);
+    tabs->installTabBar(bar);
     m_tabs->setMovable(true);
     m_tabs->setTabsClosable(true);
     m_tabs->setDocumentMode(true);
@@ -580,7 +587,7 @@ void MainWindow::saveUi()
     }
     QString current;
     if (auto *page = qobject_cast<TaskPage *>(m_tabs->currentWidget())) current = page->taskId();
-    try { m_store->saveUi(ids, current); } catch (...) {}
+    m_store->saveUi(ids, current);
 }
 
 void MainWindow::updateEmpty()
