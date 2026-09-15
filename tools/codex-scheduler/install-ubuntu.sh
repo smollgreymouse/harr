@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 VERSION=$(tr -d '[:space:]' < "$ROOT/VERSION")
-DEB="$ROOT/dist/harr-codex-scheduler_${VERSION}_all.deb"
 
 if [[ ! -r /etc/os-release ]]; then
   echo 'install-ubuntu: /etc/os-release not found; use the portable tar.gz bundle instead' >&2
@@ -21,13 +20,19 @@ case "${ID:-}" in
     ;;
 esac
 
-for tool in dpkg-deb apt-get; do
+for tool in apt-get dpkg; do
   command -v "$tool" >/dev/null 2>&1 || {
     echo "install-ubuntu: required tool not found: $tool" >&2
     exit 127
   }
 done
 
+printf 'Installing C++ build dependencies...\n'
+sudo apt-get update
+sudo apt-get install -y cmake ninja-build qt6-base-dev at git
+
+ARCH=$(dpkg --print-architecture)
+DEB="$ROOT/dist/harr-codex-scheduler_${VERSION}_${ARCH}.deb"
 bash "$ROOT/packaging/build-release.sh" "$VERSION"
 
 printf '\nInstalling %s with apt...\n' "$DEB"
@@ -35,9 +40,9 @@ sudo apt-get install -y "$DEB"
 
 cat <<EOF
 
-Harr Codex Scheduler $VERSION is installed.
+Harr Codex Scheduler $VERSION is installed as a native Qt/C++ application.
 
-GUI:
+GUI/tray:
   harr-codex-scheduler
   or open "Harr Codex Scheduler" from the application menu.
 
@@ -53,4 +58,6 @@ Uninstall application files:
 
 User task history is intentionally kept under:
   \${XDG_STATE_HOME:-\$HOME/.local/state}/harr-codex-scheduler
+
+Remove that directory manually only if you also want to erase task history/logs.
 EOF
