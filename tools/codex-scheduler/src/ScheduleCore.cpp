@@ -155,10 +155,11 @@ ScheduleResult scheduleJob(ScheduleRequest req)
             QDir().mkpath(QFileInfo(req.output).absolutePath());
             job += "> " + shellQuote(QFileInfo(req.output).absoluteFilePath()) + " 2>&1";
         } else {
+            if (req.ttyPath.isEmpty()) req.ttyPath = qEnvironmentVariable("TTY_PATH");
             if (req.ttyPath.isEmpty()) {
                 if (const char *tty = ::ttyname(STDOUT_FILENO)) req.ttyPath = QString::fromLocal8Bit(tty);
             }
-            if (req.ttyPath.isEmpty()) {
+            if (req.ttyPath.isEmpty() || req.ttyPath == "not a tty") {
                 result.output = "no TTY available; use --output or --log-json";
                 return result;
             }
