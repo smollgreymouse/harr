@@ -19,12 +19,13 @@ jobs:
           bash -n linux/files/mcp/harr-mcp-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
           for f in linux/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py common/executor/codex_cli.py common/executor/service.py common/executor/mcp_server.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/executor-codex-cli.py tests/executor-service.py tests/executor-mcp.py
+        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py common/executor/codex_cli.py common/executor/service.py common/executor/mcp_server.py common/executor/ab_benchmark.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/executor-codex-cli.py tests/executor-service.py tests/executor-mcp.py tests/executor-ab-benchmark.py
       - name: External executor bridge
         run: |
           python3 tests/executor-codex-cli.py
           python3 tests/executor-service.py
           python3 tests/executor-mcp.py
+          python3 tests/executor-ab-benchmark.py
       - name: MCP registry contract
         run: |
           python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
@@ -61,12 +62,13 @@ jobs:
           bash -n macos/files/mcp/harr-mcp-run macos/files/mcp/codegraph-cli macos/files/leanctx/lean-ctx-wrapper
           for f in macos/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py common/executor/codex_cli.py common/executor/service.py common/executor/mcp_server.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/executor-codex-cli.py tests/executor-service.py tests/executor-mcp.py
+        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py common/executor/codex_cli.py common/executor/service.py common/executor/mcp_server.py common/executor/ab_benchmark.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/executor-codex-cli.py tests/executor-service.py tests/executor-mcp.py tests/executor-ab-benchmark.py
       - name: External executor bridge
         run: |
           python3 tests/executor-codex-cli.py
           python3 tests/executor-service.py
           python3 tests/executor-mcp.py
+          python3 tests/executor-ab-benchmark.py
       - name: MCP registry contract
         shell: bash
         run: |
@@ -113,10 +115,12 @@ jobs:
           }
       - name: Python syntax
         shell: pwsh
-        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py common/executor/codex_cli.py common/executor/service.py common/executor/mcp_server.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/executor-codex-cli.py tests/executor-service.py tests/executor-mcp.py
+        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py common/executor/codex_cli.py common/executor/service.py common/executor/mcp_server.py common/executor/ab_benchmark.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/executor-codex-cli.py tests/executor-service.py tests/executor-mcp.py tests/executor-ab-benchmark.py
       - name: Executor MCP protocol
         shell: pwsh
-        run: python tests/executor-mcp.py
+        run: |
+          python tests/executor-mcp.py
+          python tests/executor-ab-benchmark.py
       - name: MCP registry contract
         shell: pwsh
         run: |
