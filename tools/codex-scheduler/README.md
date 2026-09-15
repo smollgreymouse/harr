@@ -28,7 +28,7 @@ The UI is task-oriented rather than single-job:
 - the sidebar/task menu can reopen closed tasks, cancel scheduled/running jobs, delete scheduler state/logs, or explicitly delete the exported answer too;
 - scheduled/running/completed/failed/cancelled state lives under `$XDG_STATE_HOME/harr-codex-scheduler` (normally `~/.local/state/harr-codex-scheduler`) and is updated by the external job runner even while the GUI is closed.
 
-Codex session selection is an editable dropdown. It is filled through the documented App Server `thread/list` API, newest activity first. A fresh task automatically selects the newest session when available, while Ctrl+V/manual session IDs continue to work. Reading the session list does not start a model turn.
+Codex session selection is an editable dropdown. It is filled through the documented App Server `thread/list` API, newest activity first. The visible value is the human-readable session name/preview, while the real session UUID is kept separately and shown in the tooltip. Pasting a UUID resolves it back to a session name through `thread/read` when possible. Reading session metadata does not start a model turn.
 
 The schedule picker defaults to **current local time + 05:02**, rounded to whole-minute `at` precision. It uses standard Qt widgets: a `QDateEdit` with native calendar popup and click-first hour/minute steppers built from `QSpinBox`/`QToolButton`. The calendar uses the system locale and Monday as the first day of the week. Past times are rejected inside the picker; `codex-schedule` independently validates absolute timestamps before invoking `at` so CLI use remains protected too.
 
@@ -40,36 +40,95 @@ Answer export is one checkable `Save final answer…` button. Choosing a file en
 
 Dark mode is applied at the **application palette** level, not by styling each widget separately. The theme watcher verifies Window, Base, AlternateBase, Button and tooltip surfaces for both active and inactive color groups. This specifically prevents the GNOME/Qt half-dark failure mode where the window is dark but editors, trees and dropdowns remain white.
 
-On GNOME, `qgnomeplatform-qt6` is used automatically when the distro provides it; it is optional. Application QSS is deliberately limited to structural chrome such as sidebar/tabs/message bubbles and flat selector hover states. Standard controls remain standard Qt widgets.
+The application no longer forces `qgnomeplatform`: Qt chooses its normal platform integration and the scheduler only normalizes palette colors when GNOME/Qt fails to provide a coherent dark palette. Application QSS is deliberately limited to structural chrome such as sidebar/tabs/message bubbles and flat selector hover states. Standard controls remain standard Qt widgets.
 
-`HARR_CODEX_THEME=dark|light|system` is available for diagnostics. The app supports close/minimize-to-tray through `QSystemTrayIcon`; the actual timer is still owned by `at`, so a scheduled task does not depend on the GUI staying open.
+`HARR_CODEX_THEME=dark|light|system` is available for diagnostics. The app supports close/minimize-to-tray through `QSystemTrayIcon`; the actual timer is still owned by `at`, so a scheduled task does not depend on the GUI staying open. SIGINT/SIGTERM terminate the GUI normally, which is useful when running it from an IDE or terminal.
 
-Required Ubuntu packages:
+## Distribution
+
+The supported release formats are deliberately simple:
+
+1. **`.deb` — primary distribution for Ubuntu/Debian.** This is the normal installable application. It installs the GUI, desktop entry and the `sol`/`terra`/`luna`/`codex-schedule` commands. `apt` owns Python/Qt/`at`/`git` dependencies and upgrades/removal.
+2. **`linux.tar.gz` — portable/fallback bundle.** Unpack it anywhere and run `./harr-codex-scheduler`. It intentionally uses the host Python/Qt instead of bundling a second Qt, so native distro theme integration is preserved.
+
+AppImage is not the primary format because this application intentionally uses the host Qt/GNOME integration and the system `atd`. Flatpak is also not a good primary fit because the scheduler must invoke host `codex`, `git`, `at`, and work directly in arbitrary Git repositories.
+
+The OpenAI Codex CLI is **not** bundled in either format and must be installed separately as `codex`.
+
+### Install from a `.deb` release
 
 ```bash
-sudo apt install at python3-pyqt6
+sudo apt install ./harr-codex-scheduler_0.1.0_all.deb
+```
+
+Then run:
+
+```bash
+harr-codex-scheduler
+```
+
+or open **Harr Codex Scheduler** from the desktop application menu.
+
+Uninstall application files with:
+
+```bash
+sudo apt remove harr-codex-scheduler
+```
+
+User task history under `~/.local/state/harr-codex-scheduler` is intentionally not deleted by package removal.
+
+### Install from a source checkout
+
+The source installer builds the same `.deb` first and then installs it through `apt`; it no longer leaves symlinks pointing back into the Git checkout:
+
+```bash
+bash tools/codex-scheduler/install-ubuntu.sh
+```
+
+### Run the portable bundle
+
+```bash
+tar -xzf harr-codex-scheduler-0.1.0-linux.tar.gz
+cd harr-codex-scheduler-0.1.0-linux
+./harr-codex-scheduler
+```
+
+Host runtime requirements for the portable bundle on Ubuntu/Debian:
+
+```bash
+sudo apt install at git python3 python3-pyqt6
 sudo systemctl enable --now atd
 ```
 
-Optional on Ubuntu releases that provide it (including 25.10):
-
-```bash
-sudo apt install qgnomeplatform-qt6
-```
-
-Run without installation:
+### Run directly from the repository without installation
 
 ```bash
 python3 tools/codex-scheduler/app/main.py
 ```
 
-Install user launchers and the desktop entry:
+### Build release artifacts locally
 
 ```bash
-./tools/codex-scheduler/install-ubuntu.sh
+bash tools/codex-scheduler/packaging/build-release.sh
 ```
 
-Then run `codex-scheduler-ui` or start **Harr Codex Scheduler** from the application menu.
+Outputs are written to `tools/codex-scheduler/dist/`:
+
+```text
+harr-codex-scheduler_0.1.0_all.deb
+harr-codex-scheduler-0.1.0-linux.tar.gz
+```
+
+### Publish a release
+
+`tools/codex-scheduler/VERSION` is the source of the release version. Pushing a matching tag starts `.github/workflows/codex-scheduler-release.yml`, runs the full scheduler test suite, builds both artifacts and attaches them to a GitHub Release:
+
+```bash
+git tag codex-scheduler-v0.1.0
+git push origin codex-scheduler-v0.1.0
+```
+
+A tag is rejected by CI if its `X.Y.Z` version does not match `tools/codex-scheduler/VERSION`. Manual workflow runs build downloadable CI artifacts but do not publish a GitHub Release.
 
 ## Tests
 
@@ -78,8 +137,11 @@ The tests do not spend Codex quota. Fake Codex/App Server and fake `at` binaries
 ```bash
 bash tools/codex-scheduler/tests/test_cli.sh
 python3 tools/codex-scheduler/tests/test_session_cwd.py
+python3 tools/codex-scheduler/tests/test_session_selector.py
 python3 tools/codex-scheduler/tests/test_task_store.py
 python3 tools/codex-scheduler/tests/test_core.py
+bash tools/codex-scheduler/tests/test_packaging.sh
 QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark python3 tools/codex-scheduler/tests/test_gui_smoke.py
+QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark python3 tools/codex-scheduler/tests/test_main_shutdown.py
 python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
 ```
