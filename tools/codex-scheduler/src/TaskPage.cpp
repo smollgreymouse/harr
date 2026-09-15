@@ -8,10 +8,12 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSignalBlocker>
 #include <QtCore/QTimer>
 #include <QtGui/QAction>
+#include <QtGui/QClipboard>
 #include <QtGui/QTextCursor>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QComboBox>
@@ -35,6 +37,7 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     : QWidget(parent), m_store(store), m_taskId(task.value("id").toString()), m_changed(std::move(changed))
 {
     m_loading = true;
+
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(16, 12, 16, 12);
     root->setSpacing(10);
@@ -63,11 +66,10 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     speed->setToolTip("Speed");
 
     status = new QLabel(this);
-    status->setObjectName("taskStatus");
     top->addWidget(model);
     top->addWidget(reasoning);
     top->addWidget(speed);
-    top->addStretch();
+    top->addStretch(1);
     top->addWidget(status);
     root->addLayout(top);
 
@@ -105,7 +107,7 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     saveButton->setCheckable(true);
     primary = new QPushButton("Schedule", this);
     actions->addWidget(saveButton);
-    actions->addStretch();
+    actions->addStretch(1);
     actions->addWidget(primary);
     root->addLayout(actions);
 
@@ -203,6 +205,7 @@ void TaskPage::loadTask(const QJsonObject &task)
     m_cwd = task.value("cwd").toString();
     m_answer = task.value("answer").toString();
     m_log = task.value("log").toString();
+    m_lastStatus = task.value("status").toString();
 
     const QString scheduled = task.value("scheduled").toString();
     if (!scheduled.isEmpty()) m_scheduled = QDateTime::fromString(scheduled, Qt::ISODate);
@@ -225,10 +228,8 @@ void TaskPage::persistDraft()
     patch.insert("scheduled", m_scheduled.isValid() ? QJsonValue(m_scheduled.toString(Qt::ISODate)) : QJsonValue(QJsonValue::Null));
     patch.insert("cwd", m_cwd.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(m_cwd));
     patch.insert("answer", m_answer.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(m_answer));
-    try {
-        m_store->patch(m_taskId, patch);
-        if (m_changed) m_changed(m_taskId);
-    } catch (...) {}
+    m_store->patch(m_taskId, patch);
+    if (m_changed) m_changed(m_taskId);
 }
 
 void TaskPage::chooseTime()
@@ -279,14 +280,10 @@ void TaskPage::resolveCwdPreview()
         return;
     }
 
-    QJsonObject meta{
-        {"id", id},
-        {"name", thread->value("name")},
-        {"preview", thread->value("preview")},
-        {"cwd", thread->value("cwd")},
-        {"archived", thread->value("archived")}
-    };
-    session->setResolvedSession(meta);
+    session->setResolvedSession(QJsonObject{
+        {"id", id}, {"name", thread->value("name")}, {"preview", thread->value("preview")},
+        {"cwd", thread->value("cwd")}, {"archived", thread->value("archived")}
+    });
 
     auto cwd = CodexService::validateThreadCwd(*thread, &error, true);
     if (!cwd) {
@@ -309,11 +306,10 @@ QString TaskPage::defaultAnswerPath() const
     const auto time = m_scheduled.isValid() ? m_scheduled : QDateTime::currentDateTime();
     QString path = QDir(directory).filePath(QString("codex-%1-%2.md").arg(safe, time.toString("yyyyMMdd-HHmm")));
     if (!QFileInfo::exists(path)) return path;
-
     QFileInfo info(path);
     for (int i = 2; ; ++i) {
-        const QString candidate = info.dir().filePath(
-            info.completeBaseName() + QString("-%1").arg(i) + "." + info.suffix());
+        const QString suffix = info.suffix().isEmpty() ? QString{} : "." + info.suffix();
+        const QString candidate = info.dir().filePath(info.completeBaseName() + QString("-%1").arg(i) + suffix);
         if (!QFileInfo::exists(candidate)) return candidate;
     }
 }
@@ -343,9 +339,8 @@ void TaskPage::toggleSave(bool checked)
         persistDraft();
         return;
     }
-    const QString path = QFileDialog::getSaveFileName(
-        this, "Save Codex answer", defaultAnswerPath(),
-        "Markdown (*.md);;Text (*.txt);;All files (*)");
+    const QString path = QFileDialog::getSaveFileName(this, "Save Codex answer", defaultAnswerPath(),
+                                                      "Markdown (*.md);;Text (*.txt);;All files (*)");
     if (path.isEmpty()) {
         setSaveState({});
         return;
@@ -374,8 +369,7 @@ void TaskPage::schedule()
         return;
     }
 
-    const QString logPath = currentTask().value("log").toString(
-        QDir(m_store->jobsDir()).filePath(m_taskId + ".jsonl"));
+    const QString logPath = currentTask().value("log").toString(QDir(m_store->jobsDir()).filePath(m_taskId + ".jsonl"));
     ScheduleRequest req;
     req.model = choiceValue(model);
     req.reasoning = choiceValue(reasoning);
@@ -412,12 +406,16 @@ void TaskPage::schedule()
 
 void TaskPage::cancel()
 {
+    const QString state = currentTask().value("status").toString();
+    if (state != "scheduled" && state != "running" && state != "cancelling") return;
     if (QMessageBox::question(this, APP_NAME, "Cancel this Codex task?",
-                              QMessageBox::Yes | QMessageBox::No,
-                              QMessageBox::No) != QMessageBox::Yes) return;
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
     QString error;
     const auto task = m_store->cancel(m_taskId, &error);
-    if (!error.isEmpty()) QMessageBox::warning(this, APP_NAME, error);
+    if (!error.isEmpty()) {
+        QMessageBox::critical(this, APP_NAME, error);
+        return;
+    }
     applyStatus(task);
     if (m_changed) m_changed(m_taskId);
 }
@@ -425,42 +423,48 @@ void TaskPage::cancel()
 void TaskPage::rebuildTranscript(const QJsonObject &task)
 {
     QString text;
-    if (task.value("status").toString() != "draft" && !task.value("prompt").toString().trimmed().isEmpty()) {
-        text = "You:\n" + task.value("prompt").toString().trimmed() + "\n\n";
+    const QString taskPrompt = task.value("prompt").toString().trimmed();
+    if (task.value("status").toString() != "draft" && !taskPrompt.isEmpty()) {
+        text += "You\n" + taskPrompt + "\n\n";
     }
 
-    m_log = task.value("log").toString();
-    QFile file(m_log);
-    if (file.open(QIODevice::ReadOnly)) {
-        const QByteArray data = file.readAll();
-        m_lastLogSize = data.size();
-        QStringList assistant;
-        QStringList diagnostics;
-        for (const QByteArray &line : data.split('\n')) {
-            for (const auto &event : parseCodexJsonLine(line)) {
-                if (event.kind == "assistant") assistant << event.text;
-                else if (event.kind == "error") diagnostics << "! " + event.text;
+    const QString logPath = task.value("log").toString();
+    if (!logPath.isEmpty()) {
+        QFile file(logPath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            while (!file.atEnd()) {
+                const QByteArray line = file.readLine();
+                for (const auto &event : parseCodexJsonLine(line)) {
+                    if (event.kind == "assistant") text += "Codex\n" + event.text + "\n\n";
+                    else if (event.kind == "error") text += "Error\n" + event.text + "\n\n";
+                }
             }
+            m_lastLogSize = file.size();
         }
-        if (!assistant.isEmpty()) text += "Codex:\n" + assistant.join("\n\n");
-        if (!diagnostics.isEmpty()) text += "\n\n" + diagnostics.join('\n');
-    } else {
-        m_lastLogSize = -1;
     }
     transcript->setPlainText(text.trimmed());
-    transcript->moveCursor(QTextCursor::End);
+    QTextCursor cursor = transcript->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    transcript->setTextCursor(cursor);
 }
 
 void TaskPage::poll()
 {
     const auto task = currentTask();
     const QString state = task.value("status").toString();
-    if (state != m_lastStatus) {
+    bool changed = state != m_lastStatus;
+
+    const QString logPath = task.value("log").toString();
+    if (!logPath.isEmpty()) {
+        QFileInfo info(logPath);
+        if (info.exists() && info.size() != m_lastLogSize) changed = true;
+    }
+
+    if (changed) {
         applyStatus(task);
+        rebuildTranscript(task);
         if (m_changed) m_changed(m_taskId);
     }
-    QFileInfo info(task.value("log").toString());
-    if (info.exists() && info.size() != m_lastLogSize) rebuildTranscript(task);
 }
 
 void TaskPage::applyStatus(const QJsonObject &task)
@@ -469,10 +473,12 @@ void TaskPage::applyStatus(const QJsonObject &task)
     m_lastStatus = state;
     status->setText(statusIcon(state) + " " + statusText(state));
     const bool editable = state == "draft";
-    for (QWidget *widget : {static_cast<QWidget *>(model), reasoning, speed, session, prompt, when, saveButton}) {
-        widget->setEnabled(editable);
-    }
+    const QVector<QWidget *> widgets{
+        model, reasoning, speed, session, prompt, when, saveButton
+    };
+    for (QWidget *widget : widgets) widget->setEnabled(editable);
     m_projectButton->setEnabled(true);
+
     if (state == "draft") {
         primary->setText("Schedule");
         primary->setEnabled(true);
