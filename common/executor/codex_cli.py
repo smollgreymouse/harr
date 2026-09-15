@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -17,6 +18,10 @@ DEFAULT_REASONING = "low"
 
 
 class CodexCliError(RuntimeError):
+    pass
+
+
+class CodexCliCancelled(CodexCliError):
     pass
 
 
@@ -33,16 +38,7 @@ TERMINAL_SCHEMA: dict = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "additionalProperties": False,
-    "required": [
-        "protocol",
-        "state",
-        "current_step",
-        "completed_steps",
-        "summary",
-        "changed_files",
-        "validation",
-        "blocker",
-    ],
+    "required": ["protocol", "state", "current_step", "completed_steps", "summary", "changed_files", "validation", "blocker"],
     "properties": {
         "protocol": {"const": PROTOCOL},
         "state": {"enum": ["DONE", "BLOCKED", "FAILED_EXECUTION", "FAILED_PROTOCOL", "CANCELLED"]},
@@ -112,14 +108,14 @@ class CodexCliAdapter:
     def probe(self) -> dict:
         resolved = shutil.which(self.command)
         if not resolved:
-            return {"available": False, "command": self.command, "model": self.model, "resume": True, "structured_output": True}
+            return {"available": False, "command": self.command, "model": self.model, "resume": True, "structured_output": True, "cancel": True}
         proc = subprocess.run([resolved, "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, timeout=15)
-        return {"available": proc.returncode == 0, "command": resolved, "version": (proc.stdout or proc.stderr).strip(), "model": self.model, "resume": True, "structured_output": True}
+        return {"available": proc.returncode == 0, "command": resolved, "version": (proc.stdout or proc.stderr).strip(), "model": self.model, "resume": True, "structured_output": True, "cancel": True}
 
-    def start(self, *, repo_root: Path, execution_contract: str) -> CodexCliResult:
-        return self._run(repo_root=repo_root, prompt=f"{EXECUTOR_RULES}\n\n{execution_contract.strip()}\n", session_id=None)
+    def start(self, *, repo_root: Path, execution_contract: str, cancel_event: threading.Event | None = None) -> CodexCliResult:
+        return self._run(repo_root=repo_root, prompt=f"{EXECUTOR_RULES}\n\n{execution_contract.strip()}\n", session_id=None, cancel_event=cancel_event)
 
-    def resume(self, *, repo_root: Path, session_id: str, resolution_delta: str) -> CodexCliResult:
+    def resume(self, *, repo_root: Path, session_id: str, resolution_delta: str, cancel_event: threading.Event | None = None) -> CodexCliResult:
         prompt = f"""\
 Continue the same Harr execution run. The previous execution contract remains authoritative.
 Apply only the planner resolution delta below, then continue from the blocked step.
@@ -128,9 +124,9 @@ Return only the JSON object required by the output schema.
 
 {resolution_delta.strip()}
 """
-        return self._run(repo_root=repo_root, prompt=prompt, session_id=session_id)
+        return self._run(repo_root=repo_root, prompt=prompt, session_id=session_id, cancel_event=cancel_event)
 
-    def _run(self, *, repo_root: Path, prompt: str, session_id: str | None) -> CodexCliResult:
+    def _run(self, *, repo_root: Path, prompt: str, session_id: str | None, cancel_event: threading.Event | None) -> CodexCliResult:
         root = repo_root.resolve()
         if not root.is_dir():
             raise CodexCliError(f"repository root does not exist: {root}")
@@ -148,7 +144,7 @@ Return only the JSON object required by the output schema.
             argv += ["-"]
             env = os.environ.copy()
             env["HARR_EXECUTOR_CHILD"] = "1"
-            proc = subprocess.run(argv, input=prompt, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False, env=env)
+            proc = self._execute(argv, prompt, env, cancel_event)
             events = tuple(self._parse_jsonl(proc.stdout))
             observed_session = self._thread_id(events)
             if session_id is None and not observed_session:
@@ -167,6 +163,25 @@ Return only the JSON object required by the output schema.
                 raise CodexCliError(f"invalid Codex terminal JSON: {exc}") from exc
             self._validate_packet(packet)
             return CodexCliResult(session_id=effective_session, packet=packet, stdout_events=events, usage=self._usage(events), stderr=proc.stderr)
+
+    @staticmethod
+    def _execute(argv: list[str], prompt: str, env: dict[str, str], cancel_event: threading.Event | None) -> subprocess.CompletedProcess[str]:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        first = True
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                process.terminate()
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                raise CodexCliCancelled("Codex executor was cancelled")
+            try:
+                stdout, stderr = process.communicate(input=prompt if first else None, timeout=0.25)
+                return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+            except subprocess.TimeoutExpired:
+                first = False
 
     @staticmethod
     def _parse_jsonl(text: str) -> Iterable[dict]:
@@ -189,10 +204,7 @@ Return only the JSON object required by the output schema.
                 continue
             usage = event.get("usage")
             if isinstance(usage, dict):
-                latest = {
-                    key: int(usage.get(key, 0) or 0)
-                    for key in ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens")
-                }
+                latest = {key: int(usage.get(key, 0) or 0) for key in ("input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens")}
         return latest
 
     @staticmethod
