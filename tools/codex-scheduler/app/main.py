@@ -1,59 +1,52 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
+import signal
 import sys
 
-
-def _package_installed(name: str) -> bool:
-    if shutil.which("dpkg-query") is None:
-        return False
-    try:
-        proc = subprocess.run(
-            ["dpkg-query", "-W", "-f=${db:Status-Status}", name],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=1,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return proc.returncode == 0 and proc.stdout.strip() == "installed"
-
-
-# On GNOME, use QGnomePlatform when the distro provides it. It is optional:
-# Ubuntu 24.04 does not consistently expose the package in all repositories,
-# and the application-level palette normalization is sufficient on its own.
-if sys.platform.startswith("linux"):
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
-    if (
-        "GNOME" in desktop
-        and not os.environ.get("QT_QPA_PLATFORMTHEME")
-        and _package_installed("qgnomeplatform-qt6")
-    ):
-        os.environ["QT_QPA_PLATFORMTHEME"] = "gnome"
-
 try:
+    from PyQt6.QtCore import QTimer
     from PyQt6.QtWidgets import QApplication
 except ImportError as exc:
     raise SystemExit("PyQt6 is required. On Ubuntu: sudo apt install python3-pyqt6") from exc
 
+# Keep the task page focused on task behavior while the session selector owns
+# the presentation/UUID split.  TaskPage resolves SessionComboBox from its
+# module globals when a page is instantiated, so installing the selector here
+# is explicit and avoids duplicating session-state logic in the page itself.
+import task_page_native
+from session_selector import SessionComboBox
 from system_theme import install_system_theme
 from ui_chrome import install_app_chrome
 from workspace import APP_NAME, MainWindow
 
+task_page_native.SessionComboBox = SessionComboBox
+
 
 def main() -> int:
+    # Do not force QT_QPA_PLATFORMTHEME.  On GNOME that can select
+    # qgnomeplatform even when it cannot resolve a color-scheme name, producing
+    # `qt.qpa.qgnomeplatform: Could not find color scheme ""`.  Qt keeps its
+    # platform-native style and system_theme.py normalizes only the palette
+    # when GNOME's documented color-scheme preference says dark.
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setQuitOnLastWindowClosed(False)
     app._harr_system_theme = install_system_theme(app)  # type: ignore[attr-defined]
     install_app_chrome(app)
+
     window = MainWindow()
     window.show()
+
+    def request_quit(_signum: int, _frame: object) -> None:
+        # Python delivers Unix signals on the main thread. Queue the actual Qt
+        # shutdown instead of raising KeyboardInterrupt from an arbitrary Qt
+        # slot (for example refresh_all), which PyQt may print and then keep
+        # running. This also makes IDE Stop/SIGTERM deterministic.
+        QTimer.singleShot(0, window.quit_app)
+
+    signal.signal(signal.SIGINT, request_quit)
+    signal.signal(signal.SIGTERM, request_quit)
     return app.exec()
 
 
