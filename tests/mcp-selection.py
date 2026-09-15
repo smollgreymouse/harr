@@ -86,6 +86,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert "host-git-service ready (ssh-agent: available)" in policy
         assert "If the host Git service is unavailable" in policy
         assert "harr gitlab publish" not in policy
+        assert ("External executor delegation is explicit-only" in policy) == ("executor" in expected)
+        assert ("executor::start" in policy) == ("executor" in expected)
+        assert ("Planner Resolution Delta" in policy) == ("executor" in expected)
         assert ("GitLab API operations" in policy) == ("gitlab" in expected)
         assert ("gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("create_merge_request` -> `gitlab::create_merge_request" in policy) == ("gitlab" in expected)
@@ -125,6 +128,14 @@ def check(spec: str, expected: list[str]) -> None:
         assert "Kubernetes is intentionally **not** a Harr MCP component" in kube_text
         assert "kubectl config view --raw --flatten -o json" in kube_text
         assert "user.exec" in kube_text
+        executor_ref = filtered_skill / "references" / "executor.md"
+        assert executor_ref.exists() == ("executor" in expected)
+        assert ("The External Executor is optional" in skill) == ("executor" in expected)
+        if executor_ref.exists():
+            executor_text = executor_ref.read_text(encoding="utf-8")
+            assert "@builder <task>" in executor_text
+            assert "executor::continue" in executor_text
+            assert "fork_turns=\"none\"" in executor_text
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
@@ -149,10 +160,14 @@ def check(spec: str, expected: list[str]) -> None:
 catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
 servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
+assert servers["executor"]["required"] is False
+assert servers["executor"]["transport"] == "stdio"
+assert servers["executor"]["lifecycle"] == "on-demand"
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
 
 check("none", ["codegraph"])
+check("executor", ["codegraph", "executor"])
 check("gitlab", ["codegraph", "gitlab"])
-check("all", ["codegraph", "gitlab", "grafana"])
+check("all", ["codegraph", "executor", "gitlab", "grafana"])
 print("cross-platform MCP selection: PASS")
