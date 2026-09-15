@@ -17,6 +17,20 @@
       }
     },
     {
+      "name": "executor",
+      "label": "Executor",
+      "description": "optional planner-to-executor bridge with persistent Codex CLI sessions",
+      "required": false,
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "path",
+        "command": "python3",
+        "args": []
+      },
+      "skill_reference": "executor.md"
+    },
+    {
       "name": "gitlab",
       "label": "GitLab",
       "description": "GitLab API, merge requests, pipelines and issues",
