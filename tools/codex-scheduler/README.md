@@ -1,6 +1,8 @@
 # Codex Scheduler
 
-Linux-only helpers for scheduling a turn in an existing Codex CLI session. The three model selector scripts always use **High reasoning** and **Standard speed** (`service_tier="default"`), never Fast:
+Native Linux desktop scheduler for existing OpenAI Codex CLI sessions. The scheduler is implemented entirely in **C++20 + Qt 6 Widgets**; there is no Python/PyQt runtime or Python scheduler code.
+
+The three convenience selectors always use **High reasoning** and **Standard speed** (`service_tier="default"`), never Fast:
 
 ```bash
 sol   02:05 SESSION_ID "Продолжай"
@@ -8,140 +10,191 @@ terra 02:05 SESSION_ID "Продолжай"
 luna  02:05 SESSION_ID "Продолжай"
 ```
 
-The selectors may be run from any directory. Before creating the `at` job, the scheduler asks the installed Codex binary for the thread through the documented **Codex App Server** stdio API (`initialize` → `initialized` → `thread/read`) and reads public `thread.cwd`. It verifies that directory and the Git worktree, then emits an `at` job that starts with `cd <session-cwd>`.
+The selectors may be run from any directory. Before creating an `at` job, the native scheduler asks the installed Codex binary for the thread through the documented **Codex App Server** stdio API (`initialize` → `initialized` → `thread/read`) and reads `thread.cwd`. It verifies that directory and its Git worktree, then emits an `at` job beginning with `cd <session-cwd>`.
 
-The scheduler does **not** inspect `~/.codex`, SQLite databases, rollout JSONL files, or any other private Codex state format. An explicit `--cwd DIR` exists as a fail-closed manual fallback.
+The scheduler never inspects `~/.codex`, SQLite databases, rollout JSONL files, or other private Codex state formats. `--cwd DIR` is available only as a fail-closed explicit fallback and must agree with App Server metadata when both are available.
 
-`--timestamp CCYYMMDDhhmm` schedules an absolute local date/time through `at -t`, so GUI tasks can be scheduled days or weeks ahead. CLI `--at` remains available for normal `at(1)` expressions.
+`--timestamp CCYYMMDDhhmm` schedules an absolute local date/time through `at -t`, so GUI tasks can be scheduled days or weeks ahead. CLI `--at` remains available for ordinary `at(1)` expressions.
+
+## One native executable
+
+`harr-codex-scheduler` is both the desktop application and the execution backend. It has internal command modes for scheduling, job execution and Codex metadata lookup:
+
+```text
+harr-codex-scheduler                 # GUI + tray
+harr-codex-scheduler schedule ...
+harr-codex-scheduler job-runner ...
+harr-codex-scheduler session-list ...
+harr-codex-scheduler session-cwd ...
+harr-codex-scheduler self-test
+```
+
+`codex-schedule`, `sol`, `terra`, `luna` and `codex-scheduler-ui` are thin shell entrypoints to that binary.
+
+An `at` job always launches a **separate `harr-codex-scheduler job-runner` process**. The running Codex turn therefore does not depend on the GUI/tray process staying alive. The runner launches `codex exec --json`, captures JSONL output, updates the persistent task JSON and optionally writes the clean final answer. Closing or restarting the desktop app cannot lose the job output.
+
+The desktop process watches the task-state directory using `QFileSystemWatcher`. Atomic task-state updates from the runner therefore refresh open tabs and tray state promptly. A slow reconciliation timer remains as a fallback; the runner and GUI do not require a socket or service daemon.
 
 ## Desktop app
 
-`app/main.py` is a Qt 6 / PyQt6 front end for Ubuntu 24.04+.
+The Qt Widgets UI is task-oriented:
 
-The UI is task-oriented rather than single-job:
-
-- every open tab is one scheduler task;
+- every open tab represents one scheduler task;
 - `+` sits directly after the last tab;
-- closing a tab only closes the view; a non-empty task remains in persistent history;
-- the left tasks sidebar can be shown/hidden from the tab strip;
+- closing a tab closes only the view; non-empty tasks remain in persistent state;
+- the left tasks sidebar can be hidden from the tab strip;
 - **Active** and **History** are independently collapsible;
-- the sidebar/task menu can reopen closed tasks, cancel scheduled/running jobs, delete scheduler state/logs, or explicitly delete the exported answer too;
-- scheduled/running/completed/failed/cancelled state lives under `$XDG_STATE_HOME/harr-codex-scheduler` (normally `~/.local/state/harr-codex-scheduler`) and is updated by the external job runner even while the GUI is closed.
+- task menus can reopen views, cancel scheduled/running jobs, delete scheduler state/logs, or explicitly delete an exported answer;
+- task state lives under `$XDG_STATE_HOME/harr-codex-scheduler` (normally `~/.local/state/harr-codex-scheduler`).
 
-Codex session selection is an editable dropdown. It is filled through the documented App Server `thread/list` API, newest activity first. The visible value is the human-readable session name/preview, while the real session UUID is kept separately and shown in the tooltip. Pasting a UUID resolves it back to a session name through `thread/read` when possible. Reading session metadata does not start a model turn.
+### Sessions
 
-The schedule picker defaults to **current local time + 05:02**, rounded to whole-minute `at` precision. It uses standard Qt widgets: a `QDateEdit` with native calendar popup and click-first hour/minute steppers built from `QSpinBox`/`QToolButton`. The calendar uses the system locale and Monday as the first day of the week. Past times are rejected inside the picker; `codex-schedule` independently validates absolute timestamps before invoking `at` so CLI use remains protected too.
+Session choices come only from the documented App Server `thread/list` / `thread/read` APIs. `thread/list` requests `archived: false` and the application also defensively filters any returned `archived=true` entries.
 
-Model/reasoning/speed selectors are Sol/Terra/Luna, Minimal/Low/Medium/High/Extra High and Standard/Fast. Their chrome is intentionally flat until hover/focus; the standard widgets themselves are still drawn by the active Qt platform style.
+The visible selector shows the human-readable session name/preview. The actual UUID remains the stored value and is shown in tooltips. A UUID pasted manually remains valid; when metadata is found through `thread/read`, the visible field is replaced by the session name while the UUID remains the real value.
 
-Answer export is one checkable `Save final answer…` button. Choosing a file enables export; clicking the enabled button again disables it. Default names are unique and include session ID plus schedule time, e.g. `codex-SESSION-20260911-1019.md`.
+Reading session metadata does not start a model turn, so session selection remains available when model usage is exhausted as long as the local Codex runtime is responsive.
 
-### Theme and desktop integration
+### Tray-first workflow
 
-Dark mode is applied at the **application palette** level, not by styling each widget separately. The theme watcher verifies Window, Base, AlternateBase, Button and tooltip surfaces for both active and inactive color groups. This specifically prevents the GNOME/Qt half-dark failure mode where the window is dark but editors, trees and dropdowns remain white.
+The application is designed to live in the system tray. Its tray menu provides:
 
-The application no longer forces `qgnomeplatform`: Qt chooses its normal platform integration and the scheduler only normalizes palette colors when GNOME/Qt fails to provide a coherent dark palette. Application QSS is deliberately limited to structural chrome such as sidebar/tabs/message bubbles and flat selector hover states. Standard controls remain standard Qt widgets.
+- **Open main window**;
+- **Schedule for session** → one item per active/non-archived Codex session;
+- a compact quick-schedule dialog containing only the selected session, run time and prompt;
+- **Active tasks (N)** → clicking a task opens that task in the main window;
+- completion/failure/cancellation notifications when persisted task state changes;
+- **Quit**.
 
-`HARR_CODEX_THEME=dark|light|system` is available for diagnostics. The app supports close/minimize-to-tray through `QSystemTrayIcon`; the actual timer is still owned by `at`, so a scheduled task does not depend on the GUI staying open. SIGINT/SIGTERM terminate the GUI normally, which is useful when running it from an IDE or terminal.
+Normal quick scheduling therefore does not require opening the main workspace.
+
+### Time picker
+
+The picker defaults to **current local time + 05:02**, rounded to whole-minute `at` precision. It uses Qt widgets: date/calendar, `Today`, `Tomorrow`, `Now + 5:02` presets, and click-first hour/minute steppers. Monday is explicitly the first day of the calendar week. A past time is rejected while choosing the value, and the native CLI independently validates timestamps before invoking `at`.
+
+### Theme
+
+The app uses Qt's normal platform integration and standard widgets. A coherent application palette is applied when GNOME/Qt exposes a broken half-dark palette. Structural QSS is kept small and limited to application chrome such as tabs/sidebar/flat selectors.
+
+`HARR_CODEX_THEME=dark|light|system` remains available for diagnostics.
+
+## Build
+
+Build dependencies on Ubuntu/Debian:
+
+```bash
+sudo apt install cmake ninja-build qt6-base-dev at git
+```
+
+Build and run directly from the checkout:
+
+```bash
+cmake -S tools/codex-scheduler \
+      -B tools/codex-scheduler/build \
+      -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build tools/codex-scheduler/build
+
+tools/codex-scheduler/build/harr-codex-scheduler
+```
+
+Native smoke test:
+
+```bash
+QT_QPA_PLATFORM=offscreen \
+HARR_CODEX_THEME=dark \
+tools/codex-scheduler/build/harr-codex-scheduler self-test
+```
+
+Full native CLI/job-runner contract:
+
+```bash
+bash tools/codex-scheduler/tests/test_cli.sh
+```
 
 ## Distribution
 
-The supported release formats are deliberately simple:
+The supported formats are:
 
-1. **`.deb` — primary distribution for Ubuntu/Debian.** This is the normal installable application. It installs the GUI, desktop entry and the `sol`/`terra`/`luna`/`codex-schedule` commands. `apt` owns Python/Qt/`at`/`git` dependencies and upgrades/removal.
-2. **`linux.tar.gz` — portable/fallback bundle.** Unpack it anywhere and run `./harr-codex-scheduler`. It intentionally uses the host Python/Qt instead of bundling a second Qt, so native distro theme integration is preserved.
+1. **`.deb` — primary Ubuntu/Debian distribution.** It contains the native C++ executable, desktop entry and thin shell selectors. It has no Python/PyQt dependency.
+2. **`linux-<arch>.tar.gz` — portable/fallback bundle.** It contains the same native executable and uses the host Qt runtime to preserve normal distro/GNOME/Wayland integration.
 
-AppImage is not the primary format because this application intentionally uses the host Qt/GNOME integration and the system `atd`. Flatpak is also not a good primary fit because the scheduler must invoke host `codex`, `git`, `at`, and work directly in arbitrary Git repositories.
+OpenAI Codex CLI is not bundled and must be installed separately as `codex`.
 
-The OpenAI Codex CLI is **not** bundled in either format and must be installed separately as `codex`.
-
-### Install from a `.deb` release
-
-```bash
-sudo apt install ./harr-codex-scheduler_0.1.0_all.deb
-```
-
-Then run:
-
-```bash
-harr-codex-scheduler
-```
-
-or open **Harr Codex Scheduler** from the desktop application menu.
-
-Uninstall application files with:
-
-```bash
-sudo apt remove harr-codex-scheduler
-```
-
-User task history under `~/.local/state/harr-codex-scheduler` is intentionally not deleted by package removal.
-
-### Install from a source checkout
-
-The source installer builds the same `.deb` first and then installs it through `apt`; it no longer leaves symlinks pointing back into the Git checkout:
-
-```bash
-bash tools/codex-scheduler/install-ubuntu.sh
-```
-
-### Run the portable bundle
-
-```bash
-tar -xzf harr-codex-scheduler-0.1.0-linux.tar.gz
-cd harr-codex-scheduler-0.1.0-linux
-./harr-codex-scheduler
-```
-
-Host runtime requirements for the portable bundle on Ubuntu/Debian:
-
-```bash
-sudo apt install at git python3 python3-pyqt6
-sudo systemctl enable --now atd
-```
-
-### Run directly from the repository without installation
-
-```bash
-python3 tools/codex-scheduler/app/main.py
-```
-
-### Build release artifacts locally
+### Build release artifacts
 
 ```bash
 bash tools/codex-scheduler/packaging/build-release.sh
 ```
 
-Outputs are written to `tools/codex-scheduler/dist/`:
+With version `0.2.0` on amd64 this produces:
 
 ```text
-harr-codex-scheduler_0.1.0_all.deb
-harr-codex-scheduler-0.1.0-linux.tar.gz
+tools/codex-scheduler/dist/harr-codex-scheduler_0.2.0_amd64.deb
+tools/codex-scheduler/dist/harr-codex-scheduler-0.2.0-linux-amd64.tar.gz
 ```
 
-### Publish a release
-
-`tools/codex-scheduler/VERSION` is the source of the release version. Pushing a matching tag starts `.github/workflows/codex-scheduler-release.yml`, runs the full scheduler test suite, builds both artifacts and attaches them to a GitHub Release:
+### Install `.deb`
 
 ```bash
-git tag codex-scheduler-v0.1.0
-git push origin codex-scheduler-v0.1.0
+sudo apt install ./tools/codex-scheduler/dist/harr-codex-scheduler_0.2.0_amd64.deb
 ```
 
-A tag is rejected by CI if its `X.Y.Z` version does not match `tools/codex-scheduler/VERSION`. Manual workflow runs build downloadable CI artifacts but do not publish a GitHub Release.
+or build and install in one step:
+
+```bash
+bash tools/codex-scheduler/install-ubuntu.sh
+```
+
+Run:
+
+```bash
+harr-codex-scheduler
+```
+
+Remove the application:
+
+```bash
+sudo apt remove harr-codex-scheduler
+```
+
+Package removal intentionally preserves task history. To also erase user state/logs:
+
+```bash
+rm -rf ~/.local/state/harr-codex-scheduler
+```
+
+### Portable bundle
+
+```bash
+tar -xzf harr-codex-scheduler-0.2.0-linux-amd64.tar.gz
+cd harr-codex-scheduler-0.2.0-linux-amd64
+./harr-codex-scheduler
+```
+
+Runtime dependencies are Qt 6 Widgets/Core/Gui, `at`, and `git`; no Python is required.
+
+## Release tags
+
+`tools/codex-scheduler/VERSION` is the release version source of truth. A matching tag builds and publishes the native `.deb` and tarball:
+
+```bash
+git tag codex-scheduler-v0.2.0
+git push origin codex-scheduler-v0.2.0
+```
+
+The release workflow rejects a tag whose version does not match `VERSION`.
 
 ## Tests
 
-The tests do not spend Codex quota. Fake Codex/App Server and fake `at` binaries exercise cwd resolution, recent-session listing, scheduler argv, High/Standard selector contracts, timestamp validation and state lifecycle. The Qt smoke test includes a regression case that starts with a deliberately broken half-dark palette (`Window=dark`, `Base=white`) and verifies that editors, trees, dropdowns and the time dialog all normalize to dark surfaces.
+Tests use fake `codex` and `at` executables and spend no Codex quota. The CI contract verifies:
 
-```bash
-bash tools/codex-scheduler/tests/test_cli.sh
-python3 tools/codex-scheduler/tests/test_session_cwd.py
-python3 tools/codex-scheduler/tests/test_session_selector.py
-python3 tools/codex-scheduler/tests/test_task_store.py
-python3 tools/codex-scheduler/tests/test_core.py
-bash tools/codex-scheduler/tests/test_packaging.sh
-QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark python3 tools/codex-scheduler/tests/test_gui_smoke.py
-QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark python3 tools/codex-scheduler/tests/test_main_shutdown.py
-python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
-```
+- native C++/Qt build;
+- state and transcript self-test;
+- App Server cwd/session-list behavior including archived-session filtering;
+- Sol/Terra/Luna High + Standard selector contracts;
+- absolute timestamp validation;
+- same-binary `job-runner` execution and answer/state persistence;
+- `.deb` and portable package contents contain no Python;
+- real `apt install` of the produced native package;
+- installed binary self-test.
