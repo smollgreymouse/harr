@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version to build (for artifact-only manual runs)'
         required: true
-        default: '0.1.0'
+        default: '0.2.0'
 
 permissions:
   contents: write
@@ -37,30 +37,27 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Install test/runtime dependencies
+      - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pyqt6 at git
+          sudo apt-get install -y cmake ninja-build qt6-base-dev at git
 
-      - name: Run scheduler tests
+      - name: Build native scheduler
+        run: |
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/codex-scheduler/build
+
+      - name: Run native scheduler tests
         env:
           QT_QPA_PLATFORM: offscreen
           HARR_CODEX_THEME: dark
         run: |
+          tools/codex-scheduler/build/harr-codex-scheduler self-test
           bash tools/codex-scheduler/tests/test_cli.sh
-          python3 tools/codex-scheduler/tests/test_session_cwd.py
-          python3 tools/codex-scheduler/tests/test_session_selector.py
-          python3 tools/codex-scheduler/tests/test_task_store.py
-          python3 tools/codex-scheduler/tests/test_core.py
-          python3 tools/codex-scheduler/tests/test_gui_smoke.py
-          python3 tools/codex-scheduler/tests/test_tray_workflow.py
-          python3 tools/codex-scheduler/tests/test_main_shutdown.py
+          bash tools/codex-scheduler/tests/test_packaging.sh
 
       - name: Build release artifacts
         run: bash tools/codex-scheduler/packaging/build-release.sh '${{ steps.version.outputs.version }}'
-
-      - name: Validate release artifacts
-        run: bash tools/codex-scheduler/tests/test_packaging.sh
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
