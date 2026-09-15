@@ -53,3 +53,26 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           HARR_CODEX_THEME: dark
         run: python3 tools/codex-scheduler/tests/test_main_shutdown.py
+      - name: Build installable package
+        run: bash tools/codex-scheduler/packaging/build-release.sh
+      - name: Install deb package
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb=$(printf '%s\n' tools/codex-scheduler/dist/harr-codex-scheduler_*_all.deb)
+          sudo apt-get install -y "$deb"
+          test -x /usr/bin/harr-codex-scheduler
+          test -x /usr/bin/codex-schedule
+          test -x /usr/bin/sol
+          test -x /usr/bin/terra
+          test -x /usr/bin/luna
+          test -f /usr/share/applications/harr-codex-scheduler.desktop
+          test -f /usr/lib/harr-codex-scheduler/app/main.py
+          python3 -m py_compile /usr/lib/harr-codex-scheduler/app/*.py
+          set +e
+          output=$(/usr/bin/terra 2>&1)
+          rc=$?
+          set -e
+          test "$rc" -eq 2
+          grep -q 'Usage: terra' <<<"$output"
+          dpkg-query -W -f='${db:Status-Status}\n' harr-codex-scheduler | grep -qx installed
