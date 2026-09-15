@@ -9,6 +9,8 @@
 #include <QtCore/QTextStream>
 #include <QtCore/QTimer>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QCalendarWidget>
+#include <QtWidgets/QDateEdit>
 
 #include <csignal>
 
