@@ -1,6 +1,6 @@
 ---
 name: harr
-description: Harr installation and diagnostics only: managed component versions, MCP services, agent policy, Git/Kubernetes transports, secrets, and repair. Do not load for normal repository investigation; the compact Harr routing block in global AGENTS.md already defines tool order.
+description: Harr installation and diagnostics only: managed component versions, MCP services, agent policy, Git/Kubernetes transports, executor bridge, secrets, and repair. Do not load for normal repository investigation; the compact Harr routing block in global AGENTS.md already defines tool order.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -37,6 +37,10 @@ harr secret set grafana
 LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
 
 Kubernetes is intentionally not an MCP component. `harr kube configure` captures the user's working kubectl configuration into Harr-owned private state, and `harr kubectl ...` executes the real kubectl with that managed config so isolated agent hosts do not need direct access to the original kubeconfig. Load `references/kubernetes.md` only for Kubernetes bridge setup/diagnostics.
+
+<!-- harr-mcp:executor:start -->
+The External Executor is optional. When selected, the generated global policy defines the explicit `@builder` planner→executor workflow and exposes `executor::*` only behind LeanCTX. Its first backend is a separate resumable Codex CLI session using Luna/low by default. Load `references/executor.md` when diagnosing, configuring, or auditing this bridge; normal delegation should follow the compact global policy without loading the reference into the planner context.
+<!-- harr-mcp:executor:end -->
 
 ## Host Git transport
 

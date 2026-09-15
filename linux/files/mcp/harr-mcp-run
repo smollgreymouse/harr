@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
+readonly COMMON_DIR="${HARR_COMMON_DIR:-${HOME}/.local/libexec/harr/common}"
+readonly MANAGER="${HARR_MCP_MANAGER:-${COMMON_DIR}/mcp/manager.py}"
 readonly RUNTIME_ENV="${HARR_RUNTIME_ENV:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/runtime.env}"
 readonly EFFECTIVE="${HARR_MCP_EFFECTIVE:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/mcp-registry.json}"
 [[ -r "$MANAGER" ]] || { printf 'Harr MCP manager is missing: %s\n' "$MANAGER" >&2; exit 127; }
@@ -18,4 +19,11 @@ if [[ -n "${HARR_NODE_BIN_DIR:-}" ]]; then
 else
   export PATH="${HARR_NPM_BIN_DIR}:${PATH:-/usr/local/bin:/usr/bin:/bin}"
 fi
+
+if [[ "${1:-}" == "executor" ]]; then
+  readonly EXECUTOR_SERVER="${COMMON_DIR}/executor/mcp_server.py"
+  [[ -r "$EXECUTOR_SERVER" ]] || { printf 'Harr executor MCP server is missing: %s\n' "$EXECUTOR_SERVER" >&2; exit 127; }
+  exec python3 "$EXECUTOR_SERVER"
+fi
+
 exec python3 "$MANAGER" --registry "$EFFECTIVE" run "$@"

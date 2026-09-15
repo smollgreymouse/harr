@@ -13,7 +13,8 @@ if ($Arguments.Count -lt 1) { throw 'usage: harr-mcp-run [-Log] <name>' }
 $HarrRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\..'))
 $UserHome = if ($env:HARR_HOME) { $env:HARR_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $ConfigHome = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $UserHome '.config' }
-$Manager = Join-Path $HarrRoot 'libexec\common\mcp\manager.py'
+$CommonDir = Join-Path $HarrRoot 'libexec\common'
+$Manager = Join-Path $CommonDir 'mcp\manager.py'
 $Effective = Join-Path $ConfigHome 'harr\mcp-registry.json'
 $NpmBin = Join-Path $HarrRoot 'share\npm\node_modules\.bin'
 $env:HARR_NPM_BIN_DIR = $NpmBin
@@ -29,6 +30,21 @@ if (-not $python) {
     if ($python) { $prefix = @('-3') }
 }
 if (-not $python) { throw 'Python 3 is required by the Harr MCP runner' }
+
+if ($name -eq 'executor') {
+    $server = Join-Path $CommonDir 'executor\mcp_server.py'
+    if (-not (Test-Path -LiteralPath $server)) { throw "Harr executor MCP server is missing: $server" }
+    if ($Log) {
+        $logDir = Join-Path $HarrRoot 'logs'
+        $logFile = Join-Path $logDir "$name.log"
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        "[$(Get-Date -Format o)] starting MCP $name" | Out-File -FilePath $logFile -Append -Encoding utf8
+        & $python.Source @prefix $server *>> $logFile
+    } else {
+        & $python.Source @prefix $server
+    }
+    exit $LASTEXITCODE
+}
 
 if ($Log) {
     $logDir = Join-Path $HarrRoot 'logs'
