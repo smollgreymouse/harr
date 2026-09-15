@@ -7,6 +7,9 @@ BIN=${HARR_CODEX_SCHEDULER_BIN:-}
 if [[ -z "$BIN" && -x "$DIR/../build/harr-codex-scheduler" ]]; then
   BIN="$DIR/../build/harr-codex-scheduler"
 fi
+if [[ -z "$BIN" && -x "$DIR/../harr-codex-scheduler" ]]; then
+  BIN="$DIR/../harr-codex-scheduler"
+fi
 if [[ -z "$BIN" ]]; then
   BIN=$(command -v harr-codex-scheduler || true)
 fi
