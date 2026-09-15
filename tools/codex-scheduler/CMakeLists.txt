@@ -9,7 +9,18 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
 
 add_executable(harr-codex-scheduler
     src/main.cpp
+    src/Common.cpp
+    src/TaskStore.cpp
+    src/CodexService.cpp
+    src/ScheduleCore.cpp
+    src/JobRunner.cpp
+    src/Widgets.cpp
+    src/TaskPage.cpp
+    src/QuickSchedule.cpp
+    src/MainWindow.cpp
 )
+
+target_include_directories(harr-codex-scheduler PRIVATE src)
 
 target_link_libraries(harr-codex-scheduler PRIVATE
     Qt6::Core
@@ -18,7 +29,9 @@ target_link_libraries(harr-codex-scheduler PRIVATE
 )
 
 target_compile_options(harr-codex-scheduler PRIVATE
-    -Wall -Wextra -Wpedantic
+    -Wall
+    -Wextra
+    -Wpedantic
 )
 
 install(TARGETS harr-codex-scheduler RUNTIME DESTINATION bin)
