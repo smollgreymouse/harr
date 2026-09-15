@@ -80,18 +80,21 @@ assert ab.rollout_usage(rollout_lines)["cached_input_tokens"] == 800
 assert ab.rollout_model(rollout_lines) == ("gpt-5.6-luna", "low")
 
 prompt = ab.native_initial_prompt("# HARR EXECUTOR CONTRACT v1", "gpt-5.6-luna", "low")
-assert 'fork_turns: "none"' in prompt
-assert "model: gpt-5.6-luna" in prompt
-assert "reasoning_effort: low" in prompt
-assert "Do not inspect repository files" in prompt
+assert 'fork_turns="none"' in prompt
+assert "model=gpt-5.6-luna" in prompt
+assert "reasoning_effort=low" in prompt
+assert "Do not inspect/edit/build/test" in prompt
+assert "Terminal response JSON Schema (mandatory)" in prompt
+assert '"required":["protocol","state"' in prompt
 
 followup = ab.native_followup_prompt("Decision: use API A")
-assert "Do not spawn another child" in followup
+assert "Do not inspect/edit/build/test" in followup
+assert "spawn another child" in followup
 assert "Decision: use API A" in followup
 
 cmp = ab.comparison(
-    {"child_usage": ab.normalize_usage({"input_tokens": 1000, "cached_input_tokens": 600, "output_tokens": 50})},
-    {"executor_usage": ab.normalize_usage({"input_tokens": 800, "cached_input_tokens": 500, "output_tokens": 60})},
+    {"child_usage": ab.usage({"input_tokens": 1000, "cached_input_tokens": 600, "output_tokens": 50})},
+    {"executor_usage": ab.usage({"input_tokens": 800, "cached_input_tokens": 500, "output_tokens": 60})},
 )
 assert cmp["input_tokens"]["delta_bridge_minus_native"] == -200
 assert cmp["uncached_input_tokens_derived"]["native"] == 400
