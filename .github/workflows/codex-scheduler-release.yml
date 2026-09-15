@@ -53,6 +53,7 @@ jobs:
           python3 tools/codex-scheduler/tests/test_task_store.py
           python3 tools/codex-scheduler/tests/test_core.py
           python3 tools/codex-scheduler/tests/test_gui_smoke.py
+          python3 tools/codex-scheduler/tests/test_tray_workflow.py
           python3 tools/codex-scheduler/tests/test_main_shutdown.py
 
       - name: Build release artifacts
