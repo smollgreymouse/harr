@@ -48,6 +48,11 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           HARR_CODEX_THEME: dark
         run: python3 tools/codex-scheduler/tests/test_gui_smoke.py
+      - name: Tray workflow
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
+        run: python3 tools/codex-scheduler/tests/test_tray_workflow.py
       - name: GUI signal shutdown
         env:
           QT_QPA_PLATFORM: offscreen
@@ -68,6 +73,7 @@ jobs:
           test -x /usr/bin/luna
           test -f /usr/share/applications/harr-codex-scheduler.desktop
           test -f /usr/lib/harr-codex-scheduler/app/main.py
+          test -f /usr/lib/harr-codex-scheduler/app/tray_workflow.py
           python3 - <<'PY'
           from pathlib import Path
           root = Path('/usr/lib/harr-codex-scheduler/app')
