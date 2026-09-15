@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
 import session_selector as selector_module
@@ -38,7 +39,7 @@ def main() -> int:
     assert combo.currentText() == "Implement worker pool"
     assert "Session ID: 01-known" in combo.toolTip()
     assert "01-known" not in combo.itemText(0)
-    assert "Session ID: 01-known" in str(combo.itemData(0, combo.ItemDataRole.ToolTipRole) if hasattr(combo, "ItemDataRole") else combo.itemData(0, 3))
+    assert "Session ID: 01-known" in str(combo.itemData(0, Qt.ItemDataRole.ToolTipRole))
 
     combo.set_session_id("02-second")
     assert combo.session_id() == "02-second"
