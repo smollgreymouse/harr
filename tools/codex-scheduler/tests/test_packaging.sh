@@ -27,6 +27,7 @@ for path in \
   usr/bin/luna \
   usr/lib/harr-codex-scheduler/app/main.py \
   usr/lib/harr-codex-scheduler/app/session_selector.py \
+  usr/lib/harr-codex-scheduler/app/tray_workflow.py \
   usr/share/applications/harr-codex-scheduler.desktop; do
   [[ -e "$TMP/root/$path" ]] || { echo "missing package path: $path" >&2; exit 1; }
 done
@@ -40,6 +41,7 @@ python3 -m py_compile "$TMP/root/usr/lib/harr-codex-scheduler/app/"*.py
 tar -tzf "$TGZ" > "$TMP/tar-list.txt"
 grep -qx "harr-codex-scheduler-${VERSION}-linux/harr-codex-scheduler" "$TMP/tar-list.txt"
 grep -qx "harr-codex-scheduler-${VERSION}-linux/app/main.py" "$TMP/tar-list.txt"
+grep -qx "harr-codex-scheduler-${VERSION}-linux/app/tray_workflow.py" "$TMP/tar-list.txt"
 grep -qx "harr-codex-scheduler-${VERSION}-linux/bin/terra" "$TMP/tar-list.txt"
 
 printf 'packaging tests passed: %s and %s\n' "$(basename "$DEB")" "$(basename "$TGZ")"
