@@ -1,25 +1,56 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
-for name in sol terra luna codex-schedule codex-scheduler-ui; do
-  ln -sfn "$ROOT/bin/$name" "$HOME/.local/bin/$name"
-done
-sed "s|@EXEC@|$HOME/.local/bin/codex-scheduler-ui|g" "$ROOT/desktop/harr-codex-scheduler.desktop.in" > "$HOME/.local/share/applications/harr-codex-scheduler.desktop"
-if command -v update-desktop-database >/dev/null 2>&1; then
-  update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+VERSION=$(tr -d '[:space:]' < "$ROOT/VERSION")
+DEB="$ROOT/dist/harr-codex-scheduler_${VERSION}_all.deb"
+
+if [[ ! -r /etc/os-release ]]; then
+  echo 'install-ubuntu: /etc/os-release not found; use the portable tar.gz bundle instead' >&2
+  exit 2
 fi
-cat <<'MSG'
-Installed launchers in ~/.local/bin and desktop entry in ~/.local/share/applications.
-Required runtime packages on Ubuntu 24.04+:
-  sudo apt install at python3-pyqt6
-  sudo systemctl enable --now atd
+# shellcheck disable=SC1091
+. /etc/os-release
+case "${ID:-}" in
+  ubuntu|debian) ;;
+  *)
+    if [[ " ${ID_LIKE:-} " != *" debian "* ]]; then
+      echo "install-ubuntu: unsupported distro '${ID:-unknown}'; use the portable tar.gz bundle instead" >&2
+      exit 2
+    fi
+    ;;
+esac
 
-On Ubuntu releases that provide it (including 25.10), qgnomeplatform-qt6 is an
-optional GNOME/Adwaita integration improvement:
-  sudo apt install qgnomeplatform-qt6
+for tool in dpkg-deb apt-get; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "install-ubuntu: required tool not found: $tool" >&2
+    exit 127
+  }
+done
 
-It is not required for dark mode. The app normalizes all dark palette surface
-roles itself, so editors, trees, dropdowns and dialogs cannot remain white in
-a half-dark Qt palette.
-MSG
+"$ROOT/packaging/build-release.sh" "$VERSION"
+
+printf '\nInstalling %s with apt...\n' "$DEB"
+sudo apt-get install -y "$DEB"
+
+cat <<EOF
+
+Harr Codex Scheduler $VERSION is installed.
+
+GUI:
+  harr-codex-scheduler
+  or open "Harr Codex Scheduler" from the application menu.
+
+CLI selectors:
+  sol   HH:MM SESSION_ID "prompt"
+  terra HH:MM SESSION_ID "prompt"
+  luna  HH:MM SESSION_ID "prompt"
+
+The OpenAI Codex CLI must be installed separately and available as 'codex'.
+
+Uninstall application files:
+  sudo apt remove harr-codex-scheduler
+
+User task history is intentionally kept under:
+  \${XDG_STATE_HOME:-\$HOME/.local/state}/harr-codex-scheduler
+EOF
