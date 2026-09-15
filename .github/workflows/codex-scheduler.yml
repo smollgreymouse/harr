@@ -68,7 +68,14 @@ jobs:
           test -x /usr/bin/luna
           test -f /usr/share/applications/harr-codex-scheduler.desktop
           test -f /usr/lib/harr-codex-scheduler/app/main.py
-          python3 -m py_compile /usr/lib/harr-codex-scheduler/app/*.py
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/usr/lib/harr-codex-scheduler/app')
+          files = sorted(root.glob('*.py'))
+          assert files, 'installed app contains no Python files'
+          for path in files:
+              compile(path.read_text(encoding='utf-8'), str(path), 'exec')
+          PY
           set +e
           output=$(/usr/bin/terra 2>&1)
           rc=$?
