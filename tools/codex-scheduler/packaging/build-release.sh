@@ -26,6 +26,7 @@ APP_FILES=(
   system_theme.py
   task_page_native.py
   task_store.py
+  tray_workflow.py
   ui_chrome.py
   workspace.py
 )
