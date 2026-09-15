@@ -22,6 +22,7 @@ class SessionComboBox;
 class TaskStore;
 
 class TaskPage : public QWidget {
+    Q_OBJECT
 public:
     TaskPage(TaskStore *store, const QJsonObject &task,
              std::function<void(const QString &)> changed,
