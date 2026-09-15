@@ -76,3 +76,11 @@ jobs:
           test "$rc" -eq 2
           grep -q 'Usage: terra' <<<"$output"
           dpkg-query -W -f='${db:Status-Status}\n' harr-codex-scheduler | grep -qx installed
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: harr-codex-scheduler-pr
+          path: |
+            tools/codex-scheduler/dist/*.deb
+            tools/codex-scheduler/dist/*.tar.gz
+          if-no-files-found: error
