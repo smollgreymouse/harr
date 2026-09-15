@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          deb=$(printf '%s\n' tools/codex-scheduler/dist/harr-codex-scheduler_*_all.deb)
+          deb=$(realpath tools/codex-scheduler/dist/harr-codex-scheduler_*_all.deb)
           sudo apt-get install -y "$deb"
           test -x /usr/bin/harr-codex-scheduler
           test -x /usr/bin/codex-schedule
