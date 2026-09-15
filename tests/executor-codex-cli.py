@@ -67,7 +67,7 @@ else:
         "blocker": None,
     }
 last.write_text(json.dumps(packet), encoding="utf-8")
-print(json.dumps({"type": "turn.completed"}))
+print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 120, "cached_input_tokens": 20, "cache_write_input_tokens": 0, "output_tokens": 30, "reasoning_output_tokens": 7}}))
 ''',
         encoding="utf-8",
     )
@@ -91,6 +91,8 @@ with tempfile.TemporaryDirectory() as tmp_raw:
         assert first.session_id == "0199-test-session"
         assert first.packet["state"] == "BLOCKED"
         assert first.packet["blocker"]["class"] == "UNSPECIFIED_DESIGN_DECISION"
+        assert first.usage["input_tokens"] == 120
+        assert first.usage["reasoning_output_tokens"] == 7
         second = adapter.resume(repo_root=repo, session_id=first.session_id, resolution_delta="# HARR PLANNER RESOLUTION v1\nDecision: use API A")
         assert second.session_id == first.session_id
         assert second.packet["state"] == "DONE"
