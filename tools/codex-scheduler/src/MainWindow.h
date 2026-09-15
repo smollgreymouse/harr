@@ -2,8 +2,11 @@
 
 #include <QtCore/QHash>
 #include <QtCore/QJsonObject>
+#include <QtCore/QSignalBlocker>
 #include <QtCore/QVector>
+#include <QtWidgets/QFrame>
 #include <QtWidgets/QMainWindow>
+#include <QtWidgets/QTabBar>
 
 #include <memory>
 
