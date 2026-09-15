@@ -16,14 +16,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install build and GUI runtime
+
+      - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build qt6-base-dev python3-pyqt6
-      - name: Build C++ scheduler
-        run: |
-          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build tools/codex-scheduler/build
+          sudo apt-get install -y cmake ninja-build qt6-base-dev at git
+
       - name: Shell syntax
         run: |
           bash -n tools/codex-scheduler/bin/*
@@ -31,53 +29,48 @@ jobs:
           bash -n tools/codex-scheduler/packaging/build-release.sh
           bash -n tools/codex-scheduler/tests/test_cli.sh
           bash -n tools/codex-scheduler/tests/test_packaging.sh
-      - name: Python syntax
-        run: python3 -m py_compile tools/codex-scheduler/app/*.py tools/codex-scheduler/tests/*.py
-      - name: Session metadata API contract
-        run: python3 tools/codex-scheduler/tests/test_session_cwd.py
-      - name: Session selector titles
+
+      - name: Build C++ scheduler
+        run: |
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/codex-scheduler/build
+
+      - name: Native core and Qt smoke test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python3 tools/codex-scheduler/tests/test_session_selector.py
-      - name: Persistent task lifecycle
-        run: python3 tools/codex-scheduler/tests/test_task_store.py
-      - name: CLI scheduling contract
+          HARR_CODEX_THEME: dark
+        run: tools/codex-scheduler/build/harr-codex-scheduler self-test
+
+      - name: Native CLI and job runner contract
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
         run: bash tools/codex-scheduler/tests/test_cli.sh
-      - name: JSONL and answer contract
-        run: python3 tools/codex-scheduler/tests/test_core.py
-      - name: Packaging contract
+
+      - name: Native packaging contract
         run: bash tools/codex-scheduler/tests/test_packaging.sh
-      - name: Qt GUI smoke test
-        env:
-          QT_QPA_PLATFORM: offscreen
-          HARR_CODEX_THEME: dark
-        run: python3 tools/codex-scheduler/tests/test_gui_smoke.py
-      - name: Tray workflow
-        env:
-          QT_QPA_PLATFORM: offscreen
-          HARR_CODEX_THEME: dark
-        run: python3 tools/codex-scheduler/tests/test_tray_workflow.py
-      - name: GUI signal shutdown
-        env:
-          QT_QPA_PLATFORM: offscreen
-          HARR_CODEX_THEME: dark
-        run: python3 tools/codex-scheduler/tests/test_main_shutdown.py
+
       - name: Build installable package
         run: bash tools/codex-scheduler/packaging/build-release.sh
+
       - name: Install deb package
         shell: bash
         run: |
           set -euo pipefail
-          deb=$(realpath tools/codex-scheduler/dist/harr-codex-scheduler_*_all.deb)
+          deb=$(realpath tools/codex-scheduler/dist/harr-codex-scheduler_*_*.deb)
           sudo apt-get install -y "$deb"
           test -x /usr/bin/harr-codex-scheduler
+          test -x /usr/bin/codex-scheduler-ui
           test -x /usr/bin/codex-schedule
           test -x /usr/bin/sol
           test -x /usr/bin/terra
           test -x /usr/bin/luna
           test -f /usr/share/applications/harr-codex-scheduler.desktop
-          test -f /usr/lib/harr-codex-scheduler/app/main.py
-          test -f /usr/lib/harr-codex-scheduler/app/tray_workflow.py
+          if find /usr/bin /usr/share/doc/harr-codex-scheduler -maxdepth 2 -type f \( -name '*.py' -o -name '*.pyc' \) | grep -q .; then
+            echo 'Python leaked into installed native package' >&2
+            exit 1
+          fi
+          QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark /usr/bin/harr-codex-scheduler self-test
           set +e
           output=$(/usr/bin/terra 2>&1)
           rc=$?
@@ -85,6 +78,7 @@ jobs:
           test "$rc" -eq 2
           grep -q 'Usage: terra' <<<"$output"
           dpkg-query -W -f='${db:Status-Status}\n' harr-codex-scheduler | grep -qx installed
+
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
