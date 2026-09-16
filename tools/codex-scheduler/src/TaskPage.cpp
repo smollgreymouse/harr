@@ -14,7 +14,6 @@
 #include <QtCore/QTimer>
 #include <QtGui/QAction>
 #include <QtGui/QClipboard>
-#include <QtGui/QTextCursor>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QFileDialog>
@@ -25,11 +24,57 @@
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QScrollArea>
+#include <QtWidgets/QScrollBar>
+#include <QtWidgets/QSizePolicy>
 #include <QtWidgets/QTextEdit>
 #include <QtWidgets/QToolButton>
 #include <QtWidgets/QVBoxLayout>
 
 namespace harr {
+
+class MessageBubble final : public QFrame {
+public:
+    MessageBubble(const QString &role, const QString &value, QWidget *parent = nullptr)
+        : QFrame(parent)
+    {
+        setObjectName("messageBubble");
+        setFrameShape(QFrame::NoFrame);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+
+        auto *layout = new QVBoxLayout(this);
+        layout->setContentsMargins(12, 9, 12, 9);
+        auto *title = new QLabel(role == "user" ? "You" : "Codex", this);
+        QFont titleFont = title->font();
+        titleFont.setWeight(QFont::DemiBold);
+        title->setFont(titleFont);
+        m_body = new QLabel(value, this);
+        m_body->setWordWrap(true);
+        m_body->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        layout->addWidget(title);
+        layout->addWidget(m_body);
+
+        QPalette palette = this->palette();
+        if (role == "user") {
+            palette.setColor(QPalette::Window, palette.color(QPalette::Highlight));
+            palette.setColor(QPalette::WindowText, palette.color(QPalette::HighlightedText));
+        } else {
+            palette.setColor(QPalette::Window, palette.color(QPalette::AlternateBase));
+            palette.setColor(QPalette::WindowText, palette.color(QPalette::Text));
+        }
+        setPalette(palette);
+        setAutoFillBackground(true);
+    }
+
+    void appendText(const QString &value)
+    {
+        const QString current = m_body->text();
+        m_body->setText(current.isEmpty() ? value : current + "\n\n" + value);
+    }
+
+private:
+    QLabel *m_body{};
+};
 
 TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
                    std::function<void(const QString &)> changed,
@@ -66,6 +111,7 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     speed->setToolTip("Speed");
 
     status = new QLabel(this);
+    status->setObjectName("taskStatus");
     top->addWidget(model);
     top->addWidget(reasoning);
     top->addWidget(speed);
@@ -111,10 +157,13 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     actions->addWidget(primary);
     root->addLayout(actions);
 
-    transcript = new QTextEdit(this);
-    transcript->setReadOnly(true);
-    transcript->setFrameShape(QFrame::NoFrame);
-    transcript->setPlaceholderText("Task output will appear here");
+    transcript = new QScrollArea(this);
+    transcript->setWidgetResizable(true);
+    m_transcriptHost = new QWidget(transcript);
+    m_transcriptLayout = new QVBoxLayout(m_transcriptHost);
+    m_transcriptLayout->setAlignment(Qt::AlignTop);
+    m_transcriptLayout->setContentsMargins(0, 0, 0, 0);
+    transcript->setWidget(m_transcriptHost);
     root->addWidget(transcript, 1);
 
     loadTask(task);
@@ -422,10 +471,16 @@ void TaskPage::cancel()
 
 void TaskPage::rebuildTranscript(const QJsonObject &task)
 {
-    QString text;
+    while (m_transcriptLayout->count() > 0) {
+        auto *item = m_transcriptLayout->takeAt(0);
+        if (auto *widget = item->widget()) widget->deleteLater();
+        delete item;
+    }
+
+    MessageBubble *assistant = nullptr;
     const QString taskPrompt = task.value("prompt").toString().trimmed();
     if (task.value("status").toString() != "draft" && !taskPrompt.isEmpty()) {
-        text += "You\n" + taskPrompt + "\n\n";
+        m_transcriptLayout->addWidget(new MessageBubble("user", taskPrompt, m_transcriptHost));
     }
 
     const QString logPath = task.value("log").toString();
@@ -435,17 +490,25 @@ void TaskPage::rebuildTranscript(const QJsonObject &task)
             while (!file.atEnd()) {
                 const QByteArray line = file.readLine();
                 for (const auto &event : parseCodexJsonLine(line)) {
-                    if (event.kind == "assistant") text += "Codex\n" + event.text + "\n\n";
-                    else if (event.kind == "error") text += "Error\n" + event.text + "\n\n";
+                    if (event.kind == "assistant") {
+                        if (!assistant) {
+                            assistant = new MessageBubble("assistant", event.text, m_transcriptHost);
+                            m_transcriptLayout->addWidget(assistant);
+                        } else {
+                            assistant->appendText(event.text);
+                        }
+                    } else if (event.kind == "error") {
+                        m_transcriptLayout->addWidget(new MessageBubble("assistant", event.text, m_transcriptHost));
+                    }
                 }
             }
             m_lastLogSize = file.size();
         }
     }
-    transcript->setPlainText(text.trimmed());
-    QTextCursor cursor = transcript->textCursor();
-    cursor.movePosition(QTextCursor::End);
-    transcript->setTextCursor(cursor);
+    m_transcriptLayout->addStretch(1);
+    QTimer::singleShot(0, this, [this] {
+        transcript->verticalScrollBar()->setValue(transcript->verticalScrollBar()->maximum());
+    });
 }
 
 void TaskPage::poll()

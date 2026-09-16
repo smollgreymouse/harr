@@ -83,7 +83,7 @@ The app uses Qt's normal platform integration and standard widgets. A coherent a
 Build dependencies on Ubuntu/Debian:
 
 ```bash
-sudo apt install cmake ninja-build qt6-base-dev at git
+sudo apt install cmake qt6-base-dev at git
 ```
 
 Build and run directly from the checkout:
@@ -91,8 +91,7 @@ Build and run directly from the checkout:
 ```bash
 cmake -S tools/codex-scheduler \
       -B tools/codex-scheduler/build \
-      -G Ninja \
-      -DCMAKE_BUILD_TYPE=Release
+      -DCMAKE_BUILD_TYPE=Debug
 cmake --build tools/codex-scheduler/build
 
 tools/codex-scheduler/build/harr-codex-scheduler
@@ -124,7 +123,10 @@ OpenAI Codex CLI is not bundled and must be installed separately as `codex`.
 ### Build release artifacts
 
 ```bash
-bash tools/codex-scheduler/packaging/build-release.sh
+cmake -S tools/codex-scheduler \
+      -B tools/codex-scheduler/build-release \
+      -DCMAKE_BUILD_TYPE=Release
+cmake --build tools/codex-scheduler/build-release --target package-release
 ```
 
 With version `0.2.0` on amd64 this produces:

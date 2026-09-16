@@ -40,6 +40,9 @@ int runSelfTest()
     harr::ScheduleTimeDialog picker(harr::defaultRunTime());
     if (!picker.date->calendarWidget() || picker.date->calendarWidget()->firstDayOfWeek() != Qt::Monday) return 6;
 
+    harr::MainWindow window(&store);
+    window.hide();
+
     QTextStream(stdout) << "C++ scheduler self-test passed\n";
     return 0;
 }

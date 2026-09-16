@@ -3,6 +3,7 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QJsonObject>
 #include <QtCore/QVector>
+#include <QtCore/QSize>
 #include <QtWidgets/QComboBox>
 #include <QtWidgets/QDialog>
 #include <QtWidgets/QTabBar>
@@ -76,6 +77,8 @@ protected:
     void tabInserted(int index) override;
     void tabRemoved(int index) override;
     void tabLayoutChange() override;
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
 private:
     void positionPlus();

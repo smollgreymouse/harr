@@ -6,7 +6,12 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 VERSION=9.9.9
 ARCH=$(dpkg --print-architecture)
-OUT_DIR="$TMP/dist" bash "$ROOT/packaging/build-release.sh" "$VERSION" >/dev/null
+BUILD="$TMP/build"
+cmake -S "$ROOT" -B "$BUILD" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSCHEDULER_VERSION="$VERSION" \
+  -DSCHEDULER_PACKAGE_OUTPUT_DIR="$TMP/dist" >/dev/null
+cmake --build "$BUILD" --target package-release >/dev/null
 
 DEB="$TMP/dist/harr-codex-scheduler_${VERSION}_${ARCH}.deb"
 TGZ="$TMP/dist/harr-codex-scheduler-${VERSION}-linux-${ARCH}.tar.gz"

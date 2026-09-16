@@ -12,9 +12,11 @@ class QComboBox;
 class QLabel;
 class QMenu;
 class QPushButton;
+class QScrollArea;
 class QTextEdit;
 class QTimer;
 class QToolButton;
+class QVBoxLayout;
 
 namespace harr {
 
@@ -76,7 +78,7 @@ public:
     QTextEdit *prompt{};
     QPushButton *saveButton{};
     QPushButton *primary{};
-    QTextEdit *transcript{};
+    QScrollArea *transcript{};
     QTimer *pollTimer{};
 
 private:
@@ -85,6 +87,8 @@ private:
     QAction *m_projectPathAction{};
     QAction *m_copyProjectAction{};
     QAction *m_refreshProjectAction{};
+    QWidget *m_transcriptHost{};
+    QVBoxLayout *m_transcriptLayout{};
 };
 
 } // namespace harr

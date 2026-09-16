@@ -3,6 +3,7 @@
 
 #include <QtCore/QFileInfo>
 #include <QtCore/QSignalBlocker>
+#include <QtCore/QTimer>
 #include <QtGui/QResizeEvent>
 #include <QtWidgets/QAbstractSpinBox>
 #include <QtWidgets/QCalendarWidget>
@@ -266,14 +267,17 @@ PlusTabBar::PlusTabBar(QWidget *parent) : QTabBar(parent)
 {
     setMovable(true);
     setExpanding(false);
+    setDrawBase(false);
+    setDocumentMode(true);
     setFixedHeight(34);
     plusButton = new QToolButton(this);
+    plusButton->setProperty("chromeRole", "tabPlus");
     plusButton->setText("+");
     plusButton->setToolTip("New task");
     plusButton->setAutoRaise(true);
-    plusButton->setFixedSize(30, 30);
+    plusButton->setFixedSize(28, 28);
     connect(plusButton, &QToolButton::clicked, this, [this] { if (onPlus) onPlus(); });
-    positionPlus();
+    QTimer::singleShot(0, this, [this] { positionPlus(); });
 }
 
 void PlusTabBar::resizeEvent(QResizeEvent *event)
@@ -285,27 +289,41 @@ void PlusTabBar::resizeEvent(QResizeEvent *event)
 void PlusTabBar::tabInserted(int index)
 {
     QTabBar::tabInserted(index);
-    positionPlus();
+    QTimer::singleShot(0, this, [this] { positionPlus(); });
 }
 
 void PlusTabBar::tabRemoved(int index)
 {
     QTabBar::tabRemoved(index);
-    positionPlus();
+    QTimer::singleShot(0, this, [this] { positionPlus(); });
 }
 
 void PlusTabBar::tabLayoutChange()
 {
     QTabBar::tabLayoutChange();
-    positionPlus();
+    QTimer::singleShot(0, this, [this] { positionPlus(); });
+}
+
+QSize PlusTabBar::sizeHint() const
+{
+    const QSize hint = QTabBar::sizeHint();
+    return {hint.width() + 33, 34};
+}
+
+QSize PlusTabBar::minimumSizeHint() const
+{
+    const QSize hint = QTabBar::minimumSizeHint();
+    return {hint.width() + 33, 34};
 }
 
 void PlusTabBar::positionPlus()
 {
-    int x = 4;
-    if (count() > 0) x = tabRect(count() - 1).right() + 5;
-    plusButton->move(x, 2);
+    // QTabBar can relayout synchronously while plusButton is being created.
+    if (!plusButton) return;
+    const int x = count() > 0 ? tabRect(count() - 1).right() + 3 : 2;
+    plusButton->move(x, (34 - plusButton->height()) / 2);
     plusButton->raise();
+    plusButton->show();
 }
 
 } // namespace harr

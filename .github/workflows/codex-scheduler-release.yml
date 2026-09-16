@@ -40,11 +40,11 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build qt6-base-dev at git
+          sudo apt-get install -y cmake qt6-base-dev at git
 
       - name: Build native scheduler
         run: |
-          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -DCMAKE_BUILD_TYPE=Release
           cmake --build tools/codex-scheduler/build
 
       - name: Run native scheduler tests
@@ -57,7 +57,7 @@ jobs:
           bash tools/codex-scheduler/tests/test_packaging.sh
 
       - name: Build release artifacts
-        run: bash tools/codex-scheduler/packaging/build-release.sh '${{ steps.version.outputs.version }}'
+        run: cmake --build tools/codex-scheduler/build --target package-release
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

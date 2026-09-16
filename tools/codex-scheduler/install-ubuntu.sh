@@ -29,11 +29,16 @@ done
 
 printf 'Installing C++ build dependencies...\n'
 sudo apt-get update
-sudo apt-get install -y cmake ninja-build qt6-base-dev at git
+sudo apt-get install -y cmake qt6-base-dev at git
 
 ARCH=$(dpkg --print-architecture)
 DEB="$ROOT/dist/harr-codex-scheduler_${VERSION}_${ARCH}.deb"
-bash "$ROOT/packaging/build-release.sh" "$VERSION"
+BUILD="$ROOT/build"
+cmake -S "$ROOT" -B "$BUILD" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSCHEDULER_VERSION="$VERSION" \
+  -DSCHEDULER_PACKAGE_OUTPUT_DIR="$ROOT/dist"
+cmake --build "$BUILD" --target package-release
 
 printf '\nInstalling %s with apt...\n' "$DEB"
 sudo apt-get install -y "$DEB"

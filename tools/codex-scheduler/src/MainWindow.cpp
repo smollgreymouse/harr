@@ -8,6 +8,7 @@
 
 #include <QtCore/QFileSystemWatcher>
 #include <QtCore/QFileInfo>
+#include <QtCore/QPointer>
 #include <QtCore/QJsonArray>
 #include <QtCore/QTimer>
 #include <QtGui/QAction>
@@ -24,6 +25,7 @@
 #include <QtWidgets/QSystemTrayIcon>
 #include <QtWidgets/QTabWidget>
 #include <QtWidgets/QToolButton>
+#include <QtWidgets/QStyle>
 #include <QtWidgets/QTreeWidget>
 #include <QtWidgets/QTreeWidgetItem>
 #include <QtWidgets/QVBoxLayout>
@@ -37,6 +39,29 @@ class WorkspaceTabWidget final : public QTabWidget {
 public:
     using QTabWidget::QTabWidget;
     void installTabBar(QTabBar *bar) { setTabBar(bar); }
+};
+
+class TabCloseButton final : public QToolButton {
+public:
+    TabCloseButton(QTabWidget *tabs, QWidget *page)
+        : QToolButton(tabs->tabBar()), m_tabs(tabs), m_page(page)
+    {
+        setProperty("chromeRole", "tabClose");
+        setAutoRaise(true);
+        setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+        setIconSize({10, 10});
+        setFixedSize(18, 18);
+        setToolTip("Close tab");
+        connect(this, &QToolButton::clicked, tabs, [this] {
+            if (!m_tabs || !m_page) return;
+            const int index = m_tabs->indexOf(m_page);
+            if (index >= 0) emit m_tabs->tabCloseRequested(index);
+        });
+    }
+
+private:
+    QPointer<QTabWidget> m_tabs;
+    QPointer<QWidget> m_page;
 };
 
 MainWindow::MainWindow(TaskStore *store)
@@ -164,6 +189,7 @@ void MainWindow::buildWorkspace()
 
     m_sidebarToggle = new QToolButton(m_tabs);
     m_sidebarToggle->setText("☰");
+    m_sidebarToggle->setProperty("chromeRole", "sidebarToggle");
     m_sidebarToggle->setAutoRaise(true);
     m_sidebarToggle->setToolTip("Toggle tasks sidebar");
     m_sidebarToggle->setCheckable(true);
@@ -195,10 +221,13 @@ void MainWindow::setupTray()
     m_tray->setToolTip(APP_NAME);
     m_trayMenu = new QMenu(this);
     m_tray->setContextMenu(m_trayMenu);
-    connect(m_trayMenu, &QMenu::aboutToShow, this, [this] { rebuildTrayMenu(); });
+    connect(m_trayMenu, &QMenu::aboutToHide, this, [this] {
+        QTimer::singleShot(0, this, [this] { if (m_trayMenu) rebuildTrayMenu(); });
+    });
     connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) restore();
     });
+    rebuildTrayMenu();
     if (QSystemTrayIcon::isSystemTrayAvailable()) m_tray->show();
 }
 
@@ -251,6 +280,7 @@ void MainWindow::openTask(const QString &id, bool makeCurrent)
     m_pages.insert(id, page);
     const int index = m_tabs->addTab(page, tabTitle(*task));
     m_tabs->setTabToolTip(index, tabTooltip(*task));
+    m_tabs->tabBar()->setTabButton(index, QTabBar::RightSide, new TabCloseButton(m_tabs, page));
     if (!m_sessions.isEmpty()) page->setSessionChoices(m_sessions, true);
     if (makeCurrent) m_tabs->setCurrentIndex(index);
     updateEmpty();
@@ -533,6 +563,7 @@ void MainWindow::refreshSessions()
     if (error.isEmpty()) m_sidebarStatus->setToolTip(QString("%1 active Codex sessions loaded").arg(m_sessions.size()));
     else m_sidebarStatus->setToolTip(error);
     for (auto *page : m_pages) page->setSessionChoices(m_sessions, true);
+    if (m_trayMenu && !m_trayMenu->isVisible()) rebuildTrayMenu();
 }
 
 void MainWindow::recordAndNotifyStatusChanges(const QVector<QJsonObject> &tasks)
@@ -576,6 +607,7 @@ void MainWindow::refreshAll()
         ++it;
     }
     updateEmpty();
+    if (m_trayMenu && !m_trayMenu->isVisible()) rebuildTrayMenu();
 }
 
 void MainWindow::saveUi()

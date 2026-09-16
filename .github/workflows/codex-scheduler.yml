@@ -20,19 +20,18 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build qt6-base-dev at git
+          sudo apt-get install -y cmake qt6-base-dev at git
 
       - name: Shell syntax
         run: |
           bash -n tools/codex-scheduler/bin/*
           bash -n tools/codex-scheduler/install-ubuntu.sh
-          bash -n tools/codex-scheduler/packaging/build-release.sh
           bash -n tools/codex-scheduler/tests/test_cli.sh
           bash -n tools/codex-scheduler/tests/test_packaging.sh
 
       - name: Build C++ scheduler
         run: |
-          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -DCMAKE_BUILD_TYPE=Release
           cmake --build tools/codex-scheduler/build
 
       - name: Native core and Qt smoke test
@@ -51,7 +50,7 @@ jobs:
         run: bash tools/codex-scheduler/tests/test_packaging.sh
 
       - name: Build installable package
-        run: bash tools/codex-scheduler/packaging/build-release.sh
+        run: cmake --build tools/codex-scheduler/build --target package-release
 
       - name: Install deb package
         shell: bash

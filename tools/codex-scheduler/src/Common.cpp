@@ -153,42 +153,141 @@ QVector<TranscriptEvent> parseCodexJsonLine(const QByteArray &raw)
     return {};
 }
 
+namespace {
+
+void setDarkPaletteGroup(QPalette &palette, QPalette::ColorGroup group,
+                         const QColor &window, const QColor &base,
+                         const QColor &alternate, const QColor &button,
+                         const QColor &text, const QColor &muted,
+                         const QColor &highlight)
+{
+    palette.setColor(group, QPalette::Window, window);
+    palette.setColor(group, QPalette::WindowText, text);
+    palette.setColor(group, QPalette::Base, base);
+    palette.setColor(group, QPalette::AlternateBase, alternate);
+    palette.setColor(group, QPalette::ToolTipBase, alternate);
+    palette.setColor(group, QPalette::ToolTipText, text);
+    palette.setColor(group, QPalette::Text, text);
+    palette.setColor(group, QPalette::Button, button);
+    palette.setColor(group, QPalette::ButtonText, text);
+    palette.setColor(group, QPalette::BrightText, Qt::white);
+    palette.setColor(group, QPalette::PlaceholderText, muted);
+    palette.setColor(group, QPalette::Highlight, highlight);
+    palette.setColor(group, QPalette::HighlightedText, Qt::white);
+    palette.setColor(group, QPalette::Light, QColor(76, 77, 81));
+    palette.setColor(group, QPalette::Midlight, QColor(61, 62, 66));
+    palette.setColor(group, QPalette::Mid, QColor(72, 73, 77));
+    palette.setColor(group, QPalette::Dark, QColor(20, 21, 23));
+    palette.setColor(group, QPalette::Shadow, QColor(8, 9, 10));
+    palette.setColor(group, QPalette::Link, highlight.lighter(125));
+    palette.setColor(group, QPalette::LinkVisited, QColor(190, 140, 235));
+}
+
+QPalette completeDarkPalette(const QPalette &source)
+{
+    QPalette palette(source);
+    QColor highlight = source.color(QPalette::Active, QPalette::Highlight);
+    if (!highlight.isValid() || highlight.lightness() < 55) highlight = QColor(53, 132, 228);
+
+    for (auto group : {QPalette::Active, QPalette::Inactive}) {
+        setDarkPaletteGroup(palette, group,
+                            QColor(34, 35, 38), QColor(27, 28, 31),
+                            QColor(42, 43, 47), QColor(47, 48, 52),
+                            QColor(238, 238, 240), QColor(154, 155, 160), highlight);
+    }
+    setDarkPaletteGroup(palette, QPalette::Disabled,
+                        QColor(34, 35, 38), QColor(27, 28, 31),
+                        QColor(42, 43, 47), QColor(39, 40, 43),
+                        QColor(126, 127, 132), QColor(104, 105, 110),
+                        QColor(70, 76, 86));
+    return palette;
+}
+
+} // namespace
+
 void applyTheme(QApplication &app)
 {
-    QString mode = qEnvironmentVariable("HARR_CODEX_THEME").toLower();
+    const QString mode = qEnvironmentVariable("HARR_CODEX_THEME").toLower();
     bool dark = mode == "dark";
     if (mode.isEmpty() || mode == "system") {
         QProcess gsettings;
         gsettings.start("gsettings", {"get", "org.gnome.desktop.interface", "color-scheme"});
-        if (gsettings.waitForFinished(1000)) dark = QString::fromUtf8(gsettings.readAllStandardOutput()).contains("prefer-dark");
+        if (gsettings.waitForFinished(1000)) {
+            const QString scheme = QString::fromUtf8(gsettings.readAllStandardOutput());
+            dark = scheme.contains("prefer-dark");
+        } else {
+            dark = app.palette().color(QPalette::Window).lightness() < 128;
+        }
     }
     if (mode == "light") dark = false;
-    if (dark) {
-        QPalette p = app.palette();
-        for (auto group : {QPalette::Active, QPalette::Inactive}) {
-            p.setColor(group, QPalette::Window, QColor(32,32,32)); p.setColor(group, QPalette::WindowText, QColor(235,235,235));
-            p.setColor(group, QPalette::Base, QColor(24,24,24)); p.setColor(group, QPalette::AlternateBase, QColor(38,38,38));
-            p.setColor(group, QPalette::ToolTipBase, QColor(38,38,38)); p.setColor(group, QPalette::ToolTipText, QColor(235,235,235));
-            p.setColor(group, QPalette::Text, QColor(235,235,235)); p.setColor(group, QPalette::Button, QColor(38,38,38));
-            p.setColor(group, QPalette::ButtonText, QColor(235,235,235)); p.setColor(group, QPalette::Highlight, QColor(66,133,244));
-            p.setColor(group, QPalette::HighlightedText, QColor(255,255,255)); p.setColor(group, QPalette::PlaceholderText, QColor(145,145,145));
-        }
-        p.setColor(QPalette::Disabled, QPalette::Text, QColor(120,120,120));
-        p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(120,120,120));
-        app.setPalette(p);
-    }
+    if (dark) app.setPalette(completeDarkPalette(app.palette()));
+
     app.setStyleSheet(R"(
-QTabWidget::pane { border: 0; }
-QTabBar::tab { min-height: 28px; padding: 3px 10px; border: 0; background: transparent; }
-QTabBar::tab:selected { background: palette(alternate-base); }
-QComboBox[chromeRole="selector"] { border: 1px solid transparent; padding: 3px 22px 3px 7px; min-width: 82px; }
-QComboBox[chromeRole="selector"]:hover, QComboBox[chromeRole="selector"]:focus { border: 1px solid palette(mid); }
-QTreeWidget { border: 0; background: transparent; }
-QTextEdit { border: 1px solid palette(mid); }
-QTextEdit[readOnly="true"] { border: 0; background: transparent; }
-QToolButton { min-width: 26px; min-height: 26px; }
-QPushButton, QLineEdit, QComboBox, QDateEdit { min-height: 28px; }
-#sidebar { border: 0; }
+QWidget#sidebar { border: 0; }
+QSplitter::handle:horizontal { width: 1px; margin: 0; background: palette(mid); }
+
+QPushButton#newTaskButton {
+    text-align: left;
+    border: 1px solid transparent;
+    background: transparent;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 6px;
+}
+QPushButton#newTaskButton:hover { background: palette(alternate-base); border-radius: 4px; }
+QLabel#emptyHint, QLabel#sidebarStatus { color: palette(mid); }
+QLabel#taskStatus { padding: 0 4px; }
+
+QTreeWidget { border: 0; outline: 0; background: transparent; }
+QScrollArea { border: 0; background: transparent; }
+QFrame#messageBubble { border-radius: 7px; }
+
+QTabWidget::pane { border: 0; top: 0; }
+QTabBar { border: 0; min-height: 34px; max-height: 34px; }
+QTabBar::tab {
+    border: 0;
+    background: transparent;
+    min-height: 28px;
+    max-height: 28px;
+    margin-top: 3px;
+    margin-bottom: 3px;
+    padding: 0 6px 0 9px;
+}
+QTabBar::tab:selected, QTabBar::tab:hover { background: palette(alternate-base); border-radius: 5px; }
+
+QComboBox { min-height: 28px; }
+QComboBox[chromeRole="selector"] {
+    border: 1px solid transparent;
+    background: transparent;
+    min-width: 108px;
+    max-width: 108px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0 24px 0 7px;
+}
+QComboBox[chromeRole="selector"]:hover { border: 1px solid palette(mid); background: palette(alternate-base); border-radius: 4px; }
+QComboBox[chromeRole="selector"]:focus { border: 1px solid palette(highlight); border-radius: 4px; }
+
+QLineEdit, QPushButton { min-height: 28px; }
+QToolButton[chromeRole="tabClose"],
+QToolButton[chromeRole="tabPlus"],
+QToolButton[chromeRole="sidebarToggle"] {
+    border: 1px solid transparent;
+    background: transparent;
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    padding: 0;
+}
+QToolButton[chromeRole="tabClose"] { min-width: 18px; max-width: 18px; min-height: 18px; max-height: 18px; }
+QToolButton[chromeRole="tabClose"]:hover,
+QToolButton[chromeRole="tabPlus"]:hover,
+QToolButton[chromeRole="sidebarToggle"]:hover {
+    border: 1px solid palette(mid);
+    background: palette(alternate-base);
+    border-radius: 4px;
+}
 )");
 }
 
