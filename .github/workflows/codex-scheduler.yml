@@ -1,0 +1,88 @@
+name: codex-scheduler
+
+on:
+  pull_request:
+    paths:
+      - 'tools/codex-scheduler/**'
+      - '.github/workflows/codex-scheduler.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'tools/codex-scheduler/**'
+      - '.github/workflows/codex-scheduler.yml'
+
+jobs:
+  ubuntu-24-04:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake qt6-base-dev at git
+
+      - name: Shell syntax
+        run: |
+          bash -n tools/codex-scheduler/bin/*
+          bash -n tools/codex-scheduler/install-ubuntu.sh
+          bash -n tools/codex-scheduler/tests/test_cli.sh
+          bash -n tools/codex-scheduler/tests/test_packaging.sh
+
+      - name: Build C++ scheduler
+        run: |
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/codex-scheduler/build
+
+      - name: Native core and Qt smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
+        run: tools/codex-scheduler/build/harr-codex-scheduler self-test
+
+      - name: Native CLI and job runner contract
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
+        run: bash tools/codex-scheduler/tests/test_cli.sh
+
+      - name: Native packaging contract
+        run: bash tools/codex-scheduler/tests/test_packaging.sh
+
+      - name: Build installable package
+        run: cmake --build tools/codex-scheduler/build --target package-release
+
+      - name: Install deb package
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb=$(realpath tools/codex-scheduler/dist/harr-codex-scheduler_*_*.deb)
+          sudo apt-get install -y "$deb"
+          test -x /usr/bin/harr-codex-scheduler
+          test -x /usr/bin/codex-scheduler-ui
+          test -x /usr/bin/codex-schedule
+          test -x /usr/bin/sol
+          test -x /usr/bin/terra
+          test -x /usr/bin/luna
+          test -f /usr/share/applications/harr-codex-scheduler.desktop
+          if find /usr/bin /usr/share/doc/harr-codex-scheduler -maxdepth 2 -type f \( -name '*.py' -o -name '*.pyc' \) | grep -q .; then
+            echo 'Python leaked into installed native package' >&2
+            exit 1
+          fi
+          QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark /usr/bin/harr-codex-scheduler self-test
+          set +e
+          output=$(/usr/bin/terra 2>&1)
+          rc=$?
+          set -e
+          test "$rc" -eq 2
+          grep -q 'Usage: terra' <<<"$output"
+          dpkg-query -W -f='${db:Status-Status}\n' harr-codex-scheduler | grep -qx installed
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: harr-codex-scheduler-pr
+          path: |
+            tools/codex-scheduler/dist/*.deb
+            tools/codex-scheduler/dist/*.tar.gz
+          if-no-files-found: error

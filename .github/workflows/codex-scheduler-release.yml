@@ -1,0 +1,80 @@
+name: codex-scheduler-release
+
+on:
+  push:
+    tags:
+      - 'codex-scheduler-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (for artifact-only manual runs)'
+        required: true
+        default: '0.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/codex-scheduler-v* ]]; then
+            version=${GITHUB_REF_NAME#codex-scheduler-v}
+            file_version=$(tr -d '[:space:]' < tools/codex-scheduler/VERSION)
+            if [[ "$version" != "$file_version" ]]; then
+              echo "Tag version $version does not match tools/codex-scheduler/VERSION ($file_version)" >&2
+              exit 1
+            fi
+          else
+            version='${{ inputs.version }}'
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake qt6-base-dev at git
+
+      - name: Build native scheduler
+        run: |
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/codex-scheduler/build
+
+      - name: Run native scheduler tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
+        run: |
+          tools/codex-scheduler/build/harr-codex-scheduler self-test
+          bash tools/codex-scheduler/tests/test_cli.sh
+          bash tools/codex-scheduler/tests/test_packaging.sh
+
+      - name: Build release artifacts
+        run: cmake --build tools/codex-scheduler/build --target package-release
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harr-codex-scheduler-${{ steps.version.outputs.version }}
+          path: |
+            tools/codex-scheduler/dist/*.deb
+            tools/codex-scheduler/dist/*.tar.gz
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/codex-scheduler-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            tools/codex-scheduler/dist/*.deb \
+            tools/codex-scheduler/dist/*.tar.gz \
+            --title "Harr Codex Scheduler ${{ steps.version.outputs.version }}" \
+            --generate-notes

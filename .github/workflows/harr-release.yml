@@ -1,0 +1,104 @@
+name: harr-release
+
+on:
+  push:
+    tags:
+      - 'harr-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (artifact-only manual runs)'
+        required: true
+        default: '0.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          file_version=$(tr -d '[:space:]' < VERSION)
+          if [[ "$GITHUB_REF" == refs/tags/harr-v* ]]; then
+            version=${GITHUB_REF_NAME#harr-v}
+            [[ "$version" == "$file_version" ]] || {
+              echo "Tag version $version does not match VERSION ($file_version)" >&2
+              exit 1
+            }
+          else
+            version='${{ inputs.version }}'
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake qt6-base-dev at git dpkg-dev
+
+      - name: Build and test native scheduler
+        env:
+          QT_QPA_PLATFORM: offscreen
+          HARR_CODEX_THEME: dark
+        run: |
+          cmake -S tools/codex-scheduler -B tools/codex-scheduler/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/codex-scheduler/build --target package-release
+          tools/codex-scheduler/build/harr-codex-scheduler self-test
+          bash tools/codex-scheduler/tests/test_cli.sh
+          bash tools/codex-scheduler/tests/test_packaging.sh
+
+      - name: Build full Harr packages
+        run: |
+          arch=$(dpkg --print-architecture)
+          cmake \
+            -DHARR_SOURCE_DIR="$GITHUB_WORKSPACE" \
+            -DHARR_VERSION="${{ steps.version.outputs.version }}" \
+            -DHARR_ARCH="$arch" \
+            -DHARR_OUTPUT_DIR="$GITHUB_WORKSPACE/dist" \
+            -DHARR_ARCHIVE_REF=HEAD \
+            -P packaging/package-harr.cmake
+
+      - name: Verify full Harr packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb=$(realpath dist/harr_*_*.deb)
+          tarball=$(realpath dist/harr-*.tar.gz)
+          dpkg-deb --info "$deb" >/dev/null
+          tar -tzf "$tarball" > /tmp/harr-tar-listing
+          dpkg-deb --contents "$deb" > /tmp/harr-deb-listing
+          grep -q '/install.sh$' /tmp/harr-tar-listing
+          grep -q '/common/mcp/registry.json$' /tmp/harr-tar-listing
+          grep -q './usr/bin/harr -> ' /tmp/harr-deb-listing
+          grep -q './usr/bin/harr-install -> ' /tmp/harr-deb-listing
+          grep -q '/usr/lib/harr/linux/install.sh$' /tmp/harr-deb-listing
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: harr-${{ steps.version.outputs.version }}
+          path: |
+            dist/harr_*.deb
+            dist/harr-*.tar.gz
+            tools/codex-scheduler/dist/harr-codex-scheduler_*.deb
+            tools/codex-scheduler/dist/harr-codex-scheduler-*.tar.gz
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/harr-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/harr_*.deb \
+            dist/harr-*.tar.gz \
+            tools/codex-scheduler/dist/harr-codex-scheduler_*.deb \
+            tools/codex-scheduler/dist/harr-codex-scheduler-*.tar.gz \
+            --title "Harr ${{ steps.version.outputs.version }}" \
+            --generate-notes
