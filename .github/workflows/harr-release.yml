@@ -71,11 +71,13 @@ jobs:
           deb=$(realpath dist/harr_*_*.deb)
           tarball=$(realpath dist/harr-*.tar.gz)
           dpkg-deb --info "$deb" >/dev/null
-          tar -tzf "$tarball" | grep -q '/install.sh$'
-          tar -tzf "$tarball" | grep -q '/common/mcp/registry.json$'
-          dpkg-deb --contents "$deb" | grep -q './usr/bin/harr -> '
-          dpkg-deb --contents "$deb" | grep -q './usr/bin/harr-install -> '
-          dpkg-deb --contents "$deb" | grep -q '/usr/lib/harr/linux/install.sh$'
+          tar -tzf "$tarball" > /tmp/harr-tar-listing
+          dpkg-deb --contents "$deb" > /tmp/harr-deb-listing
+          grep -q '/install.sh$' /tmp/harr-tar-listing
+          grep -q '/common/mcp/registry.json$' /tmp/harr-tar-listing
+          grep -q './usr/bin/harr -> ' /tmp/harr-deb-listing
+          grep -q './usr/bin/harr-install -> ' /tmp/harr-deb-listing
+          grep -q '/usr/lib/harr/linux/install.sh$' /tmp/harr-deb-listing
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
