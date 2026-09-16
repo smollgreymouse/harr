@@ -34,7 +34,7 @@ if(DEFINED HARR_ARCHIVE_REF AND NOT HARR_ARCHIVE_REF STREQUAL "")
     set(SOURCE_ARCHIVE "${STAGE_PARENT}/harr-source.tar")
     execute_process(
         COMMAND git -C "${HARR_SOURCE_DIR}" archive --format=tar
-                --prefix="${NAME}/" "${HARR_ARCHIVE_REF}"
+                "--prefix=${NAME}/" "${HARR_ARCHIVE_REF}"
         OUTPUT_FILE "${SOURCE_ARCHIVE}"
         RESULT_VARIABLE ARCHIVE_RESULT
     )
