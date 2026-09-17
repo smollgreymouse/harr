@@ -91,7 +91,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("create_merge_request` -> `gitlab::create_merge_request" in policy) == ("gitlab" in expected)
         assert ("gitlab::get_pipeline_job" in policy) == ("gitlab" in expected)
         assert ("gitlab::get_pipeline_job_output" in policy) == ("gitlab" in expected)
-        assert ("`/-/jobs/`" in policy) == ("gitlab" in expected)
+        assert ("/-/jobs/" in policy) == ("gitlab" in expected)
         assert ("similar tool is neither a substitute" in policy) == ("gitlab" in expected)
         assert "create GitLab merge request" not in policy
         assert ("MR source branch is ALWAYS the current named local branch" in policy) == ("gitlab" in expected)
