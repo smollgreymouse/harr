@@ -33,13 +33,13 @@ Use `ctx_tools` to discover and call `gitlab::*` tools. Gateway discovery is ran
 When the workflow defines an expected tool, use its exact bare name as the discovery query:
 
 ```text
-create_merge_request      -> gitlab::create_merge_request
-get_merge_request         -> gitlab::get_merge_request
-update_merge_request      -> gitlab::update_merge_request
-merge_merge_request       -> gitlab::merge_merge_request
-create_issue              -> gitlab::create_issue
-get_pipeline_job          -> gitlab::get_pipeline_job
-get_pipeline_job_output   -> gitlab::get_pipeline_job_output
+create_merge_request -> gitlab::create_merge_request
+get_merge_request -> gitlab::get_merge_request
+update_merge_request -> gitlab::update_merge_request
+merge_merge_request -> gitlab::merge_merge_request
+create_issue -> gitlab::create_issue
+get_pipeline_job -> gitlab::get_pipeline_job
+get_pipeline_job_output -> gitlab::get_pipeline_job_output
 ```
 
 A discovery succeeds only when it returns the expected qualified tool. A related tool is neither a substitute nor evidence that the expected tool is unavailable. If the expected tool is not returned, refresh the gateway once and repeat the same query before declaring it unavailable.
