@@ -33,14 +33,49 @@ Use `ctx_tools` to discover and call `gitlab::*` tools. Gateway discovery is ran
 When the workflow defines an expected tool, use its exact bare name as the discovery query:
 
 ```text
-create_merge_request -> gitlab::create_merge_request
-get_merge_request    -> gitlab::get_merge_request
-update_merge_request -> gitlab::update_merge_request
-merge_merge_request  -> gitlab::merge_merge_request
-create_issue          -> gitlab::create_issue
+create_merge_request      -> gitlab::create_merge_request
+get_merge_request         -> gitlab::get_merge_request
+update_merge_request      -> gitlab::update_merge_request
+merge_merge_request       -> gitlab::merge_merge_request
+create_issue              -> gitlab::create_issue
+get_pipeline_job          -> gitlab::get_pipeline_job
+get_pipeline_job_output   -> gitlab::get_pipeline_job_output
 ```
 
 A discovery succeeds only when it returns the expected qualified tool. A related tool is neither a substitute nor evidence that the expected tool is unavailable. If the expected tool is not returned, refresh the gateway once and repeat the same query before declaring it unavailable.
+
+## Job URL diagnostics workflow
+
+Treat a GitLab URL of the form:
+
+```text
+https://<gitlab>/<project-path>/-/jobs/<job-id>
+```
+
+as a deterministic API workflow, not as a generic URL-analysis task.
+
+1. Parse `project_id=<project-path>` from everything between the GitLab host and `/-/jobs/`.
+2. Parse `job_id=<job-id>` directly from the URL.
+3. Discover the exact bare name `get_pipeline_job`; require `gitlab::get_pipeline_job`.
+4. Call it with `project_id` and `job_id` to obtain job status, stage, runner/pipeline metadata and failure metadata.
+5. Discover the exact bare name `get_pipeline_job_output`; require `gitlab::get_pipeline_job_output`.
+6. Call it with the same `project_id` and `job_id`; start with a bounded tail (`limit`) and increase or page with `offset` only if the failure context is incomplete.
+7. Analyze the job metadata plus trace. Fetch pipeline-level context (`get_pipeline`, `list_pipeline_jobs`) only if the job evidence points to a pipeline-level dependency or upstream/downstream failure.
+
+For example:
+
+```text
+https://gitlab.example/group/project/-/jobs/12345
+```
+
+maps directly to:
+
+```text
+project_id = group/project
+job_id     = 12345
+```
+
+Do not open the job in a browser first. Do not search for a vague phrase such as `analyze GitLab job` and accept a similar ranked result. Do not declare the capability unavailable until exact-name discovery for both job tools has been attempted, followed by one gateway refresh and retry if necessary.
 
 ## Merge request creation workflow
 
