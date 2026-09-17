@@ -136,8 +136,8 @@ def check(spec: str, expected: list[str]) -> None:
             gitlab_text = gitlab_ref.read_text(encoding="utf-8")
             assert "gitlab::create_merge_request" in gitlab_text
             assert "create_merge_request -> gitlab::create_merge_request" in gitlab_text
-            assert "get_pipeline_job          -> gitlab::get_pipeline_job" in gitlab_text
-            assert "get_pipeline_job_output   -> gitlab::get_pipeline_job_output" in gitlab_text
+            assert "get_pipeline_job -> gitlab::get_pipeline_job" in gitlab_text
+            assert "get_pipeline_job_output -> gitlab::get_pipeline_job_output" in gitlab_text
             assert "## Job URL diagnostics workflow" in gitlab_text
             assert "project_id=<project-path>" in gitlab_text
             assert "job_id=<job-id>" in gitlab_text
