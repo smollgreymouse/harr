@@ -103,26 +103,11 @@
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
-        "kind": "path",
-        "command": "docker",
-        "args": [
-          "run",
-          "-i",
-          "--rm",
-          "-e",
-          "ES_URL",
-          "-e",
-          "ES_API_KEY",
-          "-e",
-          "ES_SSL_SKIP_VERIFY",
-          "docker.elastic.co/mcp/elasticsearch:0.4.6",
-          "stdio"
-        ],
-        "prefetch_args": [
-          "pull",
-          "docker.elastic.co/mcp/elasticsearch:0.4.6"
-        ],
-        "install_hint": "Docker is required for Elasticsearch MCP; install Docker and run `harr install mcp`"
+        "kind": "npm",
+        "package": "@elastic/mcp-server-elasticsearch",
+        "version": "0.3.1",
+        "command": "mcp-server-elasticsearch",
+        "args": []
       },
       "env_template": "elasticsearch.env.example",
       "skill_reference": "elasticsearch.md",
