@@ -249,6 +249,166 @@ harr mcp auth gitlab
 
 Authentication state stays local and is never committed into `.harr/mcp.json`.
 
+## Project-owned MCP extensions
+
+Not every project MCP corresponds to a Harr-known logical adapter. A project may need a completely private/custom MCP whose contract Harr does not know and should not pretend to normalize.
+
+Keep this separate from adapters:
+
+```text
+adapters
+    Harr-known logical contracts
+    stable namespace
+    provider substitution / normalization
+
+extensions
+    project-owned MCPs
+    no Harr canonical contract
+    own namespace exposed through LeanCTX
+```
+
+Example project manifest:
+
+```json
+{
+  "schema": 1,
+  "adapters": {
+    "gitlab": {
+      "enabled": true,
+      "provider": "official",
+      "url": "https://gitlab.example.com/api/v4/mcp"
+    }
+  },
+  "extensions": {
+    "company-search": {
+      "enabled": true,
+      "transport": "http",
+      "url": "https://mcp.example.com/search"
+    }
+  }
+}
+```
+
+The agent then sees both stable Harr adapters and project-owned namespaces:
+
+```text
+gitlab::...
+company-search::...
+```
+
+Harr does not invent a canonical contract for `company-search`. Its `tools/list` surface is whatever that MCP actually exposes.
+
+Project extensions may coexist with adapter overrides. They are different mechanisms and should remain different in the schema.
+
+### Project effective registry
+
+The current globally generated effective registry should no longer be the final runtime registry once project overlays exist.
+
+Treat the layers as:
+
+```text
+Harr catalog
+      |
+      +-- global Harr profile / defaults
+      |
+      +-- nearest trusted project .harr/mcp.json
+      |
+      +-- local user state (trust/auth/secrets)
+      v
+session effective registry
+      |
+      v
+session LeanCTX config
+```
+
+The Harr LeanCTX wrapper already starts a process for the current agent/session and preserves cwd. Extend that startup path to resolve the project overlay and render a per-session (or project-cache-keyed) LeanCTX config rather than rewriting the global LeanCTX config.
+
+This is important because project extensions introduce names that cannot be known when Harr is installed globally.
+
+Example concurrent sessions:
+
+```text
+/work/a/.harr/mcp.json
+  gitlab -> official
+  extensions: company-search
+
+/work/b/.harr/mcp.json
+  gitlab -> harr
+  extensions: internal-db
+
+session A LeanCTX             session B LeanCTX
+----------------             ----------------
+gitlab                        gitlab
+company-search                internal-db
+```
+
+No global mutation or race is required.
+
+### Extension runtime classes
+
+Support external project MCPs by transport class.
+
+#### Remote HTTP
+
+A remote MCP can be declared with a URL and limited transport metadata.
+
+The project manifest must not contain inline credentials. Authentication is user-local.
+
+#### Stdio/local process
+
+A local project MCP is fundamentally code execution. Supporting it is useful, but it must not become automatic execution of arbitrary repository-controlled commands.
+
+The design should permit stdio extensions only behind explicit local trust. The project may declare the desired runtime, but Harr must not execute it until the user has trusted the current project MCP manifest.
+
+A future schema can support constrained runtime descriptors such as pinned npm/uvx packages or, after trust, an explicit local command. The exact runtime schema belongs to implementation design, not to the initial adapter contract.
+
+## Project trust model
+
+Because a project overlay can add network endpoints, enable integrations, and eventually start local MCP processes, `.harr/mcp.json` is executable-capability configuration even when it contains no shell script.
+
+Use a direnv-like trust model:
+
+1. resolve the nearest project MCP manifest;
+2. compute a digest of the relevant project MCP configuration;
+3. look for a matching approval in user-local Harr state;
+4. if the digest changed, treat the project MCP overlay as untrusted until explicitly approved;
+5. never store trust approval in the repository.
+
+Suggested commands:
+
+```text
+harr mcp project status
+harr mcp project trust
+harr mcp project revoke
+```
+
+Suggested local state:
+
+```text
+~/.config/harr/projects/<project-key>/
+  trust.json
+  auth/
+  secrets/
+```
+
+Trust applies to the project MCP manifest, not to arbitrary repository contents.
+
+This also protects known adapter overrides: a malicious repository must not be able to redirect a Harr-known GitLab adapter to an attacker-controlled endpoint merely by adding `.harr/mcp.json`.
+
+### Secrets for project MCPs
+
+A project manifest may declare that an extension/provider needs a credential, but must not contain the value.
+
+Do not allow a repository to freely reference arbitrary pre-existing Harr secrets by name: that would let an untrusted project attach a user's existing secret to a hostile MCP endpoint.
+
+Secret binding must be created/approved in user-local project state after trust, for example through a future command:
+
+```text
+harr mcp project secret set company-search token
+```
+
+The session effective registry then maps that local project secret into LeanCTX memento/secret headers or the stdio process environment.
+
 ## Security boundary
 
 Project MCP configuration is repository-controlled input and must be treated as untrusted.
@@ -449,9 +609,11 @@ Not acceptable. It would fork behavior between Codex and OpenCode and undermine 
 
 ## Proposed first decision
 
-Implement v1 around this invariant:
+Implement v1 around two invariants:
 
 > One Harr logical MCP adapter name -> one selected provider per project/session.
+
+> Project-owned MCPs -> independent extension namespaces in the session effective registry.
 
 For GitLab:
 
