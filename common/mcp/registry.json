@@ -13,7 +13,10 @@
         "package": "@colbymchenry/codegraph",
         "version": "1.5.0",
         "command": "codegraph",
-        "args": ["serve", "--mcp"]
+        "args": [
+          "serve",
+          "--mcp"
+        ]
       }
     },
     {
@@ -39,7 +42,10 @@
           "file": "gitlab-pat",
           "prompt": "GitLab PAT",
           "memento_id": "mcp/gitlab/default",
-          "target": {"kind": "header", "name": "Private-Token"}
+          "target": {
+            "kind": "header",
+            "name": "Private-Token"
+          }
         }
       ],
       "windows_task": "Harr GitLab MCP"
@@ -56,9 +62,22 @@
         "kind": "uvx",
         "package": "mcp-grafana",
         "command": "uvx",
-        "args": ["mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"],
-        "prefetch_args": ["mcp-grafana", "--version"],
-        "probe_args": ["--offline", "mcp-grafana", "--version"],
+        "args": [
+          "mcp-grafana",
+          "--transport",
+          "streamable-http",
+          "--address",
+          "127.0.0.1:3335"
+        ],
+        "prefetch_args": [
+          "mcp-grafana",
+          "--version"
+        ],
+        "probe_args": [
+          "--offline",
+          "mcp-grafana",
+          "--version"
+        ],
         "install_hint": "uvx is required for Grafana MCP; install uv/uvx and run `harr install mcp`"
       },
       "env_template": "grafana.env.example",
@@ -69,7 +88,52 @@
           "file": "grafana-service-account-token",
           "prompt": "Grafana service account token",
           "memento_id": "mcp/grafana/default",
-          "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
+          "target": {
+            "kind": "env",
+            "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "elasticsearch",
+      "label": "Elasticsearch",
+      "description": "read-only Elasticsearch data, mappings, search and ES|QL",
+      "required": false,
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "path",
+        "command": "docker",
+        "args": [
+          "run",
+          "-i",
+          "--rm",
+          "-e",
+          "ES_URL",
+          "-e",
+          "ES_API_KEY",
+          "docker.elastic.co/mcp/elasticsearch:0.4.6",
+          "stdio"
+        ],
+        "prefetch_args": [
+          "pull",
+          "docker.elastic.co/mcp/elasticsearch:0.4.6"
+        ],
+        "install_hint": "Docker is required for Elasticsearch MCP; install Docker and run `harr install mcp`"
+      },
+      "env_template": "elasticsearch.env.example",
+      "skill_reference": "elasticsearch.md",
+      "secrets": [
+        {
+          "name": "elasticsearch",
+          "file": "elasticsearch-api-key",
+          "prompt": "Elasticsearch API key",
+          "memento_id": "mcp/elasticsearch/default",
+          "target": {
+            "kind": "env",
+            "name": "ES_API_KEY"
+          }
         }
       ]
     }
