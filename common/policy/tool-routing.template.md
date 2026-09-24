@@ -24,6 +24,10 @@
 - Grafana dashboard work, including a Grafana dashboard URL or `/goto/` short link: FIRST discover and use the relevant `grafana::*` operation through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary. Do not open the dashboard in a browser as the first action.
 - A browser is a Grafana fallback only after the Harr Grafana route cannot resolve the short link or does not expose the required operation; state that limitation before using it.
 <!-- harr-mcp:grafana:end -->
+<!-- harr-mcp:elasticsearch:start -->
+- Elasticsearch logs, metrics and document investigation: FIRST discover and use the relevant `elasticsearch::*` operation through `{{CTX_TOOLS}}`. Use `search` with Query DSL for bounded time-window retrieval and aggregations; use `list_indices` and `get_mappings` only when index/schema discovery is actually needed.
+- Keep Elasticsearch reads narrow: constrain index patterns, time ranges, returned fields and `size`. Treat this route as read-only investigation and do not request broader cluster/index privileges merely to make a query easier.
+<!-- harr-mcp:elasticsearch:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
 - Use `{{CTX_CALL}}` only for a known, non-editing LeanCTX capability with no direct `ctx_*` route. Never use it to edit workspace files or discover edit/patch tools; use the native host editor directly. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.

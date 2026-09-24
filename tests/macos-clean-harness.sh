@@ -64,8 +64,10 @@ grep -q 'brew' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "gitlab"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "grafana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+! grep -q 'name = "elasticsearch"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/elasticsearch.md" ]]
 [[ ! -e "${HOME}/Library/LaunchAgents/com.harr.mcp.gitlab.plist" ]]
 [[ -f "${HOME}/Library/LaunchAgents/com.harr.git-host.plist" ]]
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]

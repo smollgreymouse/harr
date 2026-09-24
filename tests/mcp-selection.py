@@ -50,16 +50,21 @@ def check(spec: str, expected: list[str]) -> None:
         dependencies = package["dependencies"]
         assert ("@colbymchenry/codegraph" in dependencies) is True
         assert ("@zereight/mcp-gitlab" in dependencies) == ("gitlab" in expected)
+        assert ("@elastic/mcp-server-elasticsearch" in dependencies) == ("elasticsearch" in expected)
+        if "elasticsearch" in expected:
+            assert dependencies["@elastic/mcp-server-elasticsearch"] == "0.3.1"
 
         secret_rows = [json.loads(line) for line in output(MANAGER, "--registry", effective, "secrets").splitlines() if line]
         secret_names = [row["name"] for row in secret_rows]
         assert ("gitlab" in secret_names) == ("gitlab" in expected)
         assert ("grafana" in secret_names) == ("grafana" in expected)
+        assert ("elasticsearch" in secret_names) == ("elasticsearch" in expected)
 
         config_dir = tmp / "mcp-config"
         run(MANAGER, "--registry", effective, "install-configs", "--config-dir", config_dir)
         assert (config_dir / "gitlab.env").exists() == ("gitlab" in expected)
         assert (config_dir / "grafana.env").exists() == ("grafana" in expected)
+        assert (config_dir / "elasticsearch.env").exists() == ("elasticsearch" in expected)
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
@@ -103,6 +108,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
+        assert ("Elasticsearch logs, metrics and document investigation" in policy) == ("elasticsearch" in expected)
+        assert ("Use `search` with Query DSL for bounded time-window retrieval and aggregations" in policy) == ("elasticsearch" in expected)
+        assert ("Treat this route as read-only investigation" in policy) == ("elasticsearch" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -127,6 +135,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert "user.exec" in kube_text
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
+        assert ("harr secret set elasticsearch" in skill) == ("elasticsearch" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
         assert gitlab_ref.exists() == ("gitlab" in expected)
         if gitlab_ref.exists():
@@ -143,6 +152,14 @@ def check(spec: str, expected: list[str]) -> None:
             assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
+        elasticsearch_ref = filtered_skill / "references" / "elasticsearch.md"
+        assert elasticsearch_ref.exists() == ("elasticsearch" in expected)
+        if elasticsearch_ref.exists():
+            elasticsearch_text = elasticsearch_ref.read_text(encoding="utf-8")
+            assert "@elastic/mcp-server-elasticsearch@0.3.1" in elasticsearch_text
+            assert "Elasticsearch 8.19.x" in elasticsearch_text
+            assert "read-only API key" in elasticsearch_text
+            assert "does **not** expose the later `esql` tool" in elasticsearch_text
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -151,8 +168,10 @@ servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
+assert servers["elasticsearch"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
-check("all", ["codegraph", "gitlab", "grafana"])
+check("elasticsearch", ["codegraph", "elasticsearch"])
+check("all", ["codegraph", "gitlab", "grafana", "elasticsearch"])
 print("cross-platform MCP selection: PASS")

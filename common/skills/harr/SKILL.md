@@ -32,6 +32,9 @@ harr mcp logs gitlab
 <!-- harr-mcp:grafana:start -->
 harr secret set grafana
 <!-- harr-mcp:grafana:end -->
+<!-- harr-mcp:elasticsearch:start -->
+harr secret set elasticsearch
+<!-- harr-mcp:elasticsearch:end -->
 ```
 
 LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
