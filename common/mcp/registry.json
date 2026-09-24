@@ -113,6 +113,8 @@
           "ES_URL",
           "-e",
           "ES_API_KEY",
+          "-e",
+          "ES_SSL_SKIP_VERIFY",
           "docker.elastic.co/mcp/elasticsearch:0.4.6",
           "stdio"
         ],
