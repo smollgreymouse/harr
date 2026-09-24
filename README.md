@@ -29,6 +29,9 @@ LeanCTX 3.9.15                         required
       +-- HTTP :3335 -----> Grafana MCP           optional
       |                     uvx mcp-grafana --transport streamable-http
       |
+      +-- stdio -----------> Elasticsearch MCP     optional
+      |                     docker.elastic.co/mcp/elasticsearch:0.4.6
+      |
       +-- future MCPs -----> common registry       required/optional metadata
 
 Unrelated third-party MCPs/skills may coexist beside this stack.
@@ -86,6 +89,7 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
+  [ ] Elasticsearch optional  read-only Elasticsearch data, mappings, search and ES|QL
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -120,12 +124,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana
+./install.sh --clean --mcp gitlab,grafana,elasticsearch
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana
+.\install.ps1 -Clean -Mcp gitlab,grafana,elasticsearch
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -139,9 +143,11 @@ Configure secrets only for MCPs you enabled:
 ```text
 harr secret set gitlab
 harr secret set grafana
+harr secret set elasticsearch
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
+Elasticsearch requires Docker in `PATH`; `harr install mcp` pulls the pinned official `docker.elastic.co/mcp/elasticsearch:0.4.6` image when Elasticsearch is selected.
 
 Check the whole harness:
 
@@ -444,7 +450,7 @@ harr mcp list
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp configure gitlab,grafana
+harr mcp configure gitlab,grafana,elasticsearch
 
 harr mcp start gitlab
 harr mcp stop gitlab
@@ -455,8 +461,10 @@ harr mcp logs gitlab
 harr secret status
 harr secret set gitlab
 harr secret set grafana
+harr secret set elasticsearch
 harr secret unset gitlab
 harr secret unset grafana
+harr secret unset elasticsearch
 
 harr git <git-arguments>
 harr git -C /absolute/repository/path <git-arguments>
@@ -621,6 +629,57 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 
 
+### Elasticsearch
+
+Elasticsearch is **optional** and uses Elastic's official `elastic/mcp-server-elasticsearch` as an on-demand stdio MCP. Harr pins release 0.4.6 and launches it through Docker:
+
+```text
+LeanCTX -> harr-mcp-run elasticsearch
+        -> docker run docker.elastic.co/mcp/elasticsearch:0.4.6 stdio
+        -> Elasticsearch
+```
+
+The upstream server supports Elasticsearch 8.x and 9.x and exposes a compact read-only investigation surface:
+
+```text
+list_indices
+get_mappings
+search
+esql
+get_shards
+```
+
+This is the intended Harr integration for Elasticsearch 8.19.x and other pre-9.2 clusters where Elastic Agent Builder MCP is unavailable. Upstream marks the standalone server deprecated in favor of Agent Builder on Elastic 9.2+, while continuing critical security fixes.
+
+Enable it with `harr mcp configure` or an exact optional set, then prepare the Docker image:
+
+```text
+harr install mcp
+```
+
+Edit the generated non-secret config:
+
+```text
+~/.config/harr/mcp/elasticsearch.env
+```
+
+and set a cluster URL reachable from the Docker container:
+
+```text
+ES_URL=https://elasticsearch.example.com:9200
+```
+
+Store the API key separately:
+
+```text
+harr secret set elasticsearch
+harr secret status
+```
+
+The key is injected as `ES_API_KEY` only for the MCP process/container and is never written to the env template or LeanCTX config. Prefer a read-only key scoped to the required index patterns; `read` + `view_index_metadata` on those indices and cluster `monitor` are sufficient for the MCP's data/mapping and CAT discovery tools.
+
+For agent work, prefer `esql` for bounded time-window aggregation/correlation and `search` for targeted Query DSL retrieval. Keep index patterns, time ranges, fields and result limits narrow to avoid unnecessary context. See `common/skills/harr/references/elasticsearch.md` for setup and privilege details.
+
 ### Git
 
 Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches. Use `harr git <git-arguments>` for network operations. The command sends the current working directory and Git arguments to a loopback-only Harr user service, which executes the real Git process outside the agent sandbox with the service's terminal-session environment. Repository remotes, local Git configuration and SSH key selection remain unchanged.
@@ -655,12 +714,13 @@ The permanent policy always keeps the core token-saving rules:
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
 - ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; Git network operations -> `harr git ...`; GitLab server/API objects -> `gitlab::*` through `ctx_tools`;
+- Elasticsearch data/log/metric investigation -> `elasticsearch::*` through `ctx_tools`, preferring bounded ES|QL/search queries over broad discovery;
 - known, non-editing uncommon LeanCTX capabilities -> `ctx_call`; never use it to discover edit/patch tools;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, and Grafana dashboard guidance does not exist when Grafana is disabled.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, and Elasticsearch query guidance does not exist when Elasticsearch is disabled.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 
