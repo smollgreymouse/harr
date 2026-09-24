@@ -49,18 +49,11 @@ elasticsearch = servers["elasticsearch"]
 assert elasticsearch["transport"] == "stdio"
 assert elasticsearch["lifecycle"] == "on-demand"
 assert elasticsearch["runtime"] == {
-    "kind": "path",
-    "command": "docker",
-    "args": [
-        "run", "-i", "--rm",
-        "-e", "ES_URL",
-        "-e", "ES_API_KEY",
-        "-e", "ES_SSL_SKIP_VERIFY",
-        "docker.elastic.co/mcp/elasticsearch:0.4.6",
-        "stdio",
-    ],
-    "prefetch_args": ["pull", "docker.elastic.co/mcp/elasticsearch:0.4.6"],
-    "install_hint": "Docker is required for Elasticsearch MCP; install Docker and run `harr install mcp`",
+    "kind": "npm",
+    "package": "@elastic/mcp-server-elasticsearch",
+    "version": "0.3.1",
+    "command": "mcp-server-elasticsearch",
+    "args": [],
 }
 assert elasticsearch["secrets"] == [
     {
@@ -107,6 +100,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "GRAFANA_SERVICE_ACCOUNT_TOKEN=" not in grafana_env
     elasticsearch_env = (target / "elasticsearch.env").read_text(encoding="utf-8")
     assert "ES_URL=https://elasticsearch.example.com:9200" in elasticsearch_env
+    assert "ES_VERSION=8" in elasticsearch_env
+    assert "OTEL_LOG_LEVEL=none" in elasticsearch_env
     assert "ES_API_KEY=" not in elasticsearch_env
 
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
@@ -118,19 +113,12 @@ with patch.object(manager.shutil, "which", side_effect=lambda command: f"/tmp/{c
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
 
-    elasticsearch_command = manager.runtime_command(elasticsearch)
-    assert elasticsearch_command == [
-        "/tmp/docker",
-        "run", "-i", "--rm",
-        "-e", "ES_URL",
-        "-e", "ES_API_KEY",
-        "-e", "ES_SSL_SKIP_VERIFY",
-        "docker.elastic.co/mcp/elasticsearch:0.4.6",
-        "stdio",
-    ]
-    assert manager.runtime_maintenance_command(elasticsearch, "prefetch_args") == [
-        "/tmp/docker", "pull", "docker.elastic.co/mcp/elasticsearch:0.4.6"
-    ]
+with tempfile.TemporaryDirectory() as tmp:
+    npm_bin = Path(tmp)
+    executable = npm_bin / ("mcp-server-elasticsearch.cmd" if manager.os.name == "nt" else "mcp-server-elasticsearch")
+    executable.write_text("", encoding="utf-8")
+    with patch.dict(manager.os.environ, {"HARR_NPM_BIN_DIR": str(npm_bin)}):
+        assert manager.runtime_command(elasticsearch) == [str(executable)]
 
 with tempfile.TemporaryDirectory() as tmp:
     secret_dir = Path(tmp) / "secrets"
