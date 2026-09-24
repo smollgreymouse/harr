@@ -30,7 +30,7 @@ LeanCTX 3.9.15                         required
       |                     uvx mcp-grafana --transport streamable-http
       |
       +-- stdio -----------> Elasticsearch MCP     optional
-      |                     docker.elastic.co/mcp/elasticsearch:0.4.6
+      |                     @elastic/mcp-server-elasticsearch 0.3.1
       |
       +-- future MCPs -----> common registry       required/optional metadata
 
@@ -89,7 +89,7 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
-  [ ] Elasticsearch optional  read-only Elasticsearch data, mappings, search and ES|QL
+  [ ] Elasticsearch optional  read-only Elasticsearch data, mappings and search
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -147,7 +147,7 @@ harr secret set elasticsearch
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
-Elasticsearch requires Docker in `PATH`; `harr install mcp` pulls the pinned official `docker.elastic.co/mcp/elasticsearch:0.4.6` image when Elasticsearch is selected.
+Elasticsearch uses the pinned official npm package `@elastic/mcp-server-elasticsearch@0.3.1`; no Docker runtime is required.
 
 Check the whole harness:
 
@@ -631,27 +631,28 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 ### Elasticsearch
 
-Elasticsearch is **optional** and uses Elastic's official `elastic/mcp-server-elasticsearch` as an on-demand stdio MCP. Harr pins release 0.4.6 and launches it through Docker:
+Elasticsearch is **optional** and uses Elastic's official npm package `@elastic/mcp-server-elasticsearch@0.3.1` as an on-demand stdio MCP:
 
 ```text
 LeanCTX -> harr-mcp-run elasticsearch
-        -> docker run docker.elastic.co/mcp/elasticsearch:0.4.6 stdio
+        -> mcp-server-elasticsearch
         -> Elasticsearch
 ```
 
-The upstream server supports Elasticsearch 8.x and 9.x and exposes a compact read-only investigation surface:
+Harr installs the package into its private npm runtime together with the other selected npm MCPs. No Docker/container runtime or listening service is required.
+
+The npm 0.3.1 server is the official Elastic package from the same `elastic/mcp-server-elasticsearch` repository and exposes a compact read-only investigation surface:
 
 ```text
 list_indices
 get_mappings
 search
-esql
 get_shards
 ```
 
-This is the intended Harr integration for Elasticsearch 8.19.x and other pre-9.2 clusters where Elastic Agent Builder MCP is unavailable. Upstream marks the standalone server deprecated in favor of Agent Builder on Elastic 9.2+, while continuing critical security fixes.
+Set `ES_VERSION=8` for Elasticsearch 8.x, including 8.19.x. This npm release predates the later `esql` tool: ES|QL is available in the 0.4.x Rust/container line, but Harr deliberately keeps the Node/npm integration here to avoid adding Docker as a dependency. Query DSL search still supports targeted retrieval and aggregations.
 
-Enable it with `harr mcp configure` or an exact optional set, then prepare the Docker image:
+Enable it with `harr mcp configure` or an exact optional set, then install/update the selected runtimes:
 
 ```text
 harr install mcp
@@ -663,10 +664,12 @@ Edit the generated non-secret config:
 ~/.config/harr/mcp/elasticsearch.env
 ```
 
-and set a cluster URL reachable from the Docker container:
+For Elasticsearch 8.x it contains:
 
 ```text
 ES_URL=https://elasticsearch.example.com:9200
+ES_VERSION=8
+OTEL_LOG_LEVEL=none
 ```
 
 Store the API key separately:
@@ -676,9 +679,9 @@ harr secret set elasticsearch
 harr secret status
 ```
 
-The key is injected as `ES_API_KEY` only for the MCP process/container and is never written to the env template or LeanCTX config. Prefer a read-only key scoped to the required index patterns; `read` + `view_index_metadata` on those indices and cluster `monitor` are sufficient for the MCP's data/mapping and CAT discovery tools.
+The key is injected as `ES_API_KEY` only for the MCP process and is never written to the env template or LeanCTX config. Prefer a read-only key scoped to the required index patterns; `read` + `view_index_metadata` on those indices and cluster `monitor` are sufficient for the MCP's data/mapping and CAT discovery tools.
 
-For agent work, prefer `esql` for bounded time-window aggregation/correlation and `search` for targeted Query DSL retrieval. Keep index patterns, time ranges, fields and result limits narrow to avoid unnecessary context. See `common/skills/harr/references/elasticsearch.md` for setup and privilege details.
+For agent work, use `search` with bounded Query DSL: constrain index patterns, time ranges, returned fields and result size. See `common/skills/harr/references/elasticsearch.md` for setup, limitations and privilege details.
 
 ### Git
 
@@ -714,7 +717,7 @@ The permanent policy always keeps the core token-saving rules:
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
 - ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; Git network operations -> `harr git ...`; GitLab server/API objects -> `gitlab::*` through `ctx_tools`;
-- Elasticsearch data/log/metric investigation -> `elasticsearch::*` through `ctx_tools`, preferring bounded ES|QL/search queries over broad discovery;
+- Elasticsearch data/log/metric investigation -> `elasticsearch::*` through `ctx_tools`, preferring bounded Query DSL search over broad discovery;
 - known, non-editing uncommon LeanCTX capabilities -> `ctx_call`; never use it to discover edit/patch tools;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;
