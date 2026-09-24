@@ -55,6 +55,7 @@ assert elasticsearch["runtime"] == {
         "run", "-i", "--rm",
         "-e", "ES_URL",
         "-e", "ES_API_KEY",
+        "-e", "ES_SSL_SKIP_VERIFY",
         "docker.elastic.co/mcp/elasticsearch:0.4.6",
         "stdio",
     ],
@@ -123,6 +124,7 @@ with patch.object(manager.shutil, "which", side_effect=lambda command: f"/tmp/{c
         "run", "-i", "--rm",
         "-e", "ES_URL",
         "-e", "ES_API_KEY",
+        "-e", "ES_SSL_SKIP_VERIFY",
         "docker.elastic.co/mcp/elasticsearch:0.4.6",
         "stdio",
     ]
