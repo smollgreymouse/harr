@@ -98,8 +98,22 @@ Example:
   "schema": 1,
   "adapters": {
     "gitlab": {
+      "enabled": true,
       "provider": "official",
       "url": "https://gitlab.example.com/api/v4/mcp"
+    }
+  }
+}
+```
+
+A project can also explicitly disable an adapter inherited from the global profile:
+
+```json
+{
+  "schema": 1,
+  "adapters": {
+    "gitlab": {
+      "enabled": false
     }
   }
 }
@@ -261,24 +275,27 @@ For the official GitLab provider, require HTTPS by default. A local-development 
 Recommended precedence:
 
 ```text
-Harr adapter definition
+Harr adapter/provider catalog
         <
-global Harr provider default
+global Harr selection + provider defaults
         <
-project .harr/mcp.json binding
+project .harr/mcp.json overlay
         <
 explicit one-shot diagnostic override (future)
 ```
 
-Project config selects the provider only for an adapter that is globally enabled.
+The project layer is a true overlay, not merely a provider selector. It can change `enabled`, `provider`, and provider-specific non-secret parameters. Omitted fields inherit from the lower layer.
+
+Project configuration has higher precedence than the global Harr selection and may explicitly enable, disable, or replace an adapter for that project.
 
 Therefore:
 
-- globally disabled `gitlab` + project binding -> disabled;
-- globally enabled `gitlab` + no project binding -> Harr default;
-- globally enabled `gitlab` + project binding -> project provider.
+- globally disabled `gitlab` + no project binding -> disabled;
+- globally disabled `gitlab` + project binding with `enabled: true` -> enabled for that project;
+- globally enabled `gitlab` + project binding with `enabled: false` -> disabled for that project;
+- globally enabled `gitlab` + project binding selecting another provider -> enabled with the project provider.
 
-Global selection remains the permission boundary for which logical integrations exist at all.
+The global selection is the default profile, not a hard permission boundary. The project overlay is the final effective configuration for sessions rooted in that project.
 
 ## Project root resolution
 
@@ -407,7 +424,7 @@ Without project config, behavior must remain unchanged.
 4. Child directory resolves nearest parent config.
 5. Unknown provider/malformed config fails closed.
 6. Project config cannot define command/env/secret.
-7. Globally disabled adapter stays disabled.
+7. Project config can enable a globally disabled adapter and disable a globally enabled adapter.
 8. Provider failure never silently falls back.
 9. Canonical tool mapping keeps the same agent-visible name.
 10. Shared resolver behaves identically on Linux/macOS/Windows.
