@@ -84,11 +84,12 @@ enabled = false
 
     $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
     if ($leanText -notmatch 'name = "codegraph"') { throw 'CodeGraph missing from LeanCTX gateway' }
-    if ($leanText -match 'name = "gitlab"' -or $leanText -match 'name = "grafana"') { throw 'Disabled MCP leaked into LeanCTX gateway' }
+    if ($leanText -match 'name = "gitlab"' -or $leanText -match 'name = "grafana"' -or $leanText -match 'name = "elasticsearch"') { throw 'Disabled MCP leaked into LeanCTX gateway' }
 
     $harrSkill = Join-Path $OpenCodeDir 'skills\harr'
     if (Test-Path (Join-Path $harrSkill 'references\gitlab.md')) { throw 'Disabled GitLab reference installed' }
     if (Test-Path (Join-Path $harrSkill 'references\grafana.md')) { throw 'Disabled Grafana reference installed' }
+    if (Test-Path (Join-Path $harrSkill 'references\elasticsearch.md')) { throw 'Disabled Elasticsearch reference installed' }
 
     $leanCommand = Join-Path $LocalDir 'Harr\bin\lean-ctx.cmd'
     $open = Get-Content -Raw (Join-Path $OpenCodeDir 'opencode.jsonc') | ConvertFrom-Json
