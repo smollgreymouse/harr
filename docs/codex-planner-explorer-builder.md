@@ -30,7 +30,13 @@ This repository contains a Codex-native split intended to keep expensive planner
         +----------------------+
 ```
 
-The explorer is project-scoped at `.codex/agents/explorer.toml`. It pins GPT-6 Luna, medium reasoning, and a read-only sandbox. Planner and builder are workflows expressed as repo-scoped skills rather than additional agent profiles.
+All three roles are available as project-scoped Codex subagents:
+
+- `.codex/agents/planner.toml` — GPT-6 Sol, high reasoning, read-only;
+- `.codex/agents/explorer.toml` — GPT-6 Luna, medium reasoning, read-only;
+- `.codex/agents/builder.toml` — GPT-6 Luna, medium reasoning, workspace-write.
+
+Their reusable behavioral contracts live in repo-scoped skills.
 
 ## Skills
 
@@ -42,7 +48,9 @@ Codex discovers repo-scoped skills from `.codex/skills/<skill>/SKILL.md`.
 
 ## Planner usage
 
-Run the planner in the expensive model/context (for example GPT-6 Sol) and request the planner skill:
+Invoke the project planner subagent for planning work. Its profile is already pinned to GPT-6 Sol/high and instructed to delegate broad code discovery to explorer.
+
+Equivalent task contract:
 
 ```text
 Use $task-planner for this task.
@@ -56,9 +64,30 @@ The planner should delegate concrete factual questions. The explorer must not ch
 
 The planner may directly inspect a narrow source fragment only when the explorer report is ambiguous, contradictory, `UNKNOWN`, or insufficient for a high-impact decision.
 
+## Explorer usage
+
+The planner should invoke the `explorer` subagent with narrow questions. Explorer is pinned to GPT-6 Luna and read-only.
+
+Typical request:
+
+```text
+Investigate only these questions:
+1. Where is X decided?
+2. Which code paths can change it?
+3. Which callers and tests depend on it?
+4. Which exact symbols form the likely change surface?
+
+Do not design a fix.
+Return the standard EXPLORER REPORT.
+```
+
+The report is the compression boundary between repository reading and expensive planner reasoning.
+
 ## Builder usage
 
-Start a separate cheap builder context/model (for example GPT-6 Luna) and give it the plan:
+Invoke the project `builder` subagent with the finished plan. Its profile is already pinned to GPT-6 Luna with workspace-write access.
+
+Equivalent task contract:
 
 ```text
 Use $task-builder.
@@ -67,7 +96,7 @@ Do not repeat repository exploration or redesign the solution.
 <validation requirements>
 ```
 
-Keeping planner and builder in separate contexts prevents the builder's implementation chatter and diffs from inflating the planner context, while the explorer absorbs the read-heavy repository work.
+Keeping planner, explorer, and builder in separate contexts prevents read-heavy exploration and implementation chatter from inflating the expensive planner context.
 
 ## Why the explorer is separate
 
