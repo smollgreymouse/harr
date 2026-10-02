@@ -2,6 +2,7 @@
 #include "MainWindow.h"
 #include "Scheduler.h"
 #include "TaskStore.h"
+#include "TaskPage.h"
 #include "Widgets.h"
 
 #include <QtCore/QCoreApplication>
@@ -11,6 +12,7 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QCalendarWidget>
 #include <QtWidgets/QDateEdit>
+#include <QtWidgets/QComboBox>
 
 #include <csignal>
 
@@ -39,6 +41,25 @@ int runSelfTest()
 
     harr::ScheduleTimeDialog picker(harr::defaultRunTime());
     if (!picker.date->calendarWidget() || picker.date->calendarWidget()->firstDayOfWeek() != Qt::Monday) return 6;
+
+    auto modelTask = store.load(id);
+    if (!modelTask) return 7;
+    harr::TaskPage page(&store, *modelTask, [](const QString &) {});
+    const QVector<QJsonObject> models{
+        QJsonObject{{"id", "gpt-current"}, {"model", "gpt-current"},
+                    {"displayName", "GPT Current"}, {"hidden", false}, {"isDefault", true}},
+        QJsonObject{{"id", "gpt-other"}, {"model", "gpt-other"},
+                    {"displayName", "GPT Other"}, {"hidden", false}, {"isDefault", false}},
+        QJsonObject{{"id", "gpt-hidden"}, {"model", "gpt-hidden"},
+                    {"displayName", "GPT Hidden"}, {"hidden", true}, {"isDefault", false}}
+    };
+    store.patch(id, {{"model", "gpt-removed"}});
+    page.setModelChoices(models);
+    if (page.model->count() != 2
+        || page.model->findData("gpt-removed", Qt::UserRole) >= 0
+        || page.model->findData("gpt-hidden", Qt::UserRole) >= 0
+        || page.model->currentData(Qt::UserRole).toString() != "gpt-current"
+        || store.load(id)->value("model").toString() != "gpt-current") return 8;
 
     harr::MainWindow window(&store);
     window.hide();

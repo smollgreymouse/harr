@@ -35,6 +35,19 @@ namespace harr {
 
 static constexpr int GROUP_ROLE = Qt::UserRole + 1;
 
+QString defaultModelId(const QVector<QJsonObject> &models)
+{
+    for (const auto &model : models) {
+        const QString id = model.value("model").toString(model.value("id").toString()).trimmed();
+        if (!id.isEmpty() && model.value("isDefault").toBool(false)) return id;
+    }
+    for (const auto &model : models) {
+        const QString id = model.value("model").toString(model.value("id").toString()).trimmed();
+        if (!id.isEmpty()) return id;
+    }
+    return {};
+}
+
 class WorkspaceTabWidget final : public QTabWidget {
 public:
     using QTabWidget::QTabWidget;
@@ -83,6 +96,11 @@ MainWindow::MainWindow(TaskStore *store)
     connect(m_reconcileTimer, &QTimer::timeout, this, [this] { refreshAll(); });
     m_reconcileTimer->start();
 
+    m_modelTimer = new QTimer(this);
+    m_modelTimer->setInterval(5 * 60 * 1000);
+    connect(m_modelTimer, &QTimer::timeout, this, [this] { refreshModels(); });
+    m_modelTimer->start();
+
     m_sessionTimer = new QTimer(this);
     m_sessionTimer->setInterval(30000);
     connect(m_sessionTimer, &QTimer::timeout, this, [this] { refreshSessions(); });
@@ -97,7 +115,10 @@ MainWindow::MainWindow(TaskStore *store)
     for (const auto &task : initialTasks) {
         m_knownStatuses.insert(task.value("id").toString(), task.value("status").toString());
     }
-    QTimer::singleShot(0, this, [this] { refreshSessions(); });
+    QTimer::singleShot(0, this, [this] {
+        refreshModels();
+        refreshSessions();
+    });
 }
 
 MainWindow::~MainWindow() = default;
@@ -281,6 +302,7 @@ void MainWindow::openTask(const QString &id, bool makeCurrent)
     const int index = m_tabs->addTab(page, tabTitle(*task));
     m_tabs->setTabToolTip(index, tabTooltip(*task));
     m_tabs->tabBar()->setTabButton(index, QTabBar::RightSide, new TabCloseButton(m_tabs, page));
+    if (!m_models.isEmpty()) page->setModelChoices(m_models);
     if (!m_sessions.isEmpty()) page->setSessionChoices(m_sessions, true);
     if (makeCurrent) m_tabs->setCurrentIndex(index);
     updateEmpty();
@@ -514,7 +536,7 @@ void MainWindow::rebuildTrayMenu()
             auto *action = sessionsMenu->addAction(label);
             action->setToolTip(session.value("id").toString() + "\n" + session.value("cwd").toString());
             connect(action, &QAction::triggered, this, [this, session] {
-                QuickScheduleDialog dialog(m_store, session, this);
+                QuickScheduleDialog dialog(m_store, session, defaultModelId(m_models), this);
                 if (dialog.exec() != QDialog::Accepted || dialog.scheduledTask().isEmpty()) return;
                 refreshAll();
                 const auto task = dialog.scheduledTask();
@@ -553,6 +575,20 @@ void MainWindow::rebuildTrayMenu()
     m_trayMenu->addSeparator();
     auto *quit = m_trayMenu->addAction("Quit");
     connect(quit, &QAction::triggered, this, [this] { quitApp(); });
+}
+
+void MainWindow::refreshModels()
+{
+    QString error;
+    auto models = CodexService::listModels(&error);
+    if (!models.isEmpty() || error.isEmpty()) m_models = models;
+    if (error.isEmpty()) {
+        m_sidebarStatus->setToolTip(QString("%1 Codex models loaded").arg(m_models.size()));
+        for (auto *page : m_pages) page->setModelChoices(m_models);
+        if (m_trayMenu && !m_trayMenu->isVisible()) rebuildTrayMenu();
+    } else if (m_models.isEmpty()) {
+        m_sidebarStatus->setToolTip(error);
+    }
 }
 
 void MainWindow::refreshSessions()

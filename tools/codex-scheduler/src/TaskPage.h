@@ -31,6 +31,7 @@ public:
              QWidget *parent = nullptr);
 
     QString taskId() const;
+    void setModelChoices(const QVector<QJsonObject> &models);
     void setSessionChoices(const QVector<QJsonObject> &sessions, bool selectLatestIfEmpty);
     void refreshFromStore();
 

@@ -87,7 +87,7 @@ std::optional<QJsonObject> CodexService::request(const QString &method, const QJ
     };
 
     send({{"method", "initialize"}, {"id", 0}, {"params", QJsonObject{
-        {"clientInfo", QJsonObject{{"name", "harr_codex_scheduler"}, {"title", "Harr Codex Scheduler"}, {"version", "2.0.0"}}}
+        {"clientInfo", QJsonObject{{"name", "harr_codex_scheduler"}, {"title", "Harr Codex Scheduler"}, {"version", "0.3.0"}}}
     }}});
     QString localError;
     if (!waitResponse(0, &localError)) {
@@ -107,6 +107,27 @@ std::optional<QJsonObject> CodexService::request(const QString &method, const QJ
     }
     if (!result && error) *error = localError;
     return result;
+}
+
+QVector<QJsonObject> CodexService::listModels(QString *error, const QString &codexBin)
+{
+    const QJsonObject params{
+        {"cursor", QJsonValue::Null},
+        {"limit", 100},
+        {"includeHidden", false}
+    };
+    auto result = request("model/list", params, error, codexBin);
+    QVector<QJsonObject> models;
+    if (!result) return models;
+    for (const QJsonValue &value : result->value("data").toArray()) {
+        if (!value.isObject()) continue;
+        const QJsonObject model = value.toObject();
+        if (model.value("hidden").toBool(false)) continue;
+        const QString id = model.value("model").toString(model.value("id").toString()).trimmed();
+        if (id.isEmpty()) continue;
+        models.push_back(model);
+    }
+    return models;
 }
 
 QVector<QJsonObject> CodexService::listSessions(QString *error, int limit, const QString &codexBin)

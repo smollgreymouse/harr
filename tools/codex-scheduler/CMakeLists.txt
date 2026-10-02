@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(harr_codex_scheduler VERSION 0.2.0 LANGUAGES CXX)
+project(harr_codex_scheduler VERSION 0.3.0 LANGUAGES CXX)
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install prefix" FORCE)

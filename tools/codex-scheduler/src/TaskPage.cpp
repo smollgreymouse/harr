@@ -89,9 +89,6 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
 
     auto *top = new QHBoxLayout();
     model = new QComboBox(this);
-    addChoice(model, "Sol", "gpt-5.6-sol");
-    addChoice(model, "Terra", "gpt-5.6-terra");
-    addChoice(model, "Luna", "gpt-5.6-luna");
     model->setProperty("chromeRole", "selector");
     model->setToolTip("Model");
 
@@ -202,6 +199,49 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
 
 QString TaskPage::taskId() const { return m_taskId; }
 
+void TaskPage::setModelChoices(const QVector<QJsonObject> &models)
+{
+    const auto task = currentTask();
+    const QString saved = task.value("model").toString().trimmed();
+    QString defaultModel;
+
+    QString selected;
+    {
+        QSignalBlocker blocker(model);
+        model->clear();
+        for (const auto &entry : models) {
+            const QString id = entry.value("model").toString(entry.value("id").toString()).trimmed();
+            if (id.isEmpty() || entry.value("hidden").toBool(false)) continue;
+            QString label = entry.value("displayName").toString().trimmed();
+            if (label.isEmpty()) label = id;
+            addChoice(model, label, id);
+            const int index = model->count() - 1;
+            const QString description = entry.value("description").toString().trimmed();
+            if (!description.isEmpty()) model->setItemData(index, description, Qt::ToolTipRole);
+            if (entry.value("isDefault").toBool(false)) defaultModel = id;
+        }
+
+        const bool savedAvailable = !saved.isEmpty()
+            && model->findData(saved, Qt::UserRole) >= 0;
+        const bool draft = task.value("status").toString() == "draft";
+        const QString preferred = savedAvailable
+            ? saved
+            : (draft
+                ? (!defaultModel.isEmpty()
+                    ? defaultModel
+                    : (model->count() > 0 ? model->itemData(0, Qt::UserRole).toString()
+                                          : QString{}))
+                : QString{});
+
+        if (preferred.isEmpty()) model->setCurrentIndex(-1);
+        else setChoiceValue(model, preferred);
+        selected = choiceValue(model);
+    }
+
+    if (task.value("status").toString() == "draft" && saved != selected && !selected.isEmpty())
+        persistDraft();
+}
+
 void TaskPage::setSessionChoices(const QVector<QJsonObject> &sessions, bool selectLatestIfEmpty)
 {
     const auto task = currentTask();
@@ -246,7 +286,11 @@ QJsonObject TaskPage::currentTask() const
 
 void TaskPage::loadTask(const QJsonObject &task)
 {
-    setChoiceValue(model, task.value("model").toString("gpt-5.6-terra"));
+    const QString savedModel = task.value("model").toString().trimmed();
+    if (!savedModel.isEmpty()) {
+        addChoice(model, savedModel, savedModel);
+        setChoiceValue(model, savedModel);
+    }
     setChoiceValue(reasoning, task.value("reasoning").toString("high"));
     setChoiceValue(speed, task.value("speed").toString("standard"));
     session->setSessionId(task.value("session").toString());
@@ -411,6 +455,10 @@ void TaskPage::schedule()
     const QString text = prompt->toPlainText().trimmed();
     if (id.isEmpty() || text.isEmpty()) {
         QMessageBox::warning(this, APP_NAME, "Session and prompt are required.");
+        return;
+    }
+    if (choiceValue(model).isEmpty()) {
+        QMessageBox::warning(this, APP_NAME, "No Codex model is available.");
         return;
     }
     if (!m_scheduled.isValid()) {

@@ -16,8 +16,9 @@
 namespace harr {
 
 QuickScheduleDialog::QuickScheduleDialog(TaskStore *store, const QJsonObject &session,
-                                         QWidget *parent)
-    : QDialog(parent), m_store(store), m_session(session), m_when(defaultRunTime())
+                                         const QString &model, QWidget *parent)
+    : QDialog(parent), m_store(store), m_session(session), m_model(model),
+      m_when(defaultRunTime())
 {
     setWindowTitle("Schedule Codex task");
     setModal(true);
@@ -81,12 +82,17 @@ void QuickScheduleDialog::scheduleNow()
         return;
     }
 
+    if (m_model.isEmpty()) {
+        QMessageBox::warning(this, APP_NAME, "No Codex model is available.");
+        return;
+    }
+
     QJsonObject task = m_store->newDraft();
     const QString taskId = task.value("id").toString();
     const QString logPath = task.value("log").toString();
 
     ScheduleRequest req;
-    req.model = "gpt-5.6-terra";
+    req.model = m_model;
     req.reasoning = "high";
     req.speed = "standard";
     req.timestamp = m_when.toString("yyyyMMddHHmm");

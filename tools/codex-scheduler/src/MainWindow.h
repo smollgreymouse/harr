@@ -36,6 +36,7 @@ public:
 
     void quitApp();
     void restore();
+    void refreshModels();
     void refreshSessions();
     void refreshAll();
     void openTask(const QString &id, bool makeCurrent = true);
@@ -79,8 +80,10 @@ private:
     QLabel *m_emptyHint{};
     QMenu *m_tasksMenu{};
     QHash<QString, TaskPage *> m_pages;
+    QVector<QJsonObject> m_models;
     QVector<QJsonObject> m_sessions;
     QTimer *m_reconcileTimer{};
+    QTimer *m_modelTimer{};
     QTimer *m_sessionTimer{};
     QFileSystemWatcher *m_stateWatcher{};
     QSystemTrayIcon *m_tray{};

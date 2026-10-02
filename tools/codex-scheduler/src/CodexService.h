@@ -13,6 +13,8 @@ public:
     static std::optional<QJsonObject> request(const QString &method, const QJsonObject &params,
                                               QString *error = nullptr, const QString &codexBin = {},
                                               int timeoutMs = 10000);
+    static QVector<QJsonObject> listModels(QString *error = nullptr,
+                                           const QString &codexBin = {});
     static QVector<QJsonObject> listSessions(QString *error = nullptr, int limit = 50,
                                              const QString &codexBin = {});
     static std::optional<QJsonObject> readThread(const QString &session, QString *error = nullptr,
