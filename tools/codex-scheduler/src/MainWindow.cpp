@@ -440,6 +440,15 @@ void MainWindow::populateTaskMenu(QMenu *menu, const QJsonObject &task)
     const QString state = task.value("status").toString();
     if (state == "scheduled" || state == "running" || state == "cancelling") {
         menu->addSeparator();
+        if (state == "scheduled") {
+            auto *edit = menu->addAction("Edit task");
+            connect(edit, &QAction::triggered, this, [this, id] {
+                restore();
+                openTask(id, true);
+                if (auto *page = m_pages.value(id, nullptr)) page->editScheduled();
+                refreshAll();
+            });
+        }
         auto *cancel = menu->addAction("Cancel task…");
         connect(cancel, &QAction::triggered, this, [this, id] {
             auto task = m_store->load(id);

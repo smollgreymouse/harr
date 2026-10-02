@@ -33,6 +33,7 @@ public:
     QString taskId() const;
     void setModelChoices(const QVector<QJsonObject> &models);
     void setSessionChoices(const QVector<QJsonObject> &sessions, bool selectLatestIfEmpty);
+    void editScheduled();
     void refreshFromStore();
 
 private:
@@ -67,6 +68,7 @@ private:
     QString m_log;
     QString m_lastStatus;
     QDateTime m_scheduled;
+    QVector<QJsonObject> m_modelChoices;
     qint64 m_lastLogSize = -1;
 
 public:
@@ -78,6 +80,7 @@ public:
     QPushButton *when{};
     QTextEdit *prompt{};
     QPushButton *saveButton{};
+    QPushButton *editButton{};
     QPushButton *primary{};
     QScrollArea *transcript{};
     QTimer *pollTimer{};

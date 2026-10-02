@@ -6,6 +6,7 @@
 #include "Widgets.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QFile>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTextStream>
 #include <QtCore/QTimer>
@@ -60,6 +61,57 @@ int runSelfTest()
         || page.model->findData("gpt-hidden", Qt::UserRole) >= 0
         || page.model->currentData(Qt::UserRole).toString() != "gpt-current"
         || store.load(id)->value("model").toString() != "gpt-current") return 8;
+
+    const QString atrmPath = temp.filePath("fake-atrm");
+    const QString atrmLog = temp.filePath("atrm.log");
+    {
+        QFile atrm(atrmPath);
+        if (!atrm.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 9;
+        atrm.write("#!/bin/sh\nprintf '%s\\n' \"$1\" > \"$FAKE_ATRM_LOG\"\n");
+        atrm.close();
+        if (!atrm.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
+            return 10;
+    }
+    qputenv("ATRM_BIN", atrmPath.toLocal8Bit());
+    qputenv("FAKE_ATRM_LOG", atrmLog.toLocal8Bit());
+    const auto scheduledTask = store.newDraft();
+    const QString scheduledId = scheduledTask.value("id").toString();
+    store.patch(scheduledId, {
+        {"status", "scheduled"},
+        {"at_job", "73"},
+        {"model", "gpt-current"},
+        {"scheduled", harr::defaultRunTime().toString(Qt::ISODate)}
+    });
+    QString editError;
+    const auto reopened = store.reopenScheduled(scheduledId, &editError);
+    qunsetenv("ATRM_BIN");
+    qunsetenv("FAKE_ATRM_LOG");
+    QFile atrmResult(atrmLog);
+    if (!editError.isEmpty()
+        || reopened.value("status").toString() != "draft"
+        || !reopened.value("at_job").isNull()
+        || !atrmResult.open(QIODevice::ReadOnly)
+        || QString::fromUtf8(atrmResult.readAll()).trimmed() != "73") return 11;
+
+    const QString failingAtrmPath = temp.filePath("fake-atrm-fail");
+    {
+        QFile atrm(failingAtrmPath);
+        if (!atrm.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 12;
+        atrm.write("#!/bin/sh\nexit 1\n");
+        atrm.close();
+        if (!atrm.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
+            return 13;
+    }
+    qputenv("ATRM_BIN", failingAtrmPath.toLocal8Bit());
+    const auto racingTask = store.newDraft();
+    const QString racingId = racingTask.value("id").toString();
+    store.patch(racingId, {{"status", "scheduled"}, {"at_job", "74"}});
+    QString racingError;
+    const auto stillScheduled = store.reopenScheduled(racingId, &racingError);
+    qunsetenv("ATRM_BIN");
+    if (racingError.isEmpty()
+        || stillScheduled.value("status").toString() != "scheduled"
+        || stillScheduled.value("at_job").toString() != "74") return 14;
 
     harr::MainWindow window(&store);
     window.hide();

@@ -147,6 +147,71 @@ bool TaskStore::isEmptyDraft(const QJsonObject &task) const
         && (task.value("answer").isNull() || task.value("answer").toString().isEmpty());
 }
 
+static QString atrmExecutable()
+{
+    QString atrm = qEnvironmentVariable("ATRM_BIN");
+    if (!atrm.isEmpty()) return atrm;
+    atrm = QStandardPaths::findExecutable("atrm");
+    return atrm.isEmpty() ? QStringLiteral("atrm") : atrm;
+}
+
+QJsonObject TaskStore::reopenScheduled(const QString &id, QString *error)
+{
+    auto maybeTask = load(id);
+    if (!maybeTask) {
+        if (error) *error = "task not found";
+        return {};
+    }
+
+    const QJsonObject task = *maybeTask;
+    if (task.value("status").toString() != "scheduled") {
+        if (error) *error = "only a scheduled task that has not started can be edited";
+        return task;
+    }
+
+    const QString jobId = task.value("at_job").toString().trimmed();
+    if (jobId.isEmpty()) {
+        if (error) *error = "scheduled task has no at job id";
+        return task;
+    }
+
+    QProcess proc;
+    proc.start(atrmExecutable(), {jobId});
+    if (!proc.waitForStarted(3000)) {
+        if (error) *error = "cannot start atrm: " + proc.errorString();
+        return task;
+    }
+    if (!proc.waitForFinished(5000)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        if (error) *error = "timed out removing scheduled at job";
+        return task;
+    }
+    if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
+        const auto current = load(id).value_or(task);
+        if (error) {
+            if (current.value("status").toString() != "scheduled")
+                *error = "task has already started and can no longer be edited";
+            else {
+                QString detail = QString::fromUtf8(proc.readAllStandardError()).trimmed();
+                *error = "could not remove scheduled at job";
+                if (!detail.isEmpty()) *error += ": " + detail;
+            }
+        }
+        return current;
+    }
+
+    return patch(id, {
+        {"status", "draft"},
+        {"at_job", QJsonValue::Null},
+        {"pid", QJsonValue::Null},
+        {"cancel_requested", false},
+        {"error", QJsonValue::Null},
+        {"started_at", QJsonValue::Null},
+        {"finished_at", QJsonValue::Null}
+    });
+}
+
 QJsonObject TaskStore::cancel(const QString &id, QString *error)
 {
     auto maybeTask = load(id);
@@ -157,10 +222,8 @@ QJsonObject TaskStore::cancel(const QString &id, QString *error)
 
     patch(id, {{"cancel_requested", true}, {"status", "cancelling"}});
     if (status == "scheduled" && !task.value("at_job").toString().isEmpty()) {
-        QString atrm = QStandardPaths::findExecutable("atrm");
-        if (atrm.isEmpty()) atrm = "atrm";
         QProcess proc;
-        proc.start(atrm, {task.value("at_job").toString()});
+        proc.start(atrmExecutable(), {task.value("at_job").toString()});
         proc.waitForFinished(5000);
         if (proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0)
             return patch(id, {{"status", "cancelled"}, {"finished_at", utcNow()}, {"pid", QJsonValue::Null}});

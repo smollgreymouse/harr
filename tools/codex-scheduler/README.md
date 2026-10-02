@@ -44,6 +44,7 @@ The Qt Widgets UI is task-oriented:
 - closing a tab closes only the view; non-empty tasks remain in persistent state;
 - the left tasks sidebar can be hidden from the tab strip;
 - **Active** and **History** are independently collapsible;
+- scheduled tasks that have not started can be reopened for editing; the old `at` job is removed first, then the same task returns to draft state and can be rescheduled;
 - task menus can reopen views, cancel scheduled/running jobs, delete scheduler state/logs, or explicitly delete an exported answer;
 - task state lives under `$XDG_STATE_HOME/harr-codex-scheduler` (normally `~/.local/state/harr-codex-scheduler`).
 

@@ -148,9 +148,12 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     auto *actions = new QHBoxLayout();
     saveButton = new QPushButton("Save final answer…", this);
     saveButton->setCheckable(true);
+    editButton = new QPushButton("Edit task", this);
+    editButton->setVisible(false);
     primary = new QPushButton("Schedule", this);
     actions->addWidget(saveButton);
     actions->addStretch(1);
+    actions->addWidget(editButton);
     actions->addWidget(primary);
     root->addLayout(actions);
 
@@ -181,6 +184,7 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     connect(prompt, &QTextEdit::textChanged, this, [this] { persistDraft(); });
     connect(when, &QPushButton::clicked, this, [this] { chooseTime(); });
     connect(saveButton, &QPushButton::clicked, this, [this](bool checked) { toggleSave(checked); });
+    connect(editButton, &QPushButton::clicked, this, [this] { editScheduled(); });
     connect(primary, &QPushButton::clicked, this, [this] { primaryAction(); });
     connect(m_copyProjectAction, &QAction::triggered, this, [this] {
         if (!m_cwd.isEmpty()) QApplication::clipboard()->setText(m_cwd);
@@ -201,6 +205,7 @@ QString TaskPage::taskId() const { return m_taskId; }
 
 void TaskPage::setModelChoices(const QVector<QJsonObject> &models)
 {
+    m_modelChoices = models;
     const auto task = currentTask();
     const QString saved = task.value("model").toString().trimmed();
     QString defaultModel;
@@ -286,11 +291,6 @@ QJsonObject TaskPage::currentTask() const
 
 void TaskPage::loadTask(const QJsonObject &task)
 {
-    const QString savedModel = task.value("model").toString().trimmed();
-    if (!savedModel.isEmpty()) {
-        addChoice(model, savedModel, savedModel);
-        setChoiceValue(model, savedModel);
-    }
     setChoiceValue(reasoning, task.value("reasoning").toString("high"));
     setChoiceValue(speed, task.value("speed").toString("standard"));
     session->setSessionId(task.value("session").toString());
@@ -442,6 +442,22 @@ void TaskPage::toggleSave(bool checked)
     persistDraft();
 }
 
+void TaskPage::editScheduled()
+{
+    QString error;
+    const auto task = m_store->reopenScheduled(m_taskId, &error);
+    if (!error.isEmpty()) {
+        QMessageBox::warning(this, APP_NAME, error);
+        refreshFromStore();
+        return;
+    }
+
+    if (!m_modelChoices.isEmpty()) setModelChoices(m_modelChoices);
+    applyStatus(task);
+    rebuildTranscript(task);
+    if (m_changed) m_changed(m_taskId);
+}
+
 void TaskPage::primaryAction()
 {
     const QString state = currentTask().value("status").toString();
@@ -589,6 +605,8 @@ void TaskPage::applyStatus(const QJsonObject &task)
     };
     for (QWidget *widget : widgets) widget->setEnabled(editable);
     m_projectButton->setEnabled(true);
+
+    editButton->setVisible(state == "scheduled");
 
     if (state == "draft") {
         primary->setText("Schedule");

@@ -24,6 +24,7 @@ public:
     QJsonObject loadUi() const;
     void saveUi(const QStringList &openIds, const QString &currentId);
     bool isEmptyDraft(const QJsonObject &task) const;
+    QJsonObject reopenScheduled(const QString &id, QString *error = nullptr);
     QJsonObject cancel(const QString &id, QString *error = nullptr);
     bool remove(const QString &id, bool deleteLog, bool deleteAnswer, QString *error = nullptr);
 
