@@ -21,9 +21,24 @@ TGZ="$TMP/dist/harr-codex-scheduler-${VERSION}-linux-${ARCH}.tar.gz"
 dpkg-deb --field "$DEB" Package | grep -qx 'harr-codex-scheduler'
 dpkg-deb --field "$DEB" Version | grep -qx "$VERSION"
 dpkg-deb --field "$DEB" Architecture | grep -qx "$ARCH"
-dpkg-deb --field "$DEB" Depends | grep -q 'libqt6widgets6t64'
-dpkg-deb --field "$DEB" Depends | grep -q 'at'
-if dpkg-deb --field "$DEB" Depends | grep -qi 'python'; then
+DEPS=$(dpkg-deb --field "$DEB" Depends)
+grep -q 'at' <<<"$DEPS"
+grep -q 'git' <<<"$DEPS"
+grep -q 'bash' <<<"$DEPS"
+grep -q 'util-linux' <<<"$DEPS"
+
+# Do not pin Qt's Debian package naming here. CPack/dpkg-shlibdeps must derive
+# the distro-specific shared-library dependencies from the packaged ELF.
+if ! grep -Eq '(^|, )libqt6[^,]*widgets' <<<"$DEPS"; then
+  echo "dpkg-shlibdeps did not add a Qt Widgets runtime dependency: $DEPS" >&2
+  exit 1
+fi
+
+# Verify that apt can resolve the complete dependency set on the build distro
+# without changing the machine.
+apt-get --simulate install "$DEB" >/dev/null
+
+if grep -qi 'python' <<<"$DEPS"; then
   echo 'native package unexpectedly depends on Python' >&2
   exit 1
 fi
@@ -41,6 +56,11 @@ for path in \
 done
 
 [[ -x "$TMP/root/usr/bin/harr-codex-scheduler" ]]
+if ldd "$TMP/root/usr/bin/harr-codex-scheduler" | grep -q 'not found'; then
+  echo 'packaged scheduler has unresolved shared-library dependencies' >&2
+  ldd "$TMP/root/usr/bin/harr-codex-scheduler" >&2
+  exit 1
+fi
 grep -q '^Exec=/usr/bin/harr-codex-scheduler$' "$TMP/root/usr/share/applications/harr-codex-scheduler.desktop"
 bash -n "$TMP/root/usr/bin/"{codex-scheduler-ui,codex-schedule,sol,terra,luna}
 

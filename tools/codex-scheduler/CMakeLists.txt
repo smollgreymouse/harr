@@ -151,9 +151,9 @@ set(CPACK_DEBIAN_FILE_NAME
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
-    "at, git, bash, util-linux, libqt6core6t64, libqt6gui6t64, libqt6widgets6t64"
+    "at, git, bash, util-linux"
 )
-set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${SCHEDULER_POSTINST}")
 
 include(CPack)
