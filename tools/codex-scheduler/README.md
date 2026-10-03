@@ -136,17 +136,17 @@ cmake -S tools/codex-scheduler \
 cmake --build tools/codex-scheduler/build-release --target package-release
 ```
 
-With version `0.3.0` on amd64 this produces:
+With version `0.3.1` on amd64 this produces:
 
 ```text
-tools/codex-scheduler/dist/harr-codex-scheduler_0.3.0_amd64.deb
-tools/codex-scheduler/dist/harr-codex-scheduler-0.3.0-linux-amd64.tar.gz
+tools/codex-scheduler/dist/harr-codex-scheduler_0.3.1_amd64.deb
+tools/codex-scheduler/dist/harr-codex-scheduler-0.3.1-linux-amd64.tar.gz
 ```
 
 ### Install `.deb`
 
 ```bash
-sudo apt install ./tools/codex-scheduler/dist/harr-codex-scheduler_0.3.0_amd64.deb
+sudo apt install ./tools/codex-scheduler/dist/harr-codex-scheduler_0.3.1_amd64.deb
 ```
 
 or build and install in one step:
@@ -176,8 +176,8 @@ rm -rf ~/.local/state/harr-codex-scheduler
 ### Portable bundle
 
 ```bash
-tar -xzf harr-codex-scheduler-0.3.0-linux-amd64.tar.gz
-cd harr-codex-scheduler-0.3.0-linux-amd64
+tar -xzf harr-codex-scheduler-0.3.1-linux-amd64.tar.gz
+cd harr-codex-scheduler-0.3.1-linux-amd64
 ./harr-codex-scheduler
 ```
 
@@ -188,8 +188,8 @@ Runtime dependencies are Qt 6 Widgets/Core/Gui, `at`, and `git`; no Python is re
 `tools/codex-scheduler/VERSION` is the release version source of truth. A matching tag builds and publishes the native `.deb` and tarball:
 
 ```bash
-git tag codex-scheduler-v0.3.0
-git push origin codex-scheduler-v0.3.0
+git tag codex-scheduler-v0.3.1
+git push origin codex-scheduler-v0.3.1
 ```
 
 The release workflow rejects a tag whose version does not match `VERSION`.

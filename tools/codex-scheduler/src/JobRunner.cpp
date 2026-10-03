@@ -6,6 +6,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
+#include <QtCore/QProcessEnvironment>
 #include <QtCore/QSaveFile>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTextStream>
@@ -19,6 +20,35 @@ static std::optional<TaskStore> storeForTaskState(const QString &taskState)
     if (dir.dirName() != "tasks") return std::nullopt;
     if (!dir.cdUp()) return std::nullopt;
     return TaskStore(dir.absolutePath());
+}
+
+static QProcessEnvironment commandEnvironment()
+{
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    QString shell = environment.value("SHELL").trimmed();
+    if (shell.isEmpty() || !QFileInfo(shell).isExecutable()) shell = "/bin/sh";
+
+    QProcess loginShell;
+    loginShell.setProcessEnvironment(environment);
+    loginShell.setProcessChannelMode(QProcess::SeparateChannels);
+    loginShell.start(shell, {"-l", "-i", "-c", "env"});
+    if (!loginShell.waitForStarted(3000)) return environment;
+    if (!loginShell.waitForFinished(5000)) {
+        loginShell.kill();
+        loginShell.waitForFinished(1000);
+        return environment;
+    }
+    if (loginShell.exitStatus() != QProcess::NormalExit || loginShell.exitCode() != 0)
+        return environment;
+
+    QString loginPath;
+    const QByteArray output = loginShell.readAllStandardOutput();
+    for (const QByteArray &line : output.split('\n')) {
+        if (line.startsWith("PATH="))
+            loginPath = QString::fromLocal8Bit(line.mid(5)).trimmed();
+    }
+    if (!loginPath.isEmpty()) environment.insert("PATH", loginPath);
+    return environment;
 }
 
 int runJobRunner(const QStringList &args)
@@ -72,6 +102,7 @@ int runJobRunner(const QStringList &args)
     }
 
     QProcess process;
+    process.setProcessEnvironment(commandEnvironment());
     process.setProcessChannelMode(QProcess::MergedChannels);
     process.start(program, processArgs);
     if (!process.waitForStarted(5000)) {

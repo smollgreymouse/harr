@@ -49,6 +49,34 @@ printf '%s\n' '{"type":"turn.completed"}'
 EOF_CODEX
 chmod +x "$TMP/bin/codex"
 
+mkdir -p "$TMP/login-bin"
+cat > "$TMP/login-bin/path-probe-tool" <<'EOF_PROBE_TOOL'
+#!/bin/sh
+exit 0
+EOF_PROBE_TOOL
+chmod +x "$TMP/login-bin/path-probe-tool"
+
+cat > "$TMP/bin/fake-login-shell" <<'EOF_LOGIN_SHELL'
+#!/bin/sh
+if [ "$1" = "-l" ] && [ "$2" = "-i" ] && [ "$3" = "-c" ]; then
+  printf 'LOGIN_BANNER=ignored\nPATH=%s\n' "$FAKE_LOGIN_PATH"
+  exit 0
+fi
+exit 2
+EOF_LOGIN_SHELL
+chmod +x "$TMP/bin/fake-login-shell"
+
+cat > "$TMP/bin/path-probe" <<'EOF_PATH_PROBE'
+#!/bin/sh
+command -v path-probe-tool > "$FAKE_PATH_RESULT"
+EOF_PATH_PROBE
+chmod +x "$TMP/bin/path-probe"
+
+FAKE_LOGIN_PATH="$TMP/login-bin:/usr/bin:/bin" FAKE_PATH_RESULT="$TMP/path.result" \
+  PATH="/usr/bin:/bin" SHELL="$TMP/bin/fake-login-shell" \
+  "$BIN" job-runner --log "$TMP/path-probe.log" -- "$TMP/bin/path-probe"
+grep -Fxq "$TMP/login-bin/path-probe-tool" "$TMP/path.result"
+
 export AT_BIN="$TMP/bin/at" CODEX_BIN="$TMP/bin/codex" TTY_PATH="$TMP/tty"
 export FAKE_CODEX_CWD="$TMP/work" FAKE_CODEX_ARGS="$TMP/codex.args"
 export HARR_CODEX_SCHEDULER_BIN="$BIN"
