@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly HARR_VERSION="1.0.0"
 readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -r "${SELF_DIR}/../VERSION" ]]; then
+  readonly HARR_VERSION="$(tr -d '[:space:]' < "${SELF_DIR}/../VERSION")"
+else
+  readonly HARR_VERSION="1.0.0"
+fi
 
 if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
   readonly CLI_LIB_DIR="${SELF_DIR}/files/harr-cli"
