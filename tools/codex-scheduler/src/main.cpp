@@ -14,6 +14,7 @@
 #include <QtWidgets/QCalendarWidget>
 #include <QtWidgets/QDateEdit>
 #include <QtWidgets/QComboBox>
+#include <QtWidgets/QMenu>
 
 #include <csignal>
 
@@ -115,6 +116,14 @@ int runSelfTest()
 
     harr::MainWindow window(&store);
     window.hide();
+
+    const auto trayMenus = window.findChildren<QMenu *>(QString(), Qt::FindDirectChildrenOnly);
+    if (trayMenus.size() != 1) return 15;
+    QMenu *trayMenu = trayMenus.front();
+    for (int i = 0; i < 200; ++i) {
+        if (!QMetaObject::invokeMethod(trayMenu, "aboutToShow", Qt::DirectConnection)) return 16;
+    }
+    if (trayMenu->findChildren<QMenu *>(QString(), Qt::FindDirectChildrenOnly).size() != 2) return 17;
 
     QTextStream(stdout) << "C++ scheduler self-test passed\n";
     return 0;

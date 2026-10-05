@@ -263,9 +263,18 @@ void TaskPage::setSessionChoices(const QVector<QJsonObject> &sessions, bool sele
 void TaskPage::refreshFromStore()
 {
     const auto task = currentTask();
+    const QString state = task.value("status").toString();
+    bool changed = state != m_lastStatus;
+
+    const QString logPath = task.value("log").toString();
+    if (!logPath.isEmpty()) {
+        QFileInfo info(logPath);
+        if (info.exists() && info.size() != m_lastLogSize) changed = true;
+    }
+
+    if (!changed) return;
     applyStatus(task);
     rebuildTranscript(task);
-    if (m_changed) m_changed(m_taskId);
 }
 
 void TaskPage::addChoice(QComboBox *combo, const QString &label, const QString &value)

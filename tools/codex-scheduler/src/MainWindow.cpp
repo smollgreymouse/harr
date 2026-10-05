@@ -35,6 +35,13 @@ namespace harr {
 
 static constexpr int GROUP_ROLE = Qt::UserRole + 1;
 
+static void clearMenuAndOwnedSubmenus(QMenu *menu)
+{
+    const auto submenus = menu->findChildren<QMenu *>(QString(), Qt::FindDirectChildrenOnly);
+    for (QMenu *submenu : submenus) delete submenu;
+    menu->clear();
+}
+
 QString defaultModelId(const QVector<QJsonObject> &models)
 {
     for (const auto &model : models) {
@@ -92,18 +99,18 @@ MainWindow::MainWindow(TaskStore *store)
     m_splitter->setSizes({m_sidebarWidth, 850});
 
     m_reconcileTimer = new QTimer(this);
-    m_reconcileTimer->setInterval(12000);
+    m_reconcileTimer->setInterval(60 * 1000);
     connect(m_reconcileTimer, &QTimer::timeout, this, [this] { refreshAll(); });
     m_reconcileTimer->start();
 
     m_modelTimer = new QTimer(this);
     m_modelTimer->setInterval(5 * 60 * 1000);
-    connect(m_modelTimer, &QTimer::timeout, this, [this] { refreshModels(); });
+    connect(m_modelTimer, &QTimer::timeout, this, [this] { if (isVisible()) refreshModels(); });
     m_modelTimer->start();
 
     m_sessionTimer = new QTimer(this);
-    m_sessionTimer->setInterval(30000);
-    connect(m_sessionTimer, &QTimer::timeout, this, [this] { refreshSessions(); });
+    m_sessionTimer->setInterval(5 * 60 * 1000);
+    connect(m_sessionTimer, &QTimer::timeout, this, [this] { if (isVisible()) refreshSessions(); });
     m_sessionTimer->start();
 
     setupTray();
@@ -242,9 +249,7 @@ void MainWindow::setupTray()
     m_tray->setToolTip(APP_NAME);
     m_trayMenu = new QMenu(this);
     m_tray->setContextMenu(m_trayMenu);
-    connect(m_trayMenu, &QMenu::aboutToHide, this, [this] {
-        QTimer::singleShot(0, this, [this] { if (m_trayMenu) rebuildTrayMenu(); });
-    });
+    connect(m_trayMenu, &QMenu::aboutToShow, this, [this] { rebuildTrayMenu(); });
     connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) restore();
     });
@@ -499,7 +504,7 @@ void MainWindow::populateTaskMenu(QMenu *menu, const QJsonObject &task)
 
 void MainWindow::rebuildTasksMenu()
 {
-    m_tasksMenu->clear();
+    clearMenuAndOwnedSubmenus(m_tasksMenu);
     auto *newAction = m_tasksMenu->addAction("＋ New task");
     connect(newAction, &QAction::triggered, this, [this] { newTask(); });
     auto *refresh = m_tasksMenu->addAction("↻ Refresh Codex sessions");
@@ -523,7 +528,7 @@ void MainWindow::rebuildTasksMenu()
 
 void MainWindow::rebuildTrayMenu()
 {
-    m_trayMenu->clear();
+    clearMenuAndOwnedSubmenus(m_trayMenu);
     auto *show = m_trayMenu->addAction("Open main window");
     connect(show, &QAction::triggered, this, [this] { restore(); });
     m_trayMenu->addSeparator();
@@ -594,7 +599,6 @@ void MainWindow::refreshModels()
     if (error.isEmpty()) {
         m_sidebarStatus->setToolTip(QString("%1 Codex models loaded").arg(m_models.size()));
         for (auto *page : m_pages) page->setModelChoices(m_models);
-        if (m_trayMenu && !m_trayMenu->isVisible()) rebuildTrayMenu();
     } else if (m_models.isEmpty()) {
         m_sidebarStatus->setToolTip(error);
     }
@@ -608,7 +612,6 @@ void MainWindow::refreshSessions()
     if (error.isEmpty()) m_sidebarStatus->setToolTip(QString("%1 active Codex sessions loaded").arg(m_sessions.size()));
     else m_sidebarStatus->setToolTip(error);
     for (auto *page : m_pages) page->setSessionChoices(m_sessions, true);
-    if (m_trayMenu && !m_trayMenu->isVisible()) rebuildTrayMenu();
 }
 
 void MainWindow::recordAndNotifyStatusChanges(const QVector<QJsonObject> &tasks)
@@ -652,7 +655,6 @@ void MainWindow::refreshAll()
         ++it;
     }
     updateEmpty();
-    if (m_trayMenu && !m_trayMenu->isVisible()) rebuildTrayMenu();
 }
 
 void MainWindow::saveUi()
@@ -680,6 +682,10 @@ void MainWindow::restore()
     show();
     raise();
     activateWindow();
+    QTimer::singleShot(0, this, [this] {
+        refreshModels();
+        refreshSessions();
+    });
 }
 
 void MainWindow::quitApp()

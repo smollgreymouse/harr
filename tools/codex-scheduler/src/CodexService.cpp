@@ -87,7 +87,7 @@ std::optional<QJsonObject> CodexService::request(const QString &method, const QJ
     };
 
     send({{"method", "initialize"}, {"id", 0}, {"params", QJsonObject{
-        {"clientInfo", QJsonObject{{"name", "harr_codex_scheduler"}, {"title", "Harr Codex Scheduler"}, {"version", "0.3.1"}}}
+        {"clientInfo", QJsonObject{{"name", "harr_codex_scheduler"}, {"title", "Harr Codex Scheduler"}, {"version", "0.3.2"}}}
     }}});
     QString localError;
     if (!waitResponse(0, &localError)) {
