@@ -103,6 +103,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
+        assert ("GigaCode is the optional cheap implementation executor" in policy) == ("gigacode" in expected)
+        assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
+        assert ("Do not poll GigaCode on a timer" in policy) == ("gigacode" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -143,6 +146,13 @@ def check(spec: str, expected: list[str]) -> None:
             assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
+        gigacode_ref = filtered_skill / "references" / "gigacode.md"
+        assert gigacode_ref.exists() == ("gigacode" in expected)
+        if gigacode_ref.exists():
+            gigacode_text = gigacode_ref.read_text(encoding="utf-8")
+            assert "gigacode::gigacode" in gigacode_text
+            assert "startup_confirmed=true" in gigacode_text
+            assert "Do not poll in the same parent turn" in gigacode_text
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -151,8 +161,25 @@ servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
+assert servers["gigacode"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
-check("all", ["codegraph", "gitlab", "grafana"])
+check("gigacode", ["codegraph", "gigacode"])
+check("all", ["codegraph", "gitlab", "grafana", "gigacode"])
+
+# Normal reinstall/update without an explicit selection must reuse the saved
+# optional set instead of resetting to required-only or all.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gigacode")
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--default", "required")
+    assert names(effective) == ["codegraph", "gigacode"]
+    assert json.loads(selection.read_text(encoding="utf-8")) == {
+        "schema": 1,
+        "enabled": ["codegraph", "gigacode"],
+    }
+
 print("cross-platform MCP selection: PASS")

@@ -72,6 +72,23 @@
           "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
         }
       ]
+    },
+    {
+      "name": "gigacode",
+      "label": "GigaCode",
+      "description": "persistent external executor for planner-to-builder delegation",
+      "required": false,
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "bundled-python",
+        "version": "1.7.0",
+        "script": "gigacode_server.py",
+        "requires_command": "gigacode",
+        "args": [],
+        "install_hint": "GigaCode CLI is required for the optional GigaCode executor MCP; install/configure `gigacode` and ensure it is in PATH"
+      },
+      "skill_reference": "gigacode.md"
     }
   ]
 }

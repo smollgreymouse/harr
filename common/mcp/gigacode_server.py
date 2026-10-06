@@ -1,0 +1,1242 @@
+#!/usr/bin/env python3
+"""Minimal stdio MCP server exposing persistent GigaCode execution.
+
+The MCP boundary is intentionally narrow:
+- action=start: launch a detached persistent GigaCode session from plan_path or prompt.
+- action=resume: launch a detached continuation of that same session.
+- action=status: read progress or the final handoff without waiting.
+
+GigaCode must return a planner-ready structured handoff. In particular,
+ESCALATE responses contain enough code evidence for the planner to decide
+what to do next without reopening the source merely to rediscover the mismatch.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import uuid
+from collections import deque
+
+
+SERVER_NAME = "gigacode"
+SERVER_VERSION = "1.7.0"
+ROOT = Path.cwd().resolve()
+DEFAULT_HARD_TIMEOUT_SEC = 900
+DEFAULT_STALL_TIMEOUT_SEC = 300
+STARTUP_CONFIRM_TIMEOUT_SEC = 20.0
+STARTUP_CONFIRM_POLL_SEC = 0.25
+POLL_INTERVAL_SEC = 5.0
+WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
+CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "gigacode-mcp" / WORKSPACE_KEY
+CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+
+WORKER_CONTRACT = r"""
+You are an implementation worker. The caller is a more capable planner and owns
+architecture, root-cause decisions, scope changes, and ambiguous design choices.
+
+Your job is to execute an already-decided plan faithfully and cheaply.
+
+Before editing:
+1. Read the complete plan.
+2. Read only enough repository code to validate the plan's important anchors,
+   symbols, call paths, and assumptions.
+3. If a material plan assumption does not match the code, STOP BEFORE EDITING
+   and return ESCALATE. Do not redesign the solution yourself.
+
+During implementation:
+- Stay inside the plan's scope and design.
+- Do not perform unrelated cleanup.
+- Run the validation requested by the plan.
+- Do not commit, push, or make external writes unless the plan explicitly says so.
+- If an unexpected architectural contradiction appears after edits have begun,
+  stop making further changes and return ESCALATE. Report every file already changed;
+  do not silently revert or broaden the design.
+- Ordinary local implementation mistakes that can be fixed without changing the
+  plan are yours to fix; do not escalate trivial syntax/test errors.
+- Use your normal execution capabilities. The bridge does not prescribe or
+  depend on your internal tools, MCP servers, shell implementation, or editor.
+- Keep long-running validation bounded. Do not enter sleep/poll loops, launch
+  duplicate expensive work merely to wait, or repeatedly probe output just for
+  progress. If validation cannot complete in this turn, preserve completed edits
+  and return FAILED with the unfinished check and the evidence already gathered.
+
+The final response MUST be exactly one JSON object and no Markdown fences or
+surrounding prose. Use this schema:
+
+{
+  "status": "DONE" | "ESCALATE" | "FAILED",
+  "summary": "short planner-facing summary",
+  "changed": [
+    {"path": "relative/path", "what": "specific change"}
+  ],
+  "verified": [
+    {"check": "command or invariant checked", "result": "PASS" | "FAIL", "evidence": "compact decisive evidence"}
+  ],
+  "escalation": null | {
+    "kind": "plan_code_mismatch" | "ambiguous_design" | "scope_conflict" | "unexpected_architecture" | "validation_contradiction" | "other",
+    "expected": "what the plan assumed or required",
+    "observed": "what the repository actually contains or does",
+    "evidence": [
+      {
+        "path": "relative/path",
+        "symbol": "symbol/function/type or null",
+        "lines": "line/range if known, else null",
+        "fact": "precise code fact that proves the mismatch",
+        "snippet": "minimal decisive code excerpt, preferably <= 8 lines, or null"
+      }
+    ],
+    "impact": "why continuing would require changing the plan or architecture",
+    "decision_needed": "one concrete decision/question the planner must resolve",
+    "options": [
+      {"option": "possible next direction", "consequence": "what choosing it changes"}
+    ]
+  },
+  "blockers": [
+    {"kind": "tool|build|test|environment|permission|other", "detail": "specific blocker", "evidence": "relevant compact output"}
+  ]
+}
+
+Rules for the handoff:
+- DONE: escalation must be null; include changed and verification evidence.
+- ESCALATE: provide enough evidence for the planner to reason without rereading
+  the cited source just to understand the mismatch. Prefer exact symbols,
+  paths, line ranges, and a tiny decisive snippet. State expected vs observed,
+  impact, and the exact decision needed. Do not dump whole files.
+- ESCALATE options must be neutral decision branches grounded in observed facts.
+  Do NOT invent missing behavior, APIs, algorithms, data, target symbols, or
+  implementation details. If a corrected design/target is unknown, say that the
+  planner must provide it rather than proposing a plausible substitute.
+- FAILED: use for execution/tool/environment failures that do not require an
+  architectural decision. Include the failed command/check and compact evidence.
+- Keep the whole JSON compact. Evidence should be sufficient, not exhaustive.
+- Never claim a check passed unless you actually performed it.
+""".strip()
+
+
+TOOLS = [
+    {
+        "name": "gigacode",
+        "description": (
+            "Delegate execution to persistent GigaCode as a detached job. action=start and "
+            "action=resume perform a short startup handshake and return RUNNING only after actual "
+            "GigaCode model/tool activity is observed; otherwise they return STARTING or FAILED. "
+            "action=status is a fast state read returning RUNNING or the final DONE/FAILED/ESCALATE "
+            "handoff. Never tight-poll status. plan_path avoids resending an existing plan."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["start", "resume", "status"],
+                    "description": "start a new task; resume an existing session; status inspects runtime/debug state.",
+                },
+                "plan_path": {
+                    "type": "string",
+                    "description": "For start: existing implementation plan path inside the workspace. Use either plan_path or prompt, not both.",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "For resume: session id returned by a prior start.",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "For start: direct task when no plan file exists. For resume: only new planner decision/correction/evidence.",
+                },
+                "timeout_sec": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 1500,
+                    "description": "For start/resume: hard wall-clock limit for this GigaCode CLI turn. Default 900 seconds.",
+                },
+            },
+            "required": ["action"],
+            "additionalProperties": False,
+        },
+    },
+]
+
+
+def emit(message: dict) -> None:
+    sys.stdout.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def error_response(request_id, code: int, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+
+
+def text_result(payload: dict, *, is_error: bool = False) -> dict:
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    result = {
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": payload,
+    }
+    if is_error:
+        result["isError"] = True
+    return result
+
+
+def resolve_plan(plan_arg: str) -> Path:
+    path = Path(plan_arg)
+    if not path.is_absolute():
+        path = ROOT / path
+    path = path.resolve()
+
+    try:
+        path.relative_to(ROOT)
+    except ValueError as exc:
+        raise ValueError("plan_path must stay inside the workspace root") from exc
+
+    if not path.is_file():
+        raise ValueError(f"plan file does not exist: {plan_arg}")
+    return path
+
+
+def _state_path(session_id: str) -> Path:
+    return CACHE_ROOT / f"{session_id}.state.json"
+
+
+def _runtime_log_path(session_id: str) -> Path:
+    return CACHE_ROOT / f"{session_id}.runtime.log"
+
+
+def _append_runtime_log(session_id: str, message: str) -> None:
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with _runtime_log_path(session_id).open("a", encoding="utf-8") as handle:
+        handle.write(f"{stamp} {message}\n")
+
+
+def _write_state(session_id: str, payload: dict) -> None:
+    target = _state_path(session_id)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    tmp.replace(target)
+
+
+def _load_state(session_id: str) -> dict | None:
+    path = _state_path(session_id)
+    if not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _find_chat_path(session_id: str) -> Path | None:
+    base = Path.home() / ".gigacode" / "projects"
+    if not base.is_dir():
+        return None
+    for candidate in base.glob(f"*/chats/{session_id}.jsonl"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _chat_size(session_id: str) -> int:
+    path = _find_chat_path(session_id)
+    if path is None:
+        return 0
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _activity_after_offset(session_id: str, offset: int) -> dict | None:
+    """Return the first meaningful GigaCode activity appended after offset."""
+    path = _find_chat_path(session_id)
+    if path is None:
+        return None
+    try:
+        size = path.stat().st_size
+        if size <= offset:
+            return None
+        with path.open("r", encoding="utf-8") as handle:
+            if offset:
+                handle.seek(offset)
+                handle.readline()  # discard a possible partial line
+            for line in handle:
+                try:
+                    item = json.loads(line)
+                except Exception:
+                    continue
+                timestamp = item.get("timestamp")
+                kind = item.get("type")
+
+                if kind == "assistant":
+                    parts = item.get("message", {}).get("parts", [])
+                    # Prefer a concrete requested tool call over accompanying prose.
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        call = part.get("functionCall")
+                        if isinstance(call, dict):
+                            return {
+                                "timestamp": timestamp,
+                                "kind": "tool_call_requested",
+                                "tool": call.get("name"),
+                            }
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        text = part.get("text")
+                        if isinstance(text, str) and text.strip():
+                            return {
+                                "timestamp": timestamp,
+                                "kind": "assistant_output",
+                                "text": text.replace("\n", " ").strip()[:240],
+                            }
+
+                if kind == "system":
+                    event = item.get("systemPayload", {}).get("uiEvent", {})
+                    event_name = event.get("event.name")
+                    if event_name == "gigacode.api_response":
+                        # API transport activity alone is not enough to claim that
+                        # the worker started executing the task. Wait for assistant
+                        # output or a requested/executed tool call.
+                        continue
+                    if event_name == "gigacode.tool_call":
+                        return {
+                            "timestamp": timestamp,
+                            "kind": "tool_executed",
+                            "tool": event.get("function_name"),
+                            "status": event.get("status"),
+                        }
+
+                if kind == "tool_result":
+                    parts = item.get("message", {}).get("parts", [])
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        response = part.get("functionResponse")
+                        if isinstance(response, dict):
+                            return {
+                                "timestamp": timestamp,
+                                "kind": "tool_result",
+                                "tool": response.get("name"),
+                            }
+    except OSError:
+        return None
+    return None
+
+
+def _tail_chat_events(session_id: str, limit: int = 12) -> list[dict]:
+    path = _find_chat_path(session_id)
+    if path is None:
+        return []
+
+    lines: deque[str] = deque(maxlen=120)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                lines.append(line)
+    except OSError:
+        return []
+
+    events: list[dict] = []
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except Exception:
+            continue
+        timestamp = item.get("timestamp")
+        kind = item.get("type")
+        summary = None
+
+        if kind == "assistant":
+            parts = item.get("message", {}).get("parts", [])
+            labels = []
+            for part in parts:
+                call = part.get("functionCall") if isinstance(part, dict) else None
+                if isinstance(call, dict):
+                    labels.append(f"call:{call.get('name', '?')}")
+                elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                    text = part["text"].replace("\n", " ").strip()
+                    if text:
+                        labels.append("text:" + text[:180])
+            if labels:
+                summary = " | ".join(labels[:4])
+
+        elif kind == "system":
+            event = item.get("systemPayload", {}).get("uiEvent", {})
+            event_name = event.get("event.name")
+            if event_name in {"gigacode.api_response", "gigacode.tool_call"}:
+                summary = (
+                    f"{event_name}:{event.get('function_name', '')} "
+                    f"status={event.get('status', '')} duration_ms={event.get('duration_ms', '')}"
+                )
+
+        elif kind == "tool_result":
+            parts = item.get("message", {}).get("parts", [])
+            labels = []
+            for part in parts:
+                response = part.get("functionResponse") if isinstance(part, dict) else None
+                if isinstance(response, dict):
+                    output = str(response.get("response", {}).get("output", ""))
+                    labels.append(
+                        f"result:{response.get('name', '?')} "
+                        + output.replace("\n", " ")[:180]
+                    )
+            if labels:
+                summary = " | ".join(labels[:3])
+
+        if summary:
+            events.append({"timestamp": timestamp, "event": summary})
+
+    return events[-limit:]
+
+
+def _pid_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+
+    if os.name == "nt":
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def status_tool(arguments: dict) -> dict:
+    session_id = arguments["session_id"]
+    state = _load_state(session_id)
+    chat_path = _find_chat_path(session_id)
+
+    if state and isinstance(state.get("handoff"), dict):
+        handoff = state["handoff"]
+        payload = {
+            "session_id": session_id,
+            **handoff,
+            "runtime": {
+                "phase": state.get("phase"),
+                "job_id": state.get("job_id"),
+                "elapsed_sec": state.get("elapsed_sec"),
+                "exit_code": state.get("exit_code"),
+                "runtime_log": str(_runtime_log_path(session_id)),
+            },
+        }
+        return text_result(payload)
+
+    chat_info = None
+    if chat_path is not None:
+        try:
+            stat = chat_path.stat()
+            chat_info = {
+                "size": stat.st_size,
+                "age_sec": round(max(0.0, time.time() - stat.st_mtime), 1),
+            }
+        except OSError:
+            pass
+
+    if state is None:
+        return text_result({
+            "session_id": session_id,
+            "status": "UNKNOWN",
+            "summary": "No detached runtime state exists for this session.",
+            "last_events": _tail_chat_events(session_id, limit=6),
+        })
+
+    process_running = _pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))
+    phase = state.get("phase", "unknown")
+
+    if phase in {"queued", "running", "completed"} and not process_running:
+        payload = {
+            "session_id": session_id,
+            "status": "FAILED",
+            "summary": "Detached GigaCode job stopped without a final handoff.",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [{
+                "kind": "tool",
+                "detail": "worker process is no longer running but runtime state is unfinished",
+                "evidence": json.dumps(_tail_chat_events(session_id, limit=6), ensure_ascii=False),
+            }],
+            "runtime": {
+                "phase": phase,
+                "elapsed_sec": state.get("elapsed_sec"),
+                "runtime_log": str(_runtime_log_path(session_id)),
+            },
+        }
+        return text_result(payload, is_error=True)
+
+    payload = {
+        "session_id": session_id,
+        "status": "RUNNING",
+        "summary": "GigaCode is still executing the delegated task.",
+        "runtime": {
+            "phase": phase,
+            "elapsed_sec": state.get("elapsed_sec"),
+            "timeout_sec": state.get("timeout_sec"),
+            "process_running": process_running,
+            "chat": chat_info,
+            "runtime_log": str(_runtime_log_path(session_id)),
+        },
+        "last_events": _tail_chat_events(session_id, limit=6),
+        "polling": "Do not tight-poll. Check status once after other useful work or when completion is needed.",
+    }
+    return text_result(payload)
+
+
+def _new_process_group_kwargs() -> dict:
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def _terminate_process_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        process.terminate()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+
+    if os.name == "nt":
+        taskkill = shutil.which("taskkill")
+        if taskkill:
+            subprocess.run(
+                [taskkill, "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            process.kill()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def run_gigacode(
+    session_id: str,
+    session_args: list[str],
+    prompt: str,
+    timeout_sec: int,
+) -> tuple[int, str, str]:
+    executable = shutil.which("gigacode")
+    if not executable:
+        return 127, "", "gigacode executable not found in PATH"
+
+    command = [
+        executable,
+        "--chat-recording",
+        *session_args,
+        "--approval-mode",
+        "auto-edit",
+        "--append-system-prompt",
+        WORKER_CONTRACT,
+        "--output-format",
+        "text",
+        prompt,
+    ]
+
+    turn_key = f"{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    stdout_path = CACHE_ROOT / f"{session_id}.{turn_key}.stdout"
+    stderr_path = CACHE_ROOT / f"{session_id}.{turn_key}.stderr"
+    started_epoch = time.time()
+    started_monotonic = time.monotonic()
+
+    _append_runtime_log(
+        session_id,
+        f"START turn={turn_key} timeout_sec={timeout_sec} cwd={ROOT}",
+    )
+
+    with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open(
+        "w", encoding="utf-8"
+    ) as stderr_handle:
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            text=True,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            env=os.environ.copy(),
+            **_new_process_group_kwargs(),
+        )
+
+        last_logged_chat_size = -1
+        last_progress_monotonic = started_monotonic
+        while process.poll() is None:
+            elapsed = time.monotonic() - started_monotonic
+            chat_path = _find_chat_path(session_id)
+            chat_size = None
+            chat_age = None
+            if chat_path is not None:
+                try:
+                    stat = chat_path.stat()
+                    chat_size = stat.st_size
+                    chat_age = round(max(0.0, time.time() - stat.st_mtime), 1)
+                except OSError:
+                    pass
+
+            state = {
+                "phase": "running",
+                "session_id": session_id,
+                "turn": turn_key,
+                "pid": process.pid,
+                "worker_pid": os.getpid(),
+                "cwd": str(ROOT),
+                "started_epoch": started_epoch,
+                "elapsed_sec": round(elapsed, 1),
+                "timeout_sec": timeout_sec,
+                "chat_path": str(chat_path) if chat_path else None,
+                "chat_size": chat_size,
+                "chat_age_sec": chat_age,
+                "stdout_path": str(stdout_path),
+                "stderr_path": str(stderr_path),
+            }
+
+            if chat_size is not None and chat_size != last_logged_chat_size:
+                _append_runtime_log(
+                    session_id,
+                    f"PROGRESS turn={turn_key} elapsed={elapsed:.1f}s chat_size={chat_size} chat_age={chat_age}",
+                )
+                last_logged_chat_size = chat_size
+                last_progress_monotonic = time.monotonic()
+
+            stall_elapsed = time.monotonic() - last_progress_monotonic
+            state["stall_elapsed_sec"] = round(stall_elapsed, 1)
+            state["stall_timeout_sec"] = DEFAULT_STALL_TIMEOUT_SEC
+            _write_state(session_id, state)
+
+            if stall_elapsed >= DEFAULT_STALL_TIMEOUT_SEC:
+                _append_runtime_log(
+                    session_id,
+                    f"STALL turn={turn_key} no_progress={stall_elapsed:.1f}s pid={process.pid}",
+                )
+                _terminate_process_tree(process)
+
+                stdout_handle.flush()
+                stderr_handle.flush()
+                output = stdout_path.read_text(encoding="utf-8", errors="replace").strip()
+                stderr = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+                events = _tail_chat_events(session_id)
+                stall_detail = (
+                    f"GigaCode made no recorded model/tool progress for "
+                    f"{DEFAULT_STALL_TIMEOUT_SEC}s and was stopped. "
+                    f"Session remains resumable: {session_id}. "
+                    f"Last events: {json.dumps(events[-5:], ensure_ascii=False)}"
+                )
+                _write_state(
+                    session_id,
+                    {
+                        **state,
+                        "phase": "stalled",
+                        "elapsed_sec": round(time.monotonic() - started_monotonic, 1),
+                        "exit_code": 125,
+                        "last_events": events[-8:],
+                    },
+                )
+                return 125, output, (stderr + "\n" + stall_detail).strip()
+
+            if elapsed >= timeout_sec:
+                _append_runtime_log(
+                    session_id,
+                    f"TIMEOUT turn={turn_key} elapsed={elapsed:.1f}s pid={process.pid}",
+                )
+                _terminate_process_tree(process)
+
+                stdout_handle.flush()
+                stderr_handle.flush()
+                output = stdout_path.read_text(encoding="utf-8", errors="replace").strip()
+                stderr = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+                events = _tail_chat_events(session_id)
+                timeout_detail = (
+                    f"GigaCode MCP hard timeout after {timeout_sec}s. "
+                    f"Session remains resumable: {session_id}. "
+                    f"Last events: {json.dumps(events[-5:], ensure_ascii=False)}"
+                )
+                _write_state(
+                    session_id,
+                    {
+                        **state,
+                        "phase": "timed_out",
+                        "elapsed_sec": round(time.monotonic() - started_monotonic, 1),
+                        "exit_code": 124,
+                        "last_events": events[-8:],
+                    },
+                )
+                return 124, output, (stderr + "\n" + timeout_detail).strip()
+
+            time.sleep(POLL_INTERVAL_SEC)
+
+        exit_code = process.returncode
+
+    output = stdout_path.read_text(encoding="utf-8", errors="replace").strip()
+    stderr = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
+    elapsed = time.monotonic() - started_monotonic
+    events = _tail_chat_events(session_id)
+    _write_state(
+        session_id,
+        {
+            "phase": "completed",
+            "session_id": session_id,
+            "turn": turn_key,
+            "pid": process.pid,
+            "worker_pid": os.getpid(),
+            "cwd": str(ROOT),
+            "started_epoch": started_epoch,
+            "elapsed_sec": round(elapsed, 1),
+            "timeout_sec": timeout_sec,
+            "exit_code": exit_code,
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
+            "last_events": events[-8:],
+        },
+    )
+    _append_runtime_log(
+        session_id,
+        f"END turn={turn_key} exit_code={exit_code} elapsed={elapsed:.1f}s",
+    )
+    return exit_code, output, stderr
+
+
+def _job_path(session_id: str, job_id: str) -> Path:
+    return CACHE_ROOT / f"{session_id}.{job_id}.job.json"
+
+
+def launch_detached_job(
+    session_id: str,
+    session_args: list[str],
+    prompt: str,
+    timeout_sec: int,
+) -> dict:
+    existing = _load_state(session_id)
+    if existing and existing.get("phase") in {"queued", "running", "completed"}:
+        if _pid_alive(existing.get("pid")) or _pid_alive(existing.get("worker_pid")):
+            raise ValueError("session already has a running GigaCode job")
+
+    baseline_chat_size = _chat_size(session_id)
+    job_id = uuid.uuid4().hex[:12]
+    spec = {
+        "session_id": session_id,
+        "session_args": session_args,
+        "prompt": prompt,
+        "timeout_sec": timeout_sec,
+        "job_id": job_id,
+        "cwd": str(ROOT),
+    }
+    job_path = _job_path(session_id, job_id)
+    job_path.write_text(
+        json.dumps(spec, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    worker_log = CACHE_ROOT / f"{session_id}.{job_id}.worker.log"
+    state = {
+        "phase": "queued",
+        "session_id": session_id,
+        "job_id": job_id,
+        "worker_pid": None,
+        "cwd": str(ROOT),
+        "started_epoch": time.time(),
+        "elapsed_sec": 0.0,
+        "timeout_sec": timeout_sec,
+        "worker_log": str(worker_log),
+    }
+    _write_state(session_id, state)
+
+    with worker_log.open("a", encoding="utf-8") as log_handle:
+        worker = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--run-job", str(job_path)],
+            cwd=ROOT,
+            stdin=subprocess.DEVNULL,
+            stdout=log_handle,
+            stderr=log_handle,
+            env=os.environ.copy(),
+            close_fds=True,
+            **_new_process_group_kwargs(),
+        )
+
+    current = _load_state(session_id) or state
+    if current.get("phase") == "queued" and current.get("job_id") == job_id:
+        _write_state(session_id, {**current, "worker_pid": worker.pid})
+    _append_runtime_log(
+        session_id,
+        f"DETACHED job={job_id} worker_pid={worker.pid} timeout_sec={timeout_sec}",
+    )
+
+    confirm_deadline = time.monotonic() + min(
+        STARTUP_CONFIRM_TIMEOUT_SEC,
+        max(1.0, float(timeout_sec)),
+    )
+    while time.monotonic() < confirm_deadline:
+        current = _load_state(session_id) or {}
+
+        handoff = current.get("handoff")
+        if isinstance(handoff, dict):
+            return {
+                "session_id": session_id,
+                **handoff,
+                "runtime": {
+                    "phase": current.get("phase"),
+                    "job_id": current.get("job_id"),
+                    "elapsed_sec": current.get("elapsed_sec"),
+                    "exit_code": current.get("exit_code"),
+                    "startup_confirmed": True,
+                    "runtime_log": str(_runtime_log_path(session_id)),
+                },
+            }
+
+        activity = _activity_after_offset(session_id, baseline_chat_size)
+        if activity is not None:
+            _append_runtime_log(
+                session_id,
+                f"CONFIRMED job={job_id} activity={json.dumps(activity, ensure_ascii=False)}",
+            )
+            return {
+                "session_id": session_id,
+                "status": "RUNNING",
+                "summary": "GigaCode accepted the task and produced confirmed activity.",
+                "job_id": job_id,
+                "startup_confirmed": True,
+                "startup_event": activity,
+                "runtime": {
+                    "phase": current.get("phase", "running"),
+                    "worker_pid": current.get("worker_pid", worker.pid),
+                    "gigacode_pid": current.get("pid"),
+                    "timeout_sec": timeout_sec,
+                    "runtime_log": str(_runtime_log_path(session_id)),
+                },
+                "polling": "Do not tight-poll. Use action=status after other useful work or when completion is needed.",
+            }
+
+        running = _pid_alive(current.get("pid")) or _pid_alive(current.get("worker_pid"))
+        if current.get("phase") in {"timed_out", "finished"} and not running:
+            break
+        time.sleep(STARTUP_CONFIRM_POLL_SEC)
+
+    current = _load_state(session_id) or {}
+    running = _pid_alive(current.get("pid")) or _pid_alive(current.get("worker_pid"))
+    if not running:
+        return {
+            "session_id": session_id,
+            "status": "FAILED",
+            "summary": "Detached GigaCode job stopped before producing confirmed activity.",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [{
+                "kind": "tool",
+                "detail": "worker stopped during startup handshake",
+                "evidence": json.dumps(_tail_chat_events(session_id, limit=6), ensure_ascii=False),
+            }],
+            "runtime": {
+                "phase": current.get("phase"),
+                "job_id": job_id,
+                "startup_confirmed": False,
+                "runtime_log": str(_runtime_log_path(session_id)),
+            },
+        }
+
+    return {
+        "session_id": session_id,
+        "status": "STARTING",
+        "summary": (
+            f"GigaCode process is alive, but no model/tool activity was confirmed within "
+            f"{STARTUP_CONFIRM_TIMEOUT_SEC:.0f}s."
+        ),
+        "job_id": job_id,
+        "startup_confirmed": False,
+        "runtime": {
+            "phase": current.get("phase", "running"),
+            "worker_pid": current.get("worker_pid", worker.pid),
+            "gigacode_pid": current.get("pid"),
+            "timeout_sec": timeout_sec,
+            "runtime_log": str(_runtime_log_path(session_id)),
+        },
+        "last_events": _tail_chat_events(session_id, limit=6),
+        "polling": "Do not tight-poll. Use action=status later if the task still matters.",
+    }
+
+
+def run_detached_job(job_path_arg: str) -> int:
+    job_path = Path(job_path_arg)
+    try:
+        spec = json.loads(job_path.read_text(encoding="utf-8"))
+        session_id = spec["session_id"]
+        session_args = spec["session_args"]
+        prompt = spec["prompt"]
+        timeout_sec = int(spec["timeout_sec"])
+        job_id = spec["job_id"]
+    except Exception as exc:
+        sys.stderr.write(f"invalid detached job spec: {exc}\n")
+        return 2
+
+    initial = _load_state(session_id) or {}
+    _write_state(
+        session_id,
+        {
+            **initial,
+            "phase": "running",
+            "session_id": session_id,
+            "job_id": job_id,
+            "worker_pid": os.getpid(),
+            "started_epoch": initial.get("started_epoch", time.time()),
+            "elapsed_sec": 0.0,
+            "timeout_sec": timeout_sec,
+        },
+    )
+
+    exit_code, output, stderr = run_gigacode(
+        session_id,
+        session_args,
+        prompt,
+        timeout_sec,
+    )
+    handoff, _ = parse_worker_handoff(output, exit_code, stderr)
+    state = _load_state(session_id) or {}
+    _write_state(
+        session_id,
+        {
+            **state,
+            "phase": "finished",
+            "job_id": job_id,
+            "worker_pid": os.getpid(),
+            "exit_code": exit_code,
+            "handoff": handoff,
+        },
+    )
+    _append_runtime_log(
+        session_id,
+        f"HANDOFF job={job_id} status={handoff.get('status')} exit_code={exit_code}",
+    )
+    try:
+        job_path.unlink()
+    except OSError:
+        pass
+    return 0
+
+
+def extract_json_object(output: str) -> dict | None:
+    """Extract a JSON object even if the worker wrapped it in prose/fences."""
+    stripped = output.strip()
+    if not stripped:
+        return None
+
+    try:
+        value = json.loads(stripped)
+        return value if isinstance(value, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    decoder = json.JSONDecoder()
+    candidates: list[dict] = []
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(stripped, index)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            candidates.append(value)
+
+    if not candidates:
+        return None
+
+    required = {"status", "summary", "changed", "verified", "escalation", "blockers"}
+    for candidate in reversed(candidates):
+        if required.issubset(candidate):
+            return candidate
+    return candidates[-1]
+
+
+def parse_worker_handoff(output: str, exit_code: int, stderr: str) -> tuple[dict, bool]:
+    if exit_code != 0:
+        payload = {
+            "status": "FAILED",
+            "summary": "GigaCode process failed before producing a usable handoff.",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [{
+                "kind": "tool",
+                "detail": f"gigacode exited with code {exit_code}",
+                "evidence": (stderr or output)[-4000:],
+            }],
+        }
+        return payload, True
+
+    handoff = extract_json_object(output)
+    if handoff is None:
+        payload = {
+            "status": "FAILED",
+            "summary": "GigaCode violated the worker handoff protocol.",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [{
+                "kind": "other",
+                "detail": "worker returned no parseable JSON handoff",
+                "evidence": output[-4000:],
+            }],
+        }
+        return payload, True
+
+    required = {"status", "summary", "changed", "verified", "escalation", "blockers"}
+    missing = sorted(required - set(handoff))
+    if missing or handoff.get("status") not in {"DONE", "ESCALATE", "FAILED"}:
+        payload = {
+            "status": "FAILED",
+            "summary": "GigaCode returned an invalid worker handoff object.",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [{
+                "kind": "other",
+                "detail": f"invalid handoff fields; missing={missing}",
+                "evidence": output[-4000:],
+            }],
+        }
+        return payload, True
+
+    if handoff["status"] == "ESCALATE":
+        escalation = handoff.get("escalation")
+        escalation_required = {
+            "kind", "expected", "observed", "evidence",
+            "impact", "decision_needed", "options",
+        }
+        escalation_missing = (
+            sorted(escalation_required - set(escalation))
+            if isinstance(escalation, dict)
+            else sorted(escalation_required)
+        )
+        evidence_ok = (
+            isinstance(escalation, dict)
+            and isinstance(escalation.get("evidence"), list)
+            and len(escalation["evidence"]) > 0
+        )
+        decision_ok = (
+            isinstance(escalation, dict)
+            and isinstance(escalation.get("decision_needed"), str)
+            and bool(escalation["decision_needed"].strip())
+        )
+        if escalation_missing or not evidence_ok or not decision_ok:
+            payload = {
+                "status": "FAILED",
+                "summary": "GigaCode escalated without a complete planner-ready handoff.",
+                "changed": handoff.get("changed") if isinstance(handoff.get("changed"), list) else [],
+                "verified": handoff.get("verified") if isinstance(handoff.get("verified"), list) else [],
+                "escalation": None,
+                "blockers": [{
+                    "kind": "other",
+                    "detail": (
+                        "invalid ESCALATE handoff; "
+                        f"missing={escalation_missing}, "
+                        f"evidence_present={evidence_ok}, "
+                        f"decision_present={decision_ok}"
+                    ),
+                    "evidence": output[-4000:],
+                }],
+            }
+            return payload, True
+
+    if handoff["status"] == "DONE" and handoff.get("escalation") is not None:
+        payload = {
+            "status": "FAILED",
+            "summary": "GigaCode returned DONE with a contradictory escalation payload.",
+            "changed": handoff.get("changed") if isinstance(handoff.get("changed"), list) else [],
+            "verified": handoff.get("verified") if isinstance(handoff.get("verified"), list) else [],
+            "escalation": None,
+            "blockers": [{
+                "kind": "other",
+                "detail": "DONE requires escalation=null",
+                "evidence": output[-4000:],
+            }],
+        }
+        return payload, True
+
+    return handoff, handoff["status"] == "FAILED"
+
+
+def start_tool(arguments: dict) -> dict:
+    plan_path = arguments.get("plan_path")
+    direct_prompt = arguments.get("prompt")
+
+    if bool(plan_path) == bool(direct_prompt):
+        raise ValueError("start requires exactly one of plan_path or prompt")
+
+    session_id = str(uuid.uuid4())
+    if plan_path:
+        plan = resolve_plan(plan_path)
+        worker_prompt = (
+            f"Read the complete implementation plan from {plan}. "
+            "Perform the preflight required by your worker contract, then execute it if valid. "
+            "Return only the required JSON handoff."
+        )
+    else:
+        worker_prompt = (
+            "Execute this direct planner task under the same worker contract. "
+            "Treat the supplied task as the complete plan: validate material assumptions before editing, "
+            "escalate instead of redesigning if they do not match the repository, and return only the required JSON handoff.\n\n"
+            + direct_prompt.strip()
+        )
+
+    timeout_sec = int(arguments.get("timeout_sec", DEFAULT_HARD_TIMEOUT_SEC))
+    payload = launch_detached_job(
+        session_id,
+        ["--session-id", session_id],
+        worker_prompt,
+        timeout_sec,
+    )
+    return text_result(payload)
+
+
+def resume_tool(arguments: dict) -> dict:
+    session_id = arguments["session_id"]
+    prompt = (
+        "Continue the same task and worker contract. "
+        "The planner provides only new information below. Apply it to the existing session context.\n\n"
+        + arguments["prompt"].strip()
+        + "\n\nReturn only the required JSON handoff."
+    )
+    timeout_sec = int(arguments.get("timeout_sec", DEFAULT_HARD_TIMEOUT_SEC))
+    payload = launch_detached_job(
+        session_id,
+        ["--resume", session_id],
+        prompt,
+        timeout_sec,
+    )
+    return text_result(payload)
+
+
+def handle(request: dict) -> dict | None:
+    method = request.get("method")
+    request_id = request.get("id")
+
+    if method == "initialize":
+        requested = request.get("params", {}).get("protocolVersion", "2025-06-18")
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": requested,
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+            },
+        }
+
+    if method in {"notifications/initialized", "notifications/cancelled"}:
+        return None
+
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": request_id, "result": {}}
+
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
+
+    if method == "tools/call":
+        params = request.get("params", {})
+        name = params.get("name")
+        arguments = params.get("arguments") or {}
+        try:
+            if name != "gigacode":
+                raise ValueError(f"unknown tool: {name}")
+            action = arguments.get("action")
+            timeout_value = arguments.get("timeout_sec")
+            if timeout_value is not None:
+                if not isinstance(timeout_value, int) or isinstance(timeout_value, bool):
+                    raise ValueError("timeout_sec must be an integer")
+                if not 30 <= timeout_value <= 1500:
+                    raise ValueError("timeout_sec must be between 30 and 1500")
+            if action == "start":
+                plan_path = arguments.get("plan_path")
+                direct_prompt = arguments.get("prompt")
+                if plan_path is not None and not isinstance(plan_path, str):
+                    raise ValueError("plan_path must be a string")
+                if direct_prompt is not None and not isinstance(direct_prompt, str):
+                    raise ValueError("prompt must be a string")
+                result = start_tool(arguments)
+            elif action == "resume":
+                if not isinstance(arguments.get("session_id"), str) or not isinstance(arguments.get("prompt"), str):
+                    raise ValueError("resume requires session_id and prompt as strings")
+                result = resume_tool(arguments)
+            elif action == "status":
+                if not isinstance(arguments.get("session_id"), str):
+                    raise ValueError("status requires session_id as a string")
+                result = status_tool(arguments)
+            else:
+                raise ValueError("action must be start, resume, or status")
+            return {"jsonrpc": "2.0", "id": request_id, "result": result}
+        except Exception as exc:
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": text_result({"error": str(exc)}, is_error=True),
+            }
+
+    if request_id is None:
+        return None
+    return error_response(request_id, -32601, f"Method not found: {method}")
+
+
+def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "--run-job":
+        return run_detached_job(sys.argv[2])
+
+    for raw in sys.stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            request = json.loads(raw)
+            response = handle(request)
+        except Exception as exc:
+            response = error_response(None, -32603, str(exc))
+        if response is not None:
+            emit(response)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

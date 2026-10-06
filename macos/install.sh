@@ -41,7 +41,7 @@ Harr macOS installer
 Usage:
   ./install.sh --clean [--start]
   ./install.sh --clean --all [--start]
-  ./install.sh --clean --mcp gitlab,grafana [--start]
+  ./install.sh --clean --mcp gitlab,grafana,gigacode [--start]
   ./install.sh [--start] [--harr-only] [--configure-mcp]
 
 LeanCTX and CodeGraph are always installed. On the first interactive install,

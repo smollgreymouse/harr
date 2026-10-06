@@ -20,7 +20,7 @@ spec.loader.exec_module(manager)
 
 registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 servers = {item["name"]: item for item in registry["servers"]}
-assert set(("codegraph", "gitlab", "grafana")) <= set(servers)
+assert set(("codegraph", "gitlab", "grafana", "gigacode")) <= set(servers)
 
 grafana = servers["grafana"]
 assert grafana["transport"] == "http"
@@ -63,6 +63,11 @@ for platform in ("linux", "windows"):
         assert "secret_env" not in item
         assert "secret_headers" not in item
 
+        gigacode_rendered = rendered["gigacode"]
+        assert gigacode_rendered["transport"] == "stdio"
+        assert gigacode_rendered["command"] == "harr-mcp-run"
+        assert gigacode_rendered["args"] == ["gigacode"]
+
 with tempfile.TemporaryDirectory() as tmp:
     target = Path(tmp)
     args = type("Args", (), {"config_dir": str(target)})()
@@ -77,6 +82,25 @@ with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     assert grafana_command == ["/tmp/uvx", "mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"]
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
+gigacode = servers["gigacode"]
+assert gigacode["required"] is False
+assert gigacode["transport"] == "stdio"
+assert gigacode["lifecycle"] == "on-demand"
+assert gigacode["runtime"] == {
+    "kind": "bundled-python",
+    "version": "1.7.0",
+    "script": "gigacode_server.py",
+    "requires_command": "gigacode",
+    "args": [],
+    "install_hint": "GigaCode CLI is required for the optional GigaCode executor MCP; install/configure `gigacode` and ensure it is in PATH",
+}
+with patch.object(manager.shutil, "which", return_value="/tmp/gigacode"):
+    gigacode_command = manager.runtime_command(gigacode)
+    assert gigacode_command == [
+        manager.sys.executable,
+        str((REGISTRY_PATH.parent / "gigacode_server.py").resolve()),
+    ]
+
 with tempfile.TemporaryDirectory() as tmp:
     secret_dir = Path(tmp) / "secrets"
     secret_dir.mkdir()

@@ -14,7 +14,7 @@ cd harr
 ./install.sh --clean --start
 ```
 
-LeanCTX and CodeGraph are required. The first interactive install presents the shared Harr checklist for optional MCPs such as GitLab and Grafana.
+LeanCTX and CodeGraph are required. The first interactive install presents the shared Harr checklist for optional MCPs such as GitLab, Grafana and GigaCode.
 
 Full install without prompts:
 
@@ -31,7 +31,7 @@ Required-only install without prompts:
 Exact optional set:
 
 ```bash
-./install.sh --clean --mcp gitlab,grafana
+./install.sh --clean --mcp gitlab,grafana,gigacode
 ```
 
 Normal updates reuse the saved selection without prompting. Use `--configure-mcp` to show the checklist again during installation, or change it later with:

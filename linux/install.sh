@@ -45,7 +45,7 @@ Harr Linux setup
 Usage after package installation:
   harr setup --clean [--start]
   harr setup --clean --all [--start]
-  harr setup --clean --mcp gitlab,grafana [--start]
+  harr setup --clean --mcp gitlab,grafana,gigacode [--start]
   harr setup [--start] [--harr-only] [--configure-mcp]
 
 From a source checkout, ./install.sh accepts the same options.

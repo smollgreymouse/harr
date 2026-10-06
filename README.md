@@ -29,6 +29,9 @@ LeanCTX 3.9.15                         required
       +-- HTTP :3335 -----> Grafana MCP           optional
       |                     uvx mcp-grafana --transport streamable-http
       |
+      +-- stdio -----------> GigaCode Executor     optional
+      |                     bundled Harr bridge -> external gigacode CLI
+      |
       +-- future MCPs -----> common registry       required/optional metadata
 
 Unrelated third-party MCPs/skills may coexist beside this stack.
@@ -92,7 +95,7 @@ harr setup --clean
 
 The first interactive setup offers the optional MCP checklist. For automation,
 use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
-`harr setup --clean --mcp gitlab,grafana`. The selection is saved and can be
+`harr setup --clean --mcp gitlab,grafana,gigacode`. The selection is saved and can be
 changed later with `harr mcp configure`.
 
 After a later Debian package upgrade, run `harr setup` to apply the new Harr
@@ -112,6 +115,7 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
+  [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -146,12 +150,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana
+./install.sh --clean --mcp gitlab,grafana,gigacode
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana
+.\install.ps1 -Clean -Mcp gitlab,grafana,gigacode
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -168,6 +172,8 @@ harr secret set grafana
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
+
+GigaCode is an executor bridge, not a bundled model/runtime. Enabling it installs Harr's MCP bridge and routing policy; the external `gigacode` CLI must already be installed, authenticated and available in `PATH`. Harr keeps the bridge behind LeanCTX and loads its single-tool schema only when delegation is needed. The bridge treats GigaCode as a black box: Harr does not configure, inspect or depend on GigaCode's own tools or MCP servers. The saved MCP selection is reused by later source/package upgrades, so a selected GigaCode executor remains selected across reinstall/update runs; change the set with `harr mcp configure`.
 
 Check the whole harness:
 
@@ -470,7 +476,7 @@ harr mcp list
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp configure gitlab,grafana
+harr mcp configure gitlab,grafana,gigacode
 
 harr mcp start gitlab
 harr mcp stop gitlab
@@ -512,7 +518,7 @@ label:      short selector label
 description: selector/help description
 transport:  stdio | http
 lifecycle:  on-demand | service
-runtime:    npm package | command already available in PATH
+runtime:    npm package | bundled Python bridge | command already available in PATH
 secret:     env for local services | LeanCTX secret_env | secret_headers
 skill_reference: optional Harr diagnostic reference owned by that MCP
 ```
@@ -647,6 +653,30 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 
 
+### GigaCode executor
+
+GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
+
+```text
+gigacode::gigacode
+```
+
+That one schema carries `action=start|resume|status`; enabling GigaCode does not add three permanent tools to the parent model. A normal delegated flow is:
+
+```text
+ctx_tools(action="call", tool="gigacode::gigacode", arguments={"action":"start","plan_path":"EXECUTION_PLAN.md"})
+  -> RUNNING + session_id
+...later...
+ctx_tools(action="call", tool="gigacode::gigacode", arguments={"action":"status","session_id":"..."})
+  -> DONE | FAILED | ESCALATE
+```
+
+Harr ships only the bridge. The external `gigacode` CLI must already be installed and authenticated. The bridge deliberately treats it as a black box: it does not configure, inspect, or depend on GigaCode's own tool names, shell implementation, editor, extensions, or MCP servers.
+
+The bridge keeps a persistent GigaCode session, performs a bounded startup handshake, runs execution detached, uses a five-minute no-progress watchdog, and returns structured planner-ready handoffs. Substantive review findings should be sent back with `action=resume` on the same session rather than reimplemented by the expensive parent model.
+
+The saved Harr MCP selection controls whether the GigaCode route, routing policy, and Harr reference material exist. Normal later setup/update runs reuse that selection; use `harr mcp configure` to change it.
+
 ### Git
 
 Git is intentionally **not** a Harr MCP component. Use exact `git ...` commands through LeanCTX `ctx_shell` for ordinary local repository state/history/branches. Use `harr git <git-arguments>` for network operations. The command sends the current working directory and Git arguments to a loopback-only Harr user service, which executes the real Git process outside the agent sandbox with the service's terminal-session environment. Repository remotes, local Git configuration and SSH key selection remain unchanged.
@@ -686,7 +716,7 @@ The permanent policy always keeps the core token-saving rules:
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, and Grafana dashboard guidance does not exist when Grafana is disabled.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 
