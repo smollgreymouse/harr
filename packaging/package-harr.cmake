@@ -67,6 +67,11 @@ else()
     endforeach()
 endif()
 
+# Codex Scheduler is released as its own optional package/artifact. Keep its
+# sources out of the main Harr package so installing Harr does not ship a
+# second, unused copy under /usr/lib/harr.
+file(REMOVE_RECURSE "${STAGE_ROOT}/tools/codex-scheduler")
+
 if(NOT EXISTS "${STAGE_ROOT}/install.sh" OR
    NOT EXISTS "${STAGE_ROOT}/linux/install.sh" OR
    NOT EXISTS "${STAGE_ROOT}/common/mcp/registry.json")

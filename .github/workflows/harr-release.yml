@@ -78,6 +78,14 @@ jobs:
           grep -q './usr/bin/harr -> ' /tmp/harr-deb-listing
           grep -q './usr/bin/harr-install -> ' /tmp/harr-deb-listing
           grep -q '/usr/lib/harr/linux/install.sh$' /tmp/harr-deb-listing
+          if grep -q '/tools/codex-scheduler/' /tmp/harr-tar-listing; then
+            echo 'Main Harr tarball must not contain Codex Scheduler sources' >&2
+            exit 1
+          fi
+          if grep -q '/usr/lib/harr/tools/codex-scheduler/' /tmp/harr-deb-listing; then
+            echo 'Main Harr Debian package must not contain Codex Scheduler sources' >&2
+            exit 1
+          fi
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
