@@ -81,21 +81,29 @@ cd harr
 
 Linux releases include both `harr_<version>_<arch>.deb` and
 `harr-<version>-linux-<arch>.tar.gz`. The Debian package installs the Harr
-files and provides `harr` plus `harr-install`; it does not change global user
-configuration during `apt install`.
+files and provides the `harr` CLI; it does not change global user configuration
+during `apt install`.
 
-After installing the package, run as the normal user:
+After installing the package, run the initial user setup as the normal user:
 
 ```bash
-harr-install --clean
+harr setup --clean
 ```
 
-The first interactive run offers the optional MCP checklist. For automation,
-use `harr-install --clean --all`, `harr-install --clean --mcp none`, or
-`harr-install --clean --mcp gitlab,grafana`. The selection is saved and can be
+The first interactive setup offers the optional MCP checklist. For automation,
+use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
+`harr setup --clean --mcp gitlab,grafana`. The selection is saved and can be
 changed later with `harr mcp configure`.
 
-On the first interactive install all three platforms show the same selector:
+After a later Debian package upgrade, run `harr setup` to apply the new Harr
+files/runtime while reusing the saved MCP selection. Package-mode setup keeps
+`~/.local/bin/harr` as a shim to `/usr/bin/harr`, so future package upgrades
+do not leave a stale user-level CLI ahead of the packaged command in `PATH`.
+If migrating from an older source-based Harr that already has a standalone
+`~/.local/bin/harr`, use `/usr/bin/harr setup` once after installing the new
+Debian package; subsequent runs can use plain `harr setup`.
+
+On the first interactive setup all three platforms show the same selector:
 
 ```text
 Harr components
@@ -209,7 +217,7 @@ If a foreground test instance of a selected service MCP is already using its con
 
 ## Installation and lifecycle
 
-### First install
+### First setup / source install
 
 Linux:
 

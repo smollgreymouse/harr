@@ -96,7 +96,6 @@ file(MAKE_DIRECTORY
 file(COPY "${STAGE_ROOT}" DESTINATION "${DEB_ROOT}/usr/lib")
 file(RENAME "${DEB_ROOT}/usr/lib/${NAME}" "${DEB_ROOT}/usr/lib/harr")
 file(CREATE_LINK "/usr/lib/harr/linux/harr" "${DEB_ROOT}/usr/bin/harr" SYMBOLIC)
-file(CREATE_LINK "/usr/lib/harr/install.sh" "${DEB_ROOT}/usr/bin/harr-install" SYMBOLIC)
 
 file(WRITE "${DEB_ROOT}/usr/share/doc/harr/INSTALL.md" [=[# Harr after package installation
 
@@ -105,10 +104,10 @@ global agent configuration or select optional MCPs.
 
 Run as the normal user:
 
-    harr-install --clean
+    harr setup --clean
 
-The first interactive run opens the optional MCP checklist. For automation use
-`harr-install --clean --all` or `harr-install --clean --mcp none` (or a comma-
+The first interactive setup opens the optional MCP checklist. For automation use
+`harr setup --clean --all` or `harr setup --clean --mcp none` (or a comma-
 separated list such as `--mcp gitlab,grafana`). Later updates reuse the saved
 selection; change it with `harr mcp configure`.
 ]=])
@@ -125,7 +124,7 @@ file(WRITE "${DEB_ROOT}/DEBIAN/control"
 "Description: Harr global harness for token-efficient MCP infrastructure\n"
 " Harr installs and manages LeanCTX, CodeGraph and selectable MCP services.\n"
 " The package itself only installs the files; user-level configuration is\n"
-" performed explicitly by harr-install.\n")
+" performed explicitly by harr setup.\n")
 
 execute_process(
     COMMAND dpkg-deb --root-owner-group --build "${DEB_ROOT}" "${OUTPUT_DEB}"

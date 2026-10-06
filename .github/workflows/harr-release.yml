@@ -76,8 +76,16 @@ jobs:
           grep -q '/install.sh$' /tmp/harr-tar-listing
           grep -q '/common/mcp/registry.json$' /tmp/harr-tar-listing
           grep -q './usr/bin/harr -> ' /tmp/harr-deb-listing
-          grep -q './usr/bin/harr-install -> ' /tmp/harr-deb-listing
+          if grep -q './usr/bin/harr-install' /tmp/harr-deb-listing; then
+            echo 'Deprecated harr-install entrypoint must not be packaged' >&2
+            exit 1
+          fi
           grep -q '/usr/lib/harr/linux/install.sh$' /tmp/harr-deb-listing
+          root=$(mktemp -d)
+          dpkg-deb -x "$deb" "$root"
+          clean_home=$(mktemp -d)
+          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/lib/harr/linux/harr" version
+          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/lib/harr/linux/harr" setup --help | grep -q 'Harr Linux setup'
           if grep -q '/tools/codex-scheduler/' /tmp/harr-tar-listing; then
             echo 'Main Harr tarball must not contain Codex Scheduler sources' >&2
             exit 1

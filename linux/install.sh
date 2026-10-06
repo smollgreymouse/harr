@@ -40,20 +40,22 @@ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 show_help() {
   cat <<'EOF_HELP'
-Harr Linux installer
+Harr Linux setup
 
-Usage:
-  ./install.sh --clean [--start]
-  ./install.sh --clean --all [--start]
-  ./install.sh --clean --mcp gitlab,grafana [--start]
-  ./install.sh [--start] [--harr-only] [--configure-mcp]
+Usage after package installation:
+  harr setup --clean [--start]
+  harr setup --clean --all [--start]
+  harr setup --clean --mcp gitlab,grafana [--start]
+  harr setup [--start] [--harr-only] [--configure-mcp]
 
-LeanCTX and CodeGraph are always installed. On the first interactive install,
+From a source checkout, ./install.sh accepts the same options.
+
+LeanCTX and CodeGraph are always installed. On the first interactive setup,
 optional MCPs are chosen from a checklist. The choice is saved globally and
 normal updates reuse it without prompting.
 
 Options:
-  --clean          Required for the first install.
+  --clean          Required for the first setup/takeover.
   --all            Non-interactive full install: enable every optional MCP.
   --mcp SPEC       Non-interactive optional set: none|all|name1,name2.
   --configure-mcp  Show the checklist even when a saved choice exists.
@@ -73,7 +75,7 @@ parse_arguments() {
       --mcp) shift; (($#)) || die '--mcp requires none|all|name1,name2'; mcp_spec="$1"; mcp_explicit=1 ;;
       --configure-mcp) configure_mcp=1 ;;
       -h|--help) show_help; exit 0 ;;
-      *) die "unknown option: $1 (see ./install.sh --help)" ;;
+      *) die "unknown option: $1 (see 'harr setup --help' or './install.sh --help' from a source checkout)" ;;
     esac
     shift
   done
@@ -91,7 +93,7 @@ prepare_clean_ownership() {
     return
   fi
   first_install=1
-  ((clean_takeover)) || die 'first Harr installation requires --clean; Harr will not merge itself into an existing global harness'
+  ((clean_takeover)) || die 'first Harr setup requires --clean; Harr will not merge itself into an existing global harness'
   bash "$state_source" snapshot
 }
 
@@ -118,7 +120,15 @@ install_runtime_files() {
   find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
   chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"
   chmod 0755 "${COMMON_LIB_DIR}/git_host/git_host.py"
-  install -m 0755 "${SOURCE_DIR}/harr" "${BIN_DIR}/harr"
+  if [[ -x /usr/bin/harr && "$(readlink -f -- /usr/bin/harr 2>/dev/null || true)" == "${SOURCE_DIR}/harr" ]]; then
+    cat >"${BIN_DIR}/harr" <<'EOF_HARR_PACKAGE_SHIM'
+#!/usr/bin/env bash
+exec /usr/bin/harr "$@"
+EOF_HARR_PACKAGE_SHIM
+    chmod 0755 "${BIN_DIR}/harr"
+  else
+    install -m 0755 "${SOURCE_DIR}/harr" "${BIN_DIR}/harr"
+  fi
   install -m 0755 "${FILES_DIR}/mcp/harr-mcp-run" "${BIN_DIR}/harr-mcp-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${BIN_DIR}/codegraph"
   local f
@@ -182,7 +192,7 @@ main() {
   fi
   if ((start_now)); then "${BIN_DIR}/harr" mcp restart all; fi
 
-  printf '\nHarr installed in clean global-harness mode for Linux.\n'
+  printf '\nHarr setup complete in clean global-harness mode for Linux.\n'
   printf 'LeanCTX + CodeGraph are required; optional MCPs follow %s.\n' "$MCP_SELECTION"
   printf 'Change them later with: harr mcp configure\n'
   printf 'Project-level configs/files were not touched.\n'

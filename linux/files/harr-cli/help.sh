@@ -2,12 +2,15 @@ usage() {
   cat <<'EOF_HELP'
 Harr — global harness for token-efficient MCP infrastructure
 
-First install / takeover:
-  ./install.sh --clean
-  ./install.sh --clean --all        # full install, no prompts
-  ./install.sh --clean --mcp none   # LeanCTX + CodeGraph only
+Initial user setup after package installation:
+  harr setup --clean
+  harr setup --clean --all        # full setup, no prompts
+  harr setup --clean --mcp none   # LeanCTX + CodeGraph only
+
+From a source checkout, ./install.sh is an equivalent installer entrypoint.
 
 CLI:
+  harr setup [--clean] [--start] [--all|--mcp SPEC] [--configure-mcp] [--harr-only]
   harr install [all|leanctx|mcp]
   harr status
   harr hosts apply
