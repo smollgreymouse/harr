@@ -70,7 +70,8 @@ def check_git_execution() -> None:
         finally:
             os.environ["PATH"] = old_path
         assert result["exit_code"] == 0
-        assert f"cwd={work}" in result["stdout"]
+        cwd_line = next(line for line in result["stdout"].splitlines() if line.startswith("cwd="))
+        assert Path(cwd_line.removeprefix("cwd=")).resolve() == work.resolve()
         assert "agent=/agent.sock" in result["stdout"]
         assert "args=push origin HEAD" in result["stdout"]
 
