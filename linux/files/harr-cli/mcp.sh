@@ -66,6 +66,10 @@ reconcile_mcp_services() {
   require_command systemctl
   systemctl_user daemon-reload
   local name
+  # Retired-service cleanup: remove units even though catalog no longer lists them.
+  for name in gitlab grafana; do
+    systemctl_user disable --now "harr-mcp@${name}.service" >/dev/null 2>&1 || true
+  done
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     if managed_mcp_names | grep -Fxq -- "$name"; then

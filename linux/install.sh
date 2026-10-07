@@ -26,6 +26,7 @@ readonly MCP_UNIT_TEMPLATE="harr-mcp@.service"
 readonly GIT_HOST_UNIT="harr-git-host.service"
 readonly LEGACY_GITLAB_UNIT="harr-mcp-gitlab.service"
 readonly LEGACY_CODEGRAPH_UNIT="harr-mcp-codegraph.service"
+readonly RETIRED_MCP_UNITS="gitlab grafana"
 readonly CLEAN_STATE_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
 
 start_now=0
@@ -143,10 +144,17 @@ EOF_HARR_PACKAGE_SHIM
 install_mcp_configs() { python3 "$MCP_MANAGER" --registry "$MCP_EFFECTIVE" install-configs --config-dir "$MCP_CONFIG_DIR"; }
 
 remove_legacy_services() {
-  local unit path
+  local unit path name
   for unit in "$LEGACY_GITLAB_UNIT" "$LEGACY_CODEGRAPH_UNIT"; do
     path="${SYSTEMD_USER_DIR}/${unit}"
     if [[ -e "$path" ]]; then systemctl --user disable --now "$unit" >/dev/null 2>&1 || true; rm -f -- "$path"; fi
+  done
+  for name in $RETIRED_MCP_UNITS; do
+    unit="harr-mcp@${name}.service"
+    path="${SYSTEMD_USER_DIR}/${unit}"
+    if systemctl --user is-enabled "$unit" >/dev/null 2>&1; then systemctl --user disable --now "$unit" >/dev/null 2>&1 || true; fi
+    systemctl --user is-active "$unit" >/dev/null 2>&1 && systemctl --user stop "$unit" >/dev/null 2>&1 || true
+    rm -f -- "$path"
   done
   rm -f -- "${MCP_CONFIG_DIR}/codegraph.env"
 }

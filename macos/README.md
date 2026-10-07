@@ -120,9 +120,7 @@ Useful commands:
 ```text
 harr mcp list
 harr mcp available
-harr mcp start all
 harr mcp status
-harr mcp logs gitlab -f
 ```
 
 On-demand stdio MCPs are spawned through LeanCTX and do not get LaunchAgents.

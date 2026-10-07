@@ -104,7 +104,13 @@ PY
 }
 
 reconcile_mcp_services() {
-  local name active
+  local name active label
+  # Clean up retired service LaunchAgents for GitLab and Grafana.
+  for name in gitlab grafana; do
+    label="com.harr.mcp.${name}"
+    launchctl bootout "gui/$(id -u)/${label}" >/dev/null 2>&1 || true
+    rm -f -- "${HOME}/Library/LaunchAgents/${label}.plist"
+  done
   active="$(managed_mcp_names)"
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue

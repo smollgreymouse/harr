@@ -165,11 +165,31 @@ grep -q 'do not attempt bare network Git first' "${XDG_CONFIG_HOME}/opencode/ski
 "${ROOT}/linux/harr" agents status
 "${ROOT}/linux/harr" hosts status
 
+# Create mock retired service units to verify cleanup.
+mkdir -p "${XDG_CONFIG_HOME}/systemd/user"
+for retired in harr-mcp@gitlab.service harr-mcp@grafana.service; do
+  cat >"${XDG_CONFIG_HOME}/systemd/user/${retired}" <<'UNIT'
+[Unit]
+Description=retired
+[Service]
+ExecStart=/bin/true
+[Install]
+WantedBy=default.target
+UNIT
+done
+
 "${ROOT}/linux/install.sh" --harr-only
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
 [[ -f "${XDG_CONFIG_HOME}/systemd/user/harr-git-host.service" ]]
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
 [[ "$(stat -c '%a' "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability")" == 600 ]]
+# Retired units must be removed.
+for retired in harr-mcp@gitlab.service harr-mcp@grafana.service; do
+  if [[ -f "${XDG_CONFIG_HOME}/systemd/user/${retired}" ]]; then
+    printf 'FAIL: retired unit left behind: %s\n' "${retired}" >&2
+    exit 1
+  fi
+done
 grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"

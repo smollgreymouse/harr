@@ -26,8 +26,6 @@ harr mcp configure
 harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
 <!-- harr-mcp:gitlab:end -->
 <!-- harr-mcp:grafana:start -->
 harr secret set grafana

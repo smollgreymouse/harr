@@ -23,20 +23,38 @@ import subprocess
 import sys
 import time
 import uuid
+import re
 from collections import deque
 
 
 SERVER_NAME = "gigacode"
 SERVER_VERSION = "1.7.0"
 ROOT = Path.cwd().resolve()
-DEFAULT_HARD_TIMEOUT_SEC = 900
-DEFAULT_STALL_TIMEOUT_SEC = 300
+DEFAULT_HARD_TIMEOUT_SEC = 0
+DEFAULT_STALL_TIMEOUT_SEC = 0
 STARTUP_CONFIRM_TIMEOUT_SEC = 20.0
 STARTUP_CONFIRM_POLL_SEC = 0.25
 POLL_INTERVAL_SEC = 5.0
 WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
 CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "gigacode-mcp" / WORKSPACE_KEY
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+
+# Regex: canonical UUID hex format only
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _validate_session_id(session_id: object) -> str | None:
+    """Return session_id if it is a valid canonical UUID string, else None.
+
+    Rejects empty strings, non-strings, path separators, relative components,
+    drive letters, and every non-UUID pattern.
+    """
+    if not isinstance(session_id, str):
+        return None
+    m = _UUID_RE.fullmatch(session_id)
+    if m is None:
+        return None
+    return session_id
 
 WORKER_CONTRACT = r"""
 You are an implementation worker. The caller is a more capable planner and owns
@@ -129,15 +147,17 @@ TOOLS = [
             "action=resume perform a short startup handshake and return RUNNING only after actual "
             "GigaCode model/tool activity is observed; otherwise they return STARTING or FAILED. "
             "action=status is a fast state read returning RUNNING or the final DONE/FAILED/ESCALATE "
-            "handoff. Never tight-poll status. plan_path avoids resending an existing plan."
+            "handoff, plus runtime info including hard_timeout_sec (0=unlimited), stall_elapsed_sec, "
+            "and cancel_requested. action=cancel requests orderly termination of a running detached job. "
+            "Never tight-poll status. plan_path avoids resending an existing plan."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "resume", "status"],
-                    "description": "start a new task; resume an existing session; status inspects runtime/debug state.",
+                    "enum": ["start", "resume", "status", "cancel"],
+                    "description": "start a new task; resume an existing session; status inspects runtime/debug state; cancel requests orderly termination of a running detached job.",
                 },
                 "plan_path": {
                     "type": "string",
@@ -145,7 +165,7 @@ TOOLS = [
                 },
                 "session_id": {
                     "type": "string",
-                    "description": "For resume: session id returned by a prior start.",
+                    "description": "For resume/cancel/status: session id returned by a prior start.",
                 },
                 "prompt": {
                     "type": "string",
@@ -153,9 +173,8 @@ TOOLS = [
                 },
                 "timeout_sec": {
                     "type": "integer",
-                    "minimum": 30,
-                    "maximum": 1500,
-                    "description": "For start/resume: hard wall-clock limit for this GigaCode CLI turn. Default 900 seconds.",
+                    "minimum": 0,
+                    "description": "For start/resume: optional hard wall-clock limit in seconds. 0 (default) means unlimited. Any nonnegative integer accepted.",
                 },
             },
             "required": ["action"],
@@ -429,7 +448,14 @@ def _pid_alive(pid: object) -> bool:
 
 
 def status_tool(arguments: dict) -> dict:
-    session_id = arguments["session_id"]
+    raw_sid = arguments.get("session_id")
+    session_id = _validate_session_id(raw_sid)
+    if session_id is None:
+        return text_result({
+            "session_id": raw_sid if isinstance(raw_sid, str) else "",
+            "status": "FAILED",
+            "summary": "status requires a valid UUID session_id.",
+        }, is_error=True)
     state = _load_state(session_id)
     chat_path = _find_chat_path(session_id)
 
@@ -470,7 +496,7 @@ def status_tool(arguments: dict) -> dict:
     process_running = _pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))
     phase = state.get("phase", "unknown")
 
-    if phase in {"queued", "running", "completed"} and not process_running:
+    if phase in {"queued", "running", "completed", "cancelled"} and not process_running:
         payload = {
             "session_id": session_id,
             "status": "FAILED",
@@ -491,6 +517,8 @@ def status_tool(arguments: dict) -> dict:
         }
         return text_result(payload, is_error=True)
 
+    job_id = state.get("job_id")
+    cancel_check = bool(job_id) and _check_cancel_request(session_id, job_id)
     payload = {
         "session_id": session_id,
         "status": "RUNNING",
@@ -499,6 +527,9 @@ def status_tool(arguments: dict) -> dict:
             "phase": phase,
             "elapsed_sec": state.get("elapsed_sec"),
             "timeout_sec": state.get("timeout_sec"),
+            "hard_timeout_sec": state.get("hard_timeout_sec", state.get("timeout_sec")),
+            "stall_elapsed_sec": state.get("stall_elapsed_sec"),
+            "cancel_requested": cancel_check,
             "process_running": process_running,
             "chat": chat_info,
             "runtime_log": str(_runtime_log_path(session_id)),
@@ -561,6 +592,7 @@ def run_gigacode(
     session_args: list[str],
     prompt: str,
     timeout_sec: int,
+    job_id: str | None = None,
 ) -> tuple[int, str, str]:
     executable = shutil.which("gigacode")
     if not executable:
@@ -621,6 +653,7 @@ def run_gigacode(
             state = {
                 "phase": "running",
                 "session_id": session_id,
+                "job_id": job_id,
                 "turn": turn_key,
                 "pid": process.pid,
                 "worker_pid": os.getpid(),
@@ -646,23 +679,30 @@ def run_gigacode(
             stall_elapsed = time.monotonic() - last_progress_monotonic
             state["stall_elapsed_sec"] = round(stall_elapsed, 1)
             state["stall_timeout_sec"] = DEFAULT_STALL_TIMEOUT_SEC
+            state["hard_timeout_sec"] = timeout_sec
             _write_state(session_id, state)
 
-            if stall_elapsed >= DEFAULT_STALL_TIMEOUT_SEC:
+            # Log informative stall message but never kill for inactivity
+            if DEFAULT_STALL_TIMEOUT_SEC > 0 and stall_elapsed >= DEFAULT_STALL_TIMEOUT_SEC:
                 _append_runtime_log(
                     session_id,
-                    f"STALL turn={turn_key} no_progress={stall_elapsed:.1f}s pid={process.pid}",
+                    f"STALL turn={turn_key} no_progress={stall_elapsed:.1f}s (informational, not killed)",
+                )
+
+            # Check for external cancel request
+            if job_id is not None and _check_cancel_request(session_id, job_id):
+                _append_runtime_log(
+                    session_id,
+                    f"CANCEL turn={turn_key} job={job_id} pid={process.pid}",
                 )
                 _terminate_process_tree(process)
-
                 stdout_handle.flush()
                 stderr_handle.flush()
                 output = stdout_path.read_text(encoding="utf-8", errors="replace").strip()
                 stderr = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
                 events = _tail_chat_events(session_id)
-                stall_detail = (
-                    f"GigaCode made no recorded model/tool progress for "
-                    f"{DEFAULT_STALL_TIMEOUT_SEC}s and was stopped. "
+                cancel_summary = (
+                    f"GigaCode was manually cancelled by the planner. "
                     f"Session remains resumable: {session_id}. "
                     f"Last events: {json.dumps(events[-5:], ensure_ascii=False)}"
                 )
@@ -670,15 +710,16 @@ def run_gigacode(
                     session_id,
                     {
                         **state,
-                        "phase": "stalled",
+                        "phase": "cancelled",
                         "elapsed_sec": round(time.monotonic() - started_monotonic, 1),
-                        "exit_code": 125,
+                        "exit_code": -15,
                         "last_events": events[-8:],
                     },
                 )
-                return 125, output, (stderr + "\n" + stall_detail).strip()
+                _cleanup_control(session_id, job_id)
+                return -15, output, (stderr + "\n" + cancel_summary).strip()
 
-            if elapsed >= timeout_sec:
+            if timeout_sec > 0 and elapsed >= timeout_sec:
                 _append_runtime_log(
                     session_id,
                     f"TIMEOUT turn={turn_key} elapsed={elapsed:.1f}s pid={process.pid}",
@@ -720,6 +761,7 @@ def run_gigacode(
         {
             "phase": "completed",
             "session_id": session_id,
+            "job_id": job_id,
             "turn": turn_key,
             "pid": process.pid,
             "worker_pid": os.getpid(),
@@ -740,8 +782,119 @@ def run_gigacode(
     return exit_code, output, stderr
 
 
+def cancel_tool(arguments: dict) -> dict:
+    raw_sid = arguments.get("session_id")
+    session_id = _validate_session_id(raw_sid)
+    if session_id is None:
+        return text_result({
+            "status": "FAILED",
+            "summary": "cancel requires a valid session_id (canonical UUID).",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [{"kind": "other", "detail": "invalid session_id", "evidence": ""}],
+        }, is_error=True)
+
+    state = _load_state(session_id)
+
+    if state is None:
+        return text_result({
+            "session_id": session_id,
+            "status": "UNKNOWN",
+            "summary": "No session found for this session_id.",
+        })
+
+    if state.get("phase") == "finished":
+        return text_result({
+            "session_id": session_id,
+            "status": "ALREADY_FINISHED",
+            "summary": "Session has already completed. No running job to cancel.",
+            "handoff": state.get("handoff"),
+        })
+
+    job_id = state.get("job_id")
+    if not job_id:
+        return text_result({
+            "session_id": session_id,
+            "status": "FAILED",
+            "summary": "No active job_id in session state.",
+        }, is_error=True)
+
+    running = _pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))
+    if not running:
+        return text_result({
+            "session_id": session_id,
+            "status": "ALREADY_STOPPED",
+            "summary": "Session job is not running. No cancellation needed.",
+        })
+
+    _append_runtime_log(
+        session_id,
+        f"CANCEL_REQUEST job={job_id} from planner",
+    )
+    if not _request_cancel(session_id, job_id):
+        return text_result({
+            "session_id": session_id,
+            "status": "FAILED",
+            "summary": "Failed to write cancel request.",
+        }, is_error=True)
+
+    return text_result({
+        "session_id": session_id,
+        "status": "CANCEL_REQUESTED",
+        "summary": f"Cancellation requested for job {job_id}. The worker will terminate the process tree on its next loop iteration.",
+        "job_id": job_id,
+    })
+
+
 def _job_path(session_id: str, job_id: str) -> Path:
     return CACHE_ROOT / f"{session_id}.{job_id}.job.json"
+
+
+def _control_path(session_id: str, job_id: str) -> Path:
+    return CACHE_ROOT / f"{session_id}.{job_id}.control.json"
+
+
+def _request_cancel(session_id: str, job_id: str) -> bool:
+    """Write an atomic cancel request for the worker to observe."""
+    control = {
+        "action": "cancel",
+        "session_id": session_id,
+        "job_id": job_id,
+        "requested_at": time.time(),
+    }
+    tmp = _control_path(session_id, job_id).with_suffix(".tmp")
+    try:
+        tmp.write_text(
+            json.dumps(control, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        tmp.replace(_control_path(session_id, job_id))
+        return True
+    except OSError:
+        return False
+
+
+def _check_cancel_request(session_id: str, job_id: str) -> bool:
+    """Worker-side check: return True if a cancel request exists for this job/turn."""
+    cp = _control_path(session_id, job_id)
+    if not cp.is_file():
+        return False
+    try:
+        control = json.loads(cp.read_text(encoding="utf-8"))
+        if control.get("action") == "cancel" and control.get("job_id") == job_id:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _cleanup_control(session_id: str, job_id: str) -> None:
+    cp = _control_path(session_id, job_id)
+    try:
+        cp.unlink()
+    except OSError:
+        pass
 
 
 def launch_detached_job(
@@ -805,9 +958,10 @@ def launch_detached_job(
         f"DETACHED job={job_id} worker_pid={worker.pid} timeout_sec={timeout_sec}",
     )
 
-    confirm_deadline = time.monotonic() + min(
-        STARTUP_CONFIRM_TIMEOUT_SEC,
-        max(1.0, float(timeout_sec)),
+    confirm_deadline = time.monotonic() + (
+        STARTUP_CONFIRM_TIMEOUT_SEC
+        if timeout_sec == 0
+        else min(STARTUP_CONFIRM_TIMEOUT_SEC, max(1.0, float(timeout_sec)))
     )
     while time.monotonic() < confirm_deadline:
         current = _load_state(session_id) or {}
@@ -932,6 +1086,7 @@ def run_detached_job(job_path_arg: str) -> int:
         session_args,
         prompt,
         timeout_sec,
+        job_id=job_id,
     )
     handoff, _ = parse_worker_handoff(output, exit_code, stderr)
     state = _load_state(session_id) or {}
@@ -1133,7 +1288,10 @@ def start_tool(arguments: dict) -> dict:
 
 
 def resume_tool(arguments: dict) -> dict:
-    session_id = arguments["session_id"]
+    raw_sid = arguments.get("session_id")
+    session_id = _validate_session_id(raw_sid)
+    if session_id is None:
+        raise ValueError("resume requires a valid UUID session_id")
     prompt = (
         "Continue the same task and worker contract. "
         "The planner provides only new information below. Apply it to the existing session context.\n\n"
@@ -1185,10 +1343,10 @@ def handle(request: dict) -> dict | None:
             action = arguments.get("action")
             timeout_value = arguments.get("timeout_sec")
             if timeout_value is not None:
-                if not isinstance(timeout_value, int) or isinstance(timeout_value, bool):
-                    raise ValueError("timeout_sec must be an integer")
-                if not 30 <= timeout_value <= 1500:
-                    raise ValueError("timeout_sec must be between 30 and 1500")
+                if isinstance(timeout_value, bool) or not isinstance(timeout_value, int):
+                    raise ValueError("timeout_sec must be a nonnegative integer")
+                if timeout_value < 0:
+                    raise ValueError("timeout_sec must be a nonnegative integer")
             if action == "start":
                 plan_path = arguments.get("plan_path")
                 direct_prompt = arguments.get("prompt")
@@ -1205,8 +1363,12 @@ def handle(request: dict) -> dict | None:
                 if not isinstance(arguments.get("session_id"), str):
                     raise ValueError("status requires session_id as a string")
                 result = status_tool(arguments)
+            elif action == "cancel":
+                if not isinstance(arguments.get("session_id"), str):
+                    raise ValueError("cancel requires session_id as a string")
+                result = cancel_tool(arguments)
             else:
-                raise ValueError("action must be start, resume, or status")
+                raise ValueError("action must be start, resume, status, or cancel")
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
         except Exception as exc:
             return {

@@ -197,8 +197,14 @@ configure_git_host() {
 }
 
 configure_launchd() {
-  ((harr_only)) && return
   local name active label
+  # Retired-service cleanup must run even during --harr-only updates.
+  for name in gitlab grafana; do
+    label="com.harr.mcp.${name}"
+    launchctl bootout "gui/$(id -u)/${label}" >/dev/null 2>&1 || true
+    rm -f -- "${LAUNCH_AGENTS_DIR}/${label}.plist"
+  done
+  ((harr_only)) && return
   active="$(python3 "$MCP_MANAGER" --registry "$MCP_EFFECTIVE" names --lifecycle service)"
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue

@@ -24,10 +24,11 @@ LeanCTX 3.9.15                         required
       +-- stdio -----------> CodeGraph 1.5.0       required
       |                     inherits LeanCTX cwd
       |
-      +-- HTTP :3334 -----> GitLab MCP 2.1.48     optional
+      +-- stdio -----------> GitLab MCP 2.1.48     optional
+      |                     on-demand stdio
       |
-      +-- HTTP :3335 -----> Grafana MCP           optional
-      |                     uvx mcp-grafana --transport streamable-http
+      +-- stdio -----------> Grafana MCP           optional
+      |                     on-demand uvx mcp-grafana
       |
       +-- stdio -----------> GigaCode Executor     optional
       |                     bundled Harr bridge -> external gigacode CLI
@@ -482,12 +483,6 @@ harr mcp add gitlab,grafana
 harr mcp remove grafana
 harr mcp remove all                          # keep required MCPs only
 
-harr mcp start gitlab
-harr mcp stop gitlab
-harr mcp restart gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
-
 harr secret status
 harr secret set gitlab
 harr secret set grafana
@@ -573,18 +568,10 @@ harr mcp add gitlab
 
 For incremental changes prefer `harr mcp add gitlab` and `harr mcp remove gitlab`; these preserve every other selected optional MCP. Use `harr mcp configure` only when you want the interactive checklist or to replace the complete optional set explicitly.
 
-GitLab is declared as an HTTP service MCP in the common registry and exposed to LeanCTX at:
+GitLab is declared as an on-demand stdio MCP in the common registry and spawned by LeanCTX through the generic runner:
 
 ```text
-http://127.0.0.1:3334/mcp
-```
-
-Its lifecycle adapter is platform-specific:
-
-```text
-Linux:   systemd --user instance: harr-mcp@gitlab.service
-macOS:   ~/Library/LaunchAgents/com.harr.mcp.gitlab.plist
-Windows: per-user Scheduled Task
+LeanCTX -> harr-mcp-run gitlab -> zereight-mcp-gitlab
 ```
 
 Harr exposes the full GitLab tool catalog behind LeanCTX:
@@ -617,16 +604,16 @@ harr secret status
 harr secret unset gitlab
 ```
 
-Disabling GitLab removes it from the gateway, agent policy/skill and active service lifecycle, but preserves its local env/secret files.
+Disabling GitLab removes it from the gateway and agent policy/skill, but preserves its local env/secret files.
 
 
 
 ### Grafana
 
-Grafana is **optional** and declared as an on-demand stdio MCP. When enabled, the generated LeanCTX route is equivalent to:
+Grafana is **optional** and declared as an on-demand stdio MCP in the common registry. When enabled, the generated LeanCTX route is equivalent to:
 
 ```text
-LeanCTX -> harr-mcp-run grafana -> uvx mcp-grafana
+LeanCTX -> harr-mcp-run grafana -> uvx --offline mcp-grafana --transport stdio
 ```
 
 `uvx` must be available in `PATH` only when Grafana is selected/used. Harr creates the non-secret local config from `common/mcp/grafana.env.example`:
@@ -642,7 +629,7 @@ harr secret set grafana
 harr secret status
 ```
 
-The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP service while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
+The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
 
 For dashboard edits, prefer the compact patch-first flow:
 

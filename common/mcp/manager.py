@@ -287,6 +287,25 @@ def prefetch_runtimes(data: dict) -> None:
         subprocess.run(cmd, check=True)
 
 
+def runtime_env(server: dict) -> dict[str, str]:
+    runtime = server.get("runtime", {})
+    env = runtime.get("env")
+    if env is None:
+        return {}
+    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        raise SystemExit(f"invalid runtime.env for MCP {server['name']}")
+    forbidden = {
+        secret.get("target", {}).get("name")
+        for secret in server.get("secrets", [])
+        if secret.get("target", {}).get("kind") == "env"
+    }
+    forbidden.discard(None)
+    for key in env:
+        if key in forbidden:
+            raise SystemExit(f"secret {key} must not be stored in runtime.env for MCP {server['name']}")
+    return dict(env)
+
+
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
     env = os.environ.copy()
@@ -300,6 +319,7 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
     if server.get("env_template") and not env_path.exists():
         raise SystemExit(f"MCP {server['name']} configuration is missing: {env_path}")
     env.update(load_env_file(env_path, forbidden))
+    env.update(runtime_env(server))
     env.update(service_secret_env(server))
     cmd = runtime_command(server)
     if os.name == "nt":

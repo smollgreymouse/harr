@@ -46,6 +46,16 @@ printf 'external command\n' >"${XDG_CONFIG_HOME}/opencode/commands/custom.md"
 printf '# external skill\n' >"${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md"
 printf 'OLD LEANCTX CONFIG\n' >"${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
+# Create mock retired LaunchAgent plists to verify cleanup.
+mkdir -p "${HOME}/Library/LaunchAgents"
+for label in com.harr.mcp.gitlab com.harr.mcp.grafana; do
+  cat >"${HOME}/Library/LaunchAgents/${label}.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>${label}</string></dict></plist>
+PLIST
+done
+
 cp "${CODEX_HOME}/AGENTS.md" "${TMP}/codex-agents.before"
 cp "${CODEX_HOME}/config.toml" "${TMP}/codex-config.before"
 cp "${XDG_CONFIG_HOME}/opencode/AGENTS.md" "${TMP}/opencode-agents.before"
@@ -66,7 +76,13 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "grafana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
-[[ ! -e "${HOME}/Library/LaunchAgents/com.harr.mcp.gitlab.plist" ]]
+# Retired LaunchAgent plists must be removed.
+for label in com.harr.mcp.gitlab com.harr.mcp.grafana; do
+  if [[ -f "${HOME}/Library/LaunchAgents/${label}.plist" ]]; then
+    printf 'FAIL: retired plist left behind: %s\n' "${label}" >&2
+    exit 1
+  fi
+done
 [[ -f "${HOME}/Library/LaunchAgents/com.harr.git-host.plist" ]]
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]

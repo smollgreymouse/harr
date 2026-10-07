@@ -13,6 +13,12 @@ function Task-Name([string]$Name) {
 
 function Register-ServiceTasks {
     if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) { throw 'Windows ScheduledTasks module is required for service MCP lifecycle' }
+    # Clean up retired service tasks for GitLab and Grafana.
+    $retiredTaskNames = @('Harr GitLab MCP', 'Harr MCP gitlab', 'Harr MCP grafana')
+    foreach ($taskName in $retiredTaskNames) {
+        try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+        try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+    }
     [string[]]$active = @(Service-Names)
     foreach ($name in @(Catalog-Service-Names)) {
         if (-not $name) { continue }
@@ -133,6 +139,12 @@ function Uninstall-Harr {
     & $StateHelper safety-snapshot | Out-Host
     foreach ($name in @(Catalog-Service-Names)) {
         $taskName = Task-Name $name
+        try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+        try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+    }
+    # Clean up retired service tasks.
+    $retiredTaskNames = @('Harr GitLab MCP', 'Harr MCP gitlab', 'Harr MCP grafana')
+    foreach ($taskName in $retiredTaskNames) {
         try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
         try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
     }

@@ -112,9 +112,7 @@ Useful commands:
 ```text
 harr mcp list
 harr mcp available
-harr mcp start all
 harr mcp status
-harr mcp logs gitlab
 ```
 
 ## Rollback
