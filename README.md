@@ -476,7 +476,11 @@ harr mcp list
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp configure gitlab,grafana,gigacode
+harr mcp configure gitlab,grafana,gigacode   # replace the whole optional set
+harr mcp add gigacode                        # preserve other selected MCPs
+harr mcp add gitlab,grafana
+harr mcp remove grafana
+harr mcp remove all                          # keep required MCPs only
 
 harr mcp start gitlab
 harr mcp stop gitlab
@@ -496,7 +500,7 @@ harr git -C /absolute/repository/path <git-arguments>
 harr uninstall
 ```
 
-`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument applies a non-interactive exact set.
+`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp add`/`remove` incrementally mutate the saved optional set while preserving every other choice. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument replaces the complete optional set non-interactively.
 
 Lifecycle commands apply only to **enabled** registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph are spawned by LeanCTX when called.
 
@@ -564,10 +568,10 @@ The separate `codegraph` launcher remains installed for manual commands such as 
 GitLab is **optional**. Enable it during install or later with:
 
 ```text
-harr mcp configure gitlab
+harr mcp add gitlab
 ```
 
-If other optional MCPs are already enabled, include them in the exact set as well, or use the interactive `harr mcp configure` checklist.
+For incremental changes prefer `harr mcp add gitlab` and `harr mcp remove gitlab`; these preserve every other selected optional MCP. Use `harr mcp configure` only when you want the interactive checklist or to replace the complete optional set explicitly.
 
 GitLab is declared as an HTTP service MCP in the common registry and exposed to LeanCTX at:
 

@@ -40,6 +40,8 @@ Normal updates reuse the saved selection without prompting. Use `--configure-mcp
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
+harr mcp add gigacode
+harr mcp remove grafana
 harr mcp available
 ```
 

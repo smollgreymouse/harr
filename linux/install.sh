@@ -194,7 +194,7 @@ main() {
 
   printf '\nHarr setup complete in clean global-harness mode for Linux.\n'
   printf 'LeanCTX + CodeGraph are required; optional MCPs follow %s.\n' "$MCP_SELECTION"
-  printf 'Change them later with: harr mcp configure\n'
+  printf 'Change optional MCPs later with: harr mcp add/remove NAME; use harr mcp configure for a full replacement/checklist.\n'
   printf 'Project-level configs/files were not touched.\n'
   if (( ! start_now )); then printf 'Enabled service MCPs were not started/restarted. Start with: harr mcp start all\n'; fi
   printf 'Check with: harr status\nRollback with: harr uninstall\n'

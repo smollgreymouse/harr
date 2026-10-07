@@ -182,4 +182,49 @@ with tempfile.TemporaryDirectory() as tmp_raw:
         "enabled": ["codegraph", "gigacode"],
     }
 
+# Incremental add/remove mutates only the requested optional MCPs.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gitlab")
+    assert names(effective) == ["codegraph", "gitlab"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "gigacode")
+    assert names(effective) == ["codegraph", "gitlab", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "grafana,gigacode")
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "gitlab")
+    assert names(effective) == ["codegraph", "grafana", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "all")
+    assert names(effective) == ["codegraph"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+
+    failed = subprocess.run(
+        [
+            sys.executable,
+            str(SELECTOR),
+            "--catalog",
+            str(CATALOG),
+            "--selection",
+            str(selection),
+            "--effective",
+            str(effective),
+            "--remove",
+            "codegraph",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    assert failed.returncode != 0
+    assert "cannot remove required Harr MCP(s): codegraph" in failed.stderr
+
 print("cross-platform MCP selection: PASS")
