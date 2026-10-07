@@ -70,6 +70,10 @@ raw_commands = [
 ]
 threshold_chars = 800
 
+[addons]
+# Harr's managed stdio MCPs need network access (GigaCode authentication/model API).
+sandbox = "off"
+
 [gateway]
 enabled = true
 cache_ttl_secs = 300
