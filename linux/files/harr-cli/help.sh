@@ -30,6 +30,8 @@ CLI:
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
+  harr mcp add NAME[,NAME...]|all
+  harr mcp remove NAME[,NAME...]|all
   harr mcp start NAME|all
   harr mcp stop NAME|all
   harr mcp restart NAME|all
@@ -76,6 +78,8 @@ Usage:
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
+  harr mcp add NAME[,NAME...]|all
+  harr mcp remove NAME[,NAME...]|all
   harr mcp start NAME|all
   harr mcp stop NAME|all
   harr mcp restart NAME|all

@@ -14,7 +14,7 @@ cd harr
 .\install.ps1 -Clean -Start
 ```
 
-LeanCTX and CodeGraph are required. The first interactive install presents the shared Harr checklist for optional MCPs such as GitLab and Grafana.
+LeanCTX and CodeGraph are required. The first interactive install presents the shared Harr checklist for optional MCPs such as GitLab, Grafana and GigaCode.
 
 Full install without prompts:
 
@@ -31,7 +31,7 @@ Required-only install without prompts:
 Exact optional set:
 
 ```powershell
-.\install.ps1 -Clean -Mcp gitlab,grafana
+.\install.ps1 -Clean -Mcp gitlab,grafana,gigacode
 ```
 
 Normal updates reuse the saved selection without prompting. Use `-ConfigureMcp` to show the checklist again during installation, or change it later with:
@@ -40,10 +40,12 @@ Normal updates reuse the saved selection without prompting. Use `-ConfigureMcp` 
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
+harr mcp add gigacode
+harr mcp remove grafana
 harr mcp available
 ```
 
-The same saved selection drives the LeanCTX gateway, npm/path runtime set, secrets/status, Scheduled Tasks, global AGENTS routing and installed Harr skill/reference set. Disabled MCP env/secret files are preserved.
+The same saved selection drives the LeanCTX gateway, runtime set, secrets/status, Scheduled Tasks, global AGENTS routing and installed Harr skill/reference set. Disabled MCP env/secret files are preserved.
 
 ## GitLab Git transport
 
@@ -110,9 +112,7 @@ Useful commands:
 ```text
 harr mcp list
 harr mcp available
-harr mcp start all
 harr mcp status
-harr mcp logs gitlab
 ```
 
 ## Rollback

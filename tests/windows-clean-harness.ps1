@@ -101,11 +101,24 @@ enabled = false
     if (-not (Test-Path (Join-Path $OpenCodeDir 'commands\custom.md'))) { throw 'Unrelated OpenCode command was removed' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\harr\SKILL.md'))) { throw 'Harr skill missing' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\lean-ctx\SKILL.md'))) { throw 'LeanCTX skill missing' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed' }
+    if (Test-Path (Join-Path $CodexDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed for Codex' }
+    if ($codexAgents -match '\$gigacode-executor') { throw 'Disabled GigaCode routing leaked into Codex policy' }
 
     $codexText = Get-Content -Raw (Join-Path $CodexDir 'config.toml')
     $tomlLeanCommand = $leanCommand.Replace('\', '\\')
     if (-not $codexText.Contains('model = "keep-model"') -or -not $codexText.Contains($tomlLeanCommand)) { throw 'Codex config did not preserve existing settings and register LeanCTX' }
     if (-not $codexText.Contains('default_tools_approval_mode = "auto"')) { throw 'Codex LeanCTX tools were not auto-approved' }
+    if (-not $codexText.Contains('tool_timeout_sec = 1900')) { throw 'Codex LeanCTX tool timeout is too short for GigaCode wait' }
+    $openText = Get-Content -Raw (Join-Path $OpenCodeDir 'opencode.jsonc')
+    if (-not $openText.Contains('"timeout": 1900000')) { throw 'OpenCode LeanCTX tool timeout is too short for GigaCode wait' }
+    $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
+    if (-not $leanText.Contains('call_timeout_secs = 1800')) { throw 'LeanCTX downstream timeout is too short for GigaCode wait' }
+    if (-not $leanText.Contains('allow_paths = [')) { throw 'LeanCTX global skill allow_paths missing' }
+    $codexGigaSkillToml = (Join-Path $CodexDir 'skills\gigacode-executor').Replace('\', '\\')
+    $openGigaSkillToml = (Join-Path $OpenCodeDir 'skills\gigacode-executor').Replace('\', '\\')
+    if (-not $leanText.Contains($codexGigaSkillToml)) { throw 'Codex GigaCode skill path is not allowed by LeanCTX PathJail' }
+    if (-not $leanText.Contains($openGigaSkillToml)) { throw 'OpenCode GigaCode skill path is not allowed by LeanCTX PathJail' }
 
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }

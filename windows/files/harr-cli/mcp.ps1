@@ -13,6 +13,12 @@ function Task-Name([string]$Name) {
 
 function Register-ServiceTasks {
     if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) { throw 'Windows ScheduledTasks module is required for service MCP lifecycle' }
+    # Clean up retired service tasks for GitLab and Grafana.
+    $retiredTaskNames = @('Harr GitLab MCP', 'Harr MCP gitlab', 'Harr MCP grafana')
+    foreach ($taskName in $retiredTaskNames) {
+        try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+        try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+    }
     [string[]]$active = @(Service-Names)
     foreach ($name in @(Catalog-Service-Names)) {
         if (-not $name) { continue }
@@ -98,14 +104,27 @@ function Mcp-Available {
     }
 }
 
+function Apply-McpSelection {
+    Install-Components 'mcp'
+    Apply-Agents 'all'
+    Write-Host 'MCP selection applied. Disabled MCP env/secret files were preserved.'
+}
+
 function Mcp-Configure([string]$Spec = '') {
     Ensure-McpEffective
     [string[]]$selectorArgs = @('--catalog', $McpCatalog, '--selection', $McpSelection, '--effective', $McpEffective, '--default', 'all')
     if ($Spec) { $selectorArgs += @('--spec', $Spec) } else { $selectorArgs += '--configure' }
     [void](Invoke-Python (@($Selector) + $selectorArgs))
-    Install-Components 'mcp'
-    Apply-Agents 'all'
-    Write-Host 'MCP selection applied. Disabled MCP env/secret files were preserved.'
+    Apply-McpSelection
+}
+
+function Mcp-Mutate([string]$Action, [string]$Spec) {
+    if ($Action -notin @('add','remove')) { throw "unsupported MCP selection mutation: $Action" }
+    if (-not $Spec) { throw "usage: harr mcp $Action NAME[,NAME...]|all" }
+    Ensure-McpEffective
+    [string[]]$selectorArgs = @('--catalog', $McpCatalog, '--selection', $McpSelection, '--effective', $McpEffective, '--default', 'all', "--$Action", $Spec)
+    [void](Invoke-Python (@($Selector) + $selectorArgs))
+    Apply-McpSelection
 }
 
 function Mcp-Logs([string]$Name) {
@@ -120,6 +139,12 @@ function Uninstall-Harr {
     & $StateHelper safety-snapshot | Out-Host
     foreach ($name in @(Catalog-Service-Names)) {
         $taskName = Task-Name $name
+        try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+        try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+    }
+    # Clean up retired service tasks.
+    $retiredTaskNames = @('Harr GitLab MCP', 'Harr MCP gitlab', 'Harr MCP grafana')
+    foreach ($taskName in $retiredTaskNames) {
         try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
         try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
     }

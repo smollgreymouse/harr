@@ -8,6 +8,9 @@ import sys
 from typing import Any
 
 
+MCP_TOOL_TIMEOUT_MS = 1900000
+
+
 def default_leanctx_command() -> Path:
     explicit = os.environ.get("HARR_LEANCTX_COMMAND")
     if explicit:
@@ -129,7 +132,7 @@ def clean_mapping(config: dict[str, Any], key: str, owned: set[str]) -> None:
 
 
 def expected_leanctx_entry() -> dict[str, Any]:
-    return {"type": "local", "command": [str(LEANCTX)], "enabled": True}
+    return {"type": "local", "command": [str(LEANCTX)], "enabled": True, "timeout": MCP_TOOL_TIMEOUT_MS}
 
 
 def build_harr_config(current: dict[str, Any]) -> dict[str, Any]:

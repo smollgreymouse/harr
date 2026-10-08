@@ -46,6 +46,16 @@ printf 'external command\n' >"${XDG_CONFIG_HOME}/opencode/commands/custom.md"
 printf '# external skill\n' >"${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md"
 printf 'OLD LEANCTX CONFIG\n' >"${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
+# Create mock retired LaunchAgent plists to verify cleanup.
+mkdir -p "${HOME}/Library/LaunchAgents"
+for label in com.harr.mcp.gitlab com.harr.mcp.grafana; do
+  cat >"${HOME}/Library/LaunchAgents/${label}.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>Label</key><string>${label}</string></dict></plist>
+PLIST
+done
+
 cp "${CODEX_HOME}/AGENTS.md" "${TMP}/codex-agents.before"
 cp "${CODEX_HOME}/config.toml" "${TMP}/codex-config.before"
 cp "${XDG_CONFIG_HOME}/opencode/AGENTS.md" "${TMP}/opencode-agents.before"
@@ -66,12 +76,22 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "grafana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
-[[ ! -e "${HOME}/Library/LaunchAgents/com.harr.mcp.gitlab.plist" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor" ]]
+[[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
+! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
+# Retired LaunchAgent plists must be removed.
+for label in com.harr.mcp.gitlab com.harr.mcp.grafana; do
+  if [[ -f "${HOME}/Library/LaunchAgents/${label}.plist" ]]; then
+    printf 'FAIL: retired plist left behind: %s\n' "${label}" >&2
+    exit 1
+  fi
+done
 [[ -f "${HOME}/Library/LaunchAgents/com.harr.git-host.plist" ]]
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
 python3 -c 'import os, stat, sys; assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600' "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability"
 grep -q 'harr git <git-arguments>' "${HOME}/.local/bin/harr" "${HOME}/.local/libexec/harr/cli/help.sh"
+grep -q '^call_timeout_secs = 1800$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
 python3 - <<'PY'
 import json, os, plistlib, tomllib
@@ -83,6 +103,18 @@ assert codex['model'] == 'keep-model'
 assert codex['mcp_servers']['external-mcp']['url'] == 'https://example.invalid/codex-mcp'
 assert codex['mcp_servers']['lean-ctx']['command'] == str(home / '.local/bin/lean-ctx')
 assert codex['mcp_servers']['lean-ctx']['default_tools_approval_mode'] == 'auto'
+assert codex['mcp_servers']['lean-ctx']['tool_timeout_sec'] == 1900
+opencode = json.loads((config / 'opencode/opencode.jsonc').read_text())
+assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
+lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
+assert lean['allow_paths'] == [
+    str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/lean-ctx'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor'),
+    str(config / 'opencode/skills/harr'),
+    str(config / 'opencode/skills/lean-ctx'),
+    str(config / 'opencode/skills/gigacode-executor'),
+]
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
 assert selection['enabled'] == ['codegraph']

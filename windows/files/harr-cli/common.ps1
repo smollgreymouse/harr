@@ -160,11 +160,19 @@ function Install-HarrSkill([string]$Target) {
 function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
+    [bool]$gigacodeEnabled = @(Active-McpNames) -contains 'gigacode'
     foreach ($agent in $agents) {
         $policy = Agent-PolicyPath $agent
+        $skillRoot = Agent-SkillRoot $agent
         Write-Utf8 $policy (Render-Policy $agent)
-        Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path (Agent-SkillRoot $agent) 'lean-ctx')
-        Install-HarrSkill (Join-Path (Agent-SkillRoot $agent) 'harr')
+        Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path $skillRoot 'lean-ctx')
+        Install-HarrSkill (Join-Path $skillRoot 'harr')
+        $gigaSkill = Join-Path $skillRoot 'gigacode-executor'
+        if ($gigacodeEnabled) {
+            Copy-TreeFresh (Join-Path $CommonDir 'skills\gigacode-executor') $gigaSkill
+        } elseif (Test-Path -LiteralPath $gigaSkill) {
+            Remove-Item -LiteralPath $gigaSkill -Recurse -Force
+        }
         Write-Host "Applied Harr-owned global policy for ${agent}: $policy"
     }
 }

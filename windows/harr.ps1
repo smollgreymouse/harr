@@ -37,6 +37,8 @@ Harr Windows CLI
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
+  harr mcp add NAME[,NAME...]|all
+  harr mcp remove NAME[,NAME...]|all
   harr mcp start|stop|restart NAME|all
   harr mcp status
   harr mcp logs NAME
@@ -88,6 +90,10 @@ switch ($command) {
         if ($sub -eq 'list') { foreach ($name in @(All-Mcp-Names)) { Write-Host $name } }
         elseif ($sub -eq 'available') { Mcp-Available }
         elseif ($sub -eq 'configure') { Mcp-Configure ($(if ($rest.Count -gt 1) { $rest[1] } else { '' })) }
+        elseif ($sub -in @('add','remove')) {
+            if ($rest.Count -ne 2) { throw "usage: harr mcp $sub NAME[,NAME...]|all" }
+            Mcp-Mutate $sub $rest[1]
+        }
         elseif ($sub -in @('start','stop','restart')) {
             $target = if ($rest.Count -gt 1) { $rest[1] } else { throw 'MCP target required' }
             Mcp-Action $sub $target
@@ -97,7 +103,7 @@ switch ($command) {
             $name = if ($rest.Count -gt 1) { $rest[1] } else { throw 'MCP name required' }
             Mcp-Logs $name
         }
-        else { throw 'usage: harr mcp list|available|configure|start|stop|restart|status|logs' }
+        else { throw 'usage: harr mcp list|available|configure|add|remove|start|stop|restart|status|logs' }
     }
     'status' {
         Write-Host '== MCP selection =='; Mcp-Available; Write-Host ''

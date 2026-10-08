@@ -66,6 +66,10 @@ reconcile_mcp_services() {
   require_command systemctl
   systemctl_user daemon-reload
   local name
+  # Retired-service cleanup: remove units even though catalog no longer lists them.
+  for name in gitlab grafana; do
+    systemctl_user disable --now "harr-mcp@${name}.service" >/dev/null 2>&1 || true
+  done
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     if managed_mcp_names | grep -Fxq -- "$name"; then
@@ -76,15 +80,27 @@ reconcile_mcp_services() {
   done < <(catalog_service_mcp_names)
 }
 
-cmd_mcp_configure() {
-  [[ $# -le 1 ]] || die 'usage: harr mcp configure [none|all|name1,name2]'
-  if (($#)); then mcp_select spec "$1" all; else mcp_select configure '' all; fi
+apply_mcp_selection() {
   mcp_manager install-configs --config-dir "$HARR_MCP_CONFIG_DIR"
   cmd_install_components mcp
   cmd_leanctx_apply
   reconcile_mcp_services
   cmd_agents_apply all
   printf 'MCP selection applied. Disabled MCP env/secret files were preserved.\n'
+}
+
+cmd_mcp_configure() {
+  [[ $# -le 1 ]] || die 'usage: harr mcp configure [none|all|name1,name2]'
+  if (($#)); then mcp_select spec "$1" all; else mcp_select configure '' all; fi
+  apply_mcp_selection
+}
+
+cmd_mcp_mutate() {
+  local action="$1"
+  shift
+  [[ $# -eq 1 ]] || die "usage: harr mcp $action NAME[,NAME...]|all"
+  mcp_select "$action" "$1" all
+  apply_mcp_selection
 }
 
 cmd_mcp_logs() {
@@ -115,6 +131,7 @@ cmd_mcp() {
     list) [[ $# -eq 0 ]] || die 'usage: harr mcp list'; all_mcp_names ;;
     available) [[ $# -eq 0 ]] || die 'usage: harr mcp available'; mcp_available ;;
     configure) cmd_mcp_configure "$@" ;;
+    add|remove) cmd_mcp_mutate "$command" "$@" ;;
     start|stop|restart|enable|disable) [[ $# -eq 1 ]] || die "usage: harr mcp $command NAME|all"; cmd_mcp_lifecycle "$command" "$1" ;;
     status) cmd_mcp_status "$@" ;;
     logs) cmd_mcp_logs "$@" ;;

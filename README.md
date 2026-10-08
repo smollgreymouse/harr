@@ -24,10 +24,14 @@ LeanCTX 3.9.15                         required
       +-- stdio -----------> CodeGraph 1.5.0       required
       |                     inherits LeanCTX cwd
       |
-      +-- HTTP :3334 -----> GitLab MCP 2.1.48     optional
+      +-- stdio -----------> GitLab MCP 2.1.48     optional
+      |                     on-demand stdio
       |
-      +-- HTTP :3335 -----> Grafana MCP           optional
-      |                     uvx mcp-grafana --transport streamable-http
+      +-- stdio -----------> Grafana MCP           optional
+      |                     on-demand uvx mcp-grafana
+      |
+      +-- stdio -----------> GigaCode Executor     optional
+      |                     bundled Harr bridge -> external gigacode CLI
       |
       +-- future MCPs -----> common registry       required/optional metadata
 
@@ -92,7 +96,7 @@ harr setup --clean
 
 The first interactive setup offers the optional MCP checklist. For automation,
 use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
-`harr setup --clean --mcp gitlab,grafana`. The selection is saved and can be
+`harr setup --clean --mcp gitlab,grafana,gigacode`. The selection is saved and can be
 changed later with `harr mcp configure`.
 
 After a later Debian package upgrade, run `harr setup` to apply the new Harr
@@ -112,6 +116,7 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
+  [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -146,12 +151,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana
+./install.sh --clean --mcp gitlab,grafana,gigacode
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana
+.\install.ps1 -Clean -Mcp gitlab,grafana,gigacode
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -168,6 +173,8 @@ harr secret set grafana
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
+
+GigaCode is an executor bridge, not a bundled model/runtime. Enabling it installs Harr's MCP bridge and routing policy; the external `gigacode` CLI must already be installed, authenticated and available in `PATH`. Harr keeps the bridge behind LeanCTX and loads its single-tool schema only when delegation is needed. The bridge treats GigaCode as a black box: Harr does not configure, inspect or depend on GigaCode's own tools or MCP servers. The saved MCP selection is reused by later source/package upgrades, so a selected GigaCode executor remains selected across reinstall/update runs; change the set with `harr mcp configure`.
 
 Check the whole harness:
 
@@ -470,13 +477,11 @@ harr mcp list
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp configure gitlab,grafana
-
-harr mcp start gitlab
-harr mcp stop gitlab
-harr mcp restart gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
+harr mcp configure gitlab,grafana,gigacode   # replace the whole optional set
+harr mcp add gigacode                        # preserve other selected MCPs
+harr mcp add gitlab,grafana
+harr mcp remove grafana
+harr mcp remove all                          # keep required MCPs only
 
 harr secret status
 harr secret set gitlab
@@ -490,7 +495,7 @@ harr git -C /absolute/repository/path <git-arguments>
 harr uninstall
 ```
 
-`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument applies a non-interactive exact set.
+`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp add`/`remove` incrementally mutate the saved optional set while preserving every other choice. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument replaces the complete optional set non-interactively.
 
 Lifecycle commands apply only to **enabled** registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph are spawned by LeanCTX when called.
 
@@ -512,7 +517,7 @@ label:      short selector label
 description: selector/help description
 transport:  stdio | http
 lifecycle:  on-demand | service
-runtime:    npm package | command already available in PATH
+runtime:    npm package | bundled Python bridge | command already available in PATH
 secret:     env for local services | LeanCTX secret_env | secret_headers
 skill_reference: optional Harr diagnostic reference owned by that MCP
 ```
@@ -558,23 +563,15 @@ The separate `codegraph` launcher remains installed for manual commands such as 
 GitLab is **optional**. Enable it during install or later with:
 
 ```text
-harr mcp configure gitlab
+harr mcp add gitlab
 ```
 
-If other optional MCPs are already enabled, include them in the exact set as well, or use the interactive `harr mcp configure` checklist.
+For incremental changes prefer `harr mcp add gitlab` and `harr mcp remove gitlab`; these preserve every other selected optional MCP. Use `harr mcp configure` only when you want the interactive checklist or to replace the complete optional set explicitly.
 
-GitLab is declared as an HTTP service MCP in the common registry and exposed to LeanCTX at:
-
-```text
-http://127.0.0.1:3334/mcp
-```
-
-Its lifecycle adapter is platform-specific:
+GitLab is declared as an on-demand stdio MCP in the common registry and spawned by LeanCTX through the generic runner:
 
 ```text
-Linux:   systemd --user instance: harr-mcp@gitlab.service
-macOS:   ~/Library/LaunchAgents/com.harr.mcp.gitlab.plist
-Windows: per-user Scheduled Task
+LeanCTX -> harr-mcp-run gitlab -> zereight-mcp-gitlab
 ```
 
 Harr exposes the full GitLab tool catalog behind LeanCTX:
@@ -607,16 +604,16 @@ harr secret status
 harr secret unset gitlab
 ```
 
-Disabling GitLab removes it from the gateway, agent policy/skill and active service lifecycle, but preserves its local env/secret files.
+Disabling GitLab removes it from the gateway and agent policy/skill, but preserves its local env/secret files.
 
 
 
 ### Grafana
 
-Grafana is **optional** and declared as an on-demand stdio MCP. When enabled, the generated LeanCTX route is equivalent to:
+Grafana is **optional** and declared as an on-demand stdio MCP in the common registry. When enabled, the generated LeanCTX route is equivalent to:
 
 ```text
-LeanCTX -> harr-mcp-run grafana -> uvx mcp-grafana
+LeanCTX -> harr-mcp-run grafana -> uvx --offline mcp-grafana --transport stdio
 ```
 
 `uvx` must be available in `PATH` only when Grafana is selected/used. Harr creates the non-secret local config from `common/mcp/grafana.env.example`:
@@ -632,7 +629,7 @@ harr secret set grafana
 harr secret status
 ```
 
-The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP service while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
+The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
 
 For dashboard edits, prefer the compact patch-first flow:
 
@@ -646,6 +643,33 @@ search_dashboards
 Fetch a complete dashboard definition only when the targeted tools are insufficient.
 
 
+
+### GigaCode executor
+
+GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
+
+```text
+gigacode::gigacode
+```
+
+That one schema carries `action=start|resume|status|messages|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. Harr adds only its own managed global skill directories to LeanCTX `allow_paths`, so PathJail remains enabled while those skills can be read from projects outside the home config tree. A normal delegated flow is:
+
+```text
+parent: architecture + execution contract
+  -> ctx_tools(... gigacode::gigacode, action=start ...)
+  -> RUNNING + session_id
+  -> independent planner work OR one MCP-local wait (no delegated-source reads/review/test loops)
+  -> DONE + criterion evidence + final diff/scope self-review
+  -> parent contract acceptance
+```
+
+Harr ships only the bridge. The external `gigacode` CLI must already be installed and authenticated. The bridge deliberately treats it as a black box: it does not configure, inspect, or depend on GigaCode's own tool names, shell implementation, editor, extensions, or MCP servers.
+
+Normal RUNNING status is intentionally compact and does not expose GigaCode event history, internal logs, model text, or tool traces. `status` remains nonblocking; `wait` blocks inside the bridge for up to 1500 seconds so the parent model does not spend turns polling. Explicit `messages` calls can fetch only GigaCode assistant prose with a revision cursor, but because that is a normal MCP result it enters the parent tool context and is not used for automatic monitoring. Before a worker handoff is accepted as `DONE`, the bridge requires criterion-by-criterion PASS evidence, no unresolved blockers, and a successful final diff/scope self-review. Missing evidence is returned to the same GigaCode session with `resume`; the expensive parent does not repeat the executor's code reading and test loop by default.
+
+The bridge keeps a persistent GigaCode session, performs a bounded startup handshake, and runs execution detached. Hard timeout defaults to unlimited; cancellation is explicit unless the caller supplies a positive `timeout_sec`. One `wait` call is bounded to 1500 seconds; Harr configures the LeanCTX downstream timeout to 1800 seconds and Codex/OpenCode host-side LeanCTX timeouts to 1900 seconds so the blocking wait completes without forcing model-level polling.
+
+The saved Harr MCP selection controls whether the GigaCode route, routing policy, reference material, and `$gigacode-executor` skill exist. Normal later setup/update runs reuse that selection; use `harr mcp add/remove` for incremental changes or `harr mcp configure` for full replacement.
 
 ### Git
 
@@ -686,7 +710,7 @@ The permanent policy always keeps the core token-saving rules:
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, and Grafana dashboard guidance does not exist when Grafana is disabled.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 

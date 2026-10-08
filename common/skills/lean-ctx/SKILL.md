@@ -32,7 +32,7 @@ Git routing through `ctx_shell`:
 Gateway facts:
 
 - CodeGraph: stdio child `codegraph serve --mcp`; inherits LeanCTX cwd, so wrong project binding means diagnose cwd/root rather than creating per-project Harr config.
-- GitLab: Streamable HTTP at `http://127.0.0.1:3334/mcp`; PAT is restored by Harr's LeanCTX wrapper via secret-memento handling and must never be printed.
+- GitLab: on-demand stdio child; PAT is restored by Harr's LeanCTX wrapper via secret-memento env and must never be printed.
 
 Repair/diagnostics:
 

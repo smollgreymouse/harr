@@ -114,6 +114,18 @@ def render_leanctx(args: argparse.Namespace, data: dict) -> None:
     text = Path(args.base).read_text(encoding="utf-8")
     allow = ",\n".join(f"    {toml_string(item)}" for item in shell_allowlist(args.platform))
     text = text.replace("{{HARR_SHELL_ALLOWLIST_EXTRA}}", allow)
+
+    allow_paths: list[str] = []
+    for raw in getattr(args, "allow_path", []):
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            raise SystemExit(f"LeanCTX allow path must be absolute: {raw}")
+        value = str(path)
+        if value not in allow_paths:
+            allow_paths.append(value)
+    rendered_paths = ",\n".join(f"    {toml_string(item)}" for item in allow_paths)
+    text = text.replace("{{HARR_ALLOW_PATHS}}", rendered_paths)
+
     marker = "# {{HARR_GATEWAY_SERVERS}}"
     if marker not in text:
         raise SystemExit(f"LeanCTX base config has no marker: {marker}")
@@ -199,6 +211,15 @@ def load_env_file(path: Path, forbidden: set[str]) -> dict[str, str]:
 def path_runtime_executable(server: dict) -> str | None:
     runtime = server.get("runtime", {})
     kind = runtime.get("kind")
+    if kind == "bundled-python":
+        script = runtime.get("script")
+        if not script:
+            raise SystemExit(f"MCP {server['name']} bundled runtime has no script")
+        candidate = DEFAULT_TEMPLATE_DIR / str(script)
+        if not candidate.is_file():
+            raise SystemExit(f"MCP {server['name']} bundled runtime is missing: {candidate}")
+        return sys.executable
+
     command = runtime.get("command")
     if not command:
         raise SystemExit(f"MCP {server['name']} has no runtime command")
@@ -221,7 +242,17 @@ def runtime_command(server: dict) -> list[str]:
         command = runtime.get("command", "")
         hint = runtime.get("install_hint") or f"required command not found: {command}"
         raise SystemExit(hint)
-    return [executable, *[str(item) for item in runtime.get("args", [])]]
+
+    requires_command = runtime.get("requires_command")
+    if requires_command and not shutil.which(str(requires_command)):
+        hint = runtime.get("install_hint") or f"required command not found: {requires_command}"
+        raise SystemExit(hint)
+
+    args = [str(item) for item in runtime.get("args", [])]
+    if runtime.get("kind") == "bundled-python":
+        script = DEFAULT_TEMPLATE_DIR / str(runtime["script"])
+        return [executable, str(script), *args]
+    return [executable, *args]
 
 
 def runtime_maintenance_command(server: dict, field: str) -> list[str] | None:
@@ -268,6 +299,25 @@ def prefetch_runtimes(data: dict) -> None:
         subprocess.run(cmd, check=True)
 
 
+def runtime_env(server: dict) -> dict[str, str]:
+    runtime = server.get("runtime", {})
+    env = runtime.get("env")
+    if env is None:
+        return {}
+    if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        raise SystemExit(f"invalid runtime.env for MCP {server['name']}")
+    forbidden = {
+        secret.get("target", {}).get("name")
+        for secret in server.get("secrets", [])
+        if secret.get("target", {}).get("kind") == "env"
+    }
+    forbidden.discard(None)
+    for key in env:
+        if key in forbidden:
+            raise SystemExit(f"secret {key} must not be stored in runtime.env for MCP {server['name']}")
+    return dict(env)
+
+
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
     env = os.environ.copy()
@@ -281,6 +331,7 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
     if server.get("env_template") and not env_path.exists():
         raise SystemExit(f"MCP {server['name']} configuration is missing: {env_path}")
     env.update(load_env_file(env_path, forbidden))
+    env.update(runtime_env(server))
     env.update(service_secret_env(server))
     cmd = runtime_command(server)
     if os.name == "nt":
@@ -325,7 +376,7 @@ def component_rows(args: argparse.Namespace, data: dict) -> None:
                 except Exception:
                     installed = "invalid"
                 state = "ok" if installed == expected else "version-mismatch"
-        elif kind in {"path", "uvx"}:
+        elif kind in {"path", "uvx", "bundled-python"}:
             resolved = path_runtime_executable(server)
             if resolved:
                 installed = resolved
@@ -342,6 +393,13 @@ def component_rows(args: argparse.Namespace, data: dict) -> None:
                             state = "ready"
                         else:
                             state = "not-cached"
+                elif kind == "bundled-python":
+                    requires_command = runtime.get("requires_command")
+                    if requires_command and not shutil.which(str(requires_command)):
+                        state = "dependency-missing"
+                        installed = f"{resolved} (missing {requires_command})"
+                    else:
+                        state = "available"
                 else:
                     state = "available"
         print(f"{server['name']}\t{expected}\t{state}\t{installed}")
@@ -363,6 +421,7 @@ def main() -> None:
     p_render.add_argument("--output", required=True)
     p_render.add_argument("--platform", required=True, choices=["linux", "windows", "macos"])
     p_render.add_argument("--runner-command", default="harr-mcp-run")
+    p_render.add_argument("--allow-path", action="append", default=[])
 
     p_install = sub.add_parser("install-configs")
     p_install.add_argument("--config-dir", required=True)

@@ -108,7 +108,7 @@ Run as the normal user:
 
 The first interactive setup opens the optional MCP checklist. For automation use
 `harr setup --clean --all` or `harr setup --clean --mcp none` (or a comma-
-separated list such as `--mcp gitlab,grafana`). Later updates reuse the saved
+separated list such as `--mcp gitlab,grafana,gigacode`). Later updates reuse the saved
 selection; change it with `harr mcp configure`.
 ]=])
 file(COPY "${STAGE_ROOT}/README.md" DESTINATION "${DEB_ROOT}/usr/share/doc/harr")
