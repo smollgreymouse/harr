@@ -109,6 +109,7 @@ leanctx = codex['mcp_servers']['lean-ctx']
 assert leanctx['command'] == str(lean)
 assert leanctx['enabled'] is True
 assert leanctx['default_tools_approval_mode'] == 'auto'
+assert leanctx['tool_timeout_sec'] == 1900
 assert set(leanctx['tools']) == set(trusted)
 for name in trusted:
     assert leanctx['tools'][name] == {'approval_mode': 'approve'}
@@ -125,7 +126,7 @@ assert cfg['agent']['custom-agent']['description'] == 'keep'
 assert 'codegraph' not in cfg['mcp']
 assert 'gitlab' not in cfg['mcp']
 assert cfg['mcp']['external-mcp']['url'] == 'https://example.invalid/mcp'
-assert cfg['mcp']['lean-ctx'] == {'type': 'local', 'command': [str(lean)], 'enabled': True}
+assert cfg['mcp']['lean-ctx'] == {'type': 'local', 'command': [str(lean)], 'enabled': True, 'timeout': 1900000}
 assert cfg['tools']['external_tool'] is True
 assert 'bash' not in cfg['tools'] and 'read' not in cfg['tools']
 assert cfg['permission']['external_perm'] == 'allow'
@@ -139,6 +140,7 @@ PY
 cat >"${TMP}/bin/codex" <<'EOF'
 #!/usr/bin/env bash
 sed -i '/^default_tools_approval_mode = /d' "${CODEX_HOME}/config.toml"
+sed -i '/^tool_timeout_sec = /d' "${CODEX_HOME}/config.toml"
 for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
   sed -i "/^\[mcp_servers\.lean-ctx\.tools\.${tool}\]$/,+1d" "${CODEX_HOME}/config.toml"
 done
@@ -147,6 +149,7 @@ chmod 0755 "${TMP}/bin/codex"
 HARR_CODEX_DISABLE_CLI=0 HARR_CODEX_CLI="${TMP}/bin/codex" \
   python3 "${ROOT}/common/hosts/codex-config.py" apply
 grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
+grep -q '^tool_timeout_sec = 1900$' "${CODEX_HOME}/config.toml"
 for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
   grep -q "^\[mcp_servers\.lean-ctx\.tools\.${tool}\]$" "${CODEX_HOME}/config.toml"
 done
@@ -160,7 +163,7 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]
-grep -q 'WAIT ONLY phase' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
+grep -q 'Delegated scope freeze and waiting' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
 grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"
 grep -q 'do not attempt bare network Git first' "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md"
@@ -182,6 +185,7 @@ UNIT
 done
 
 "${ROOT}/linux/install.sh" --harr-only
+grep -q '^call_timeout_secs = 1800$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
 [[ -f "${XDG_CONFIG_HOME}/systemd/user/harr-git-host.service" ]]
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
@@ -197,6 +201,7 @@ grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 grep -q '^default_tools_approval_mode = "auto"$' "${CODEX_HOME}/config.toml"
+grep -q '^tool_timeout_sec = 1900$' "${CODEX_HOME}/config.toml"
 for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
   grep -q "^\[mcp_servers\.lean-ctx\.tools\.${tool}\]$" "${CODEX_HOME}/config.toml"
 done

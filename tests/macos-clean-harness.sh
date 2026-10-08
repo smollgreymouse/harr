@@ -91,6 +91,7 @@ done
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
 python3 -c 'import os, stat, sys; assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600' "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability"
 grep -q 'harr git <git-arguments>' "${HOME}/.local/bin/harr" "${HOME}/.local/libexec/harr/cli/help.sh"
+grep -q '^call_timeout_secs = 1800$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
 python3 - <<'PY'
 import json, os, plistlib, tomllib
@@ -102,6 +103,9 @@ assert codex['model'] == 'keep-model'
 assert codex['mcp_servers']['external-mcp']['url'] == 'https://example.invalid/codex-mcp'
 assert codex['mcp_servers']['lean-ctx']['command'] == str(home / '.local/bin/lean-ctx')
 assert codex['mcp_servers']['lean-ctx']['default_tools_approval_mode'] == 'auto'
+assert codex['mcp_servers']['lean-ctx']['tool_timeout_sec'] == 1900
+opencode = json.loads((config / 'opencode/opencode.jsonc').read_text())
+assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
 assert selection['enabled'] == ['codegraph']

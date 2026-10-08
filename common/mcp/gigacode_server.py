@@ -28,10 +28,13 @@ from collections import deque
 
 
 SERVER_NAME = "gigacode"
-SERVER_VERSION = "1.8.0"
+SERVER_VERSION = "1.9.0"
 ROOT = Path.cwd().resolve()
 DEFAULT_HARD_TIMEOUT_SEC = 0
 DEFAULT_STALL_TIMEOUT_SEC = 0
+DEFAULT_WAIT_TIMEOUT_SEC = 1500
+MAX_WAIT_TIMEOUT_SEC = 1500
+WAIT_POLL_INTERVAL_SEC = 1.0
 STARTUP_CONFIRM_TIMEOUT_SEC = 20.0
 STARTUP_CONFIRM_POLL_SEC = 0.25
 POLL_INTERVAL_SEC = 5.0
@@ -163,8 +166,10 @@ TOOLS = [
             "Delegate execution to persistent GigaCode as a detached job. action=start and "
             "action=resume perform a short startup handshake and return RUNNING only after actual "
             "GigaCode model/tool activity is observed; otherwise they return STARTING or FAILED. "
-            "action=status is a compact public state read returning RUNNING or the final "
-            "DONE/FAILED/ESCALATE handoff without exposing executor event history; "
+            "action=status is a compact nonblocking public state read returning RUNNING or the final "
+            "DONE/FAILED/ESCALATE handoff without exposing executor event history. "
+            "action=wait blocks inside the MCP bridge until terminal state or a bounded wait timeout, "
+            "so the parent model does not wake for polling. "
             "hard_timeout_sec=0 means unlimited and stall_elapsed_sec is informational. "
             "action=cancel requests orderly termination of a running detached job. "
             "plan_path avoids resending an existing plan."
@@ -174,8 +179,8 @@ TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "resume", "status", "cancel"],
-                    "description": "start a new task; resume an existing session; status returns compact public state/final handoff; cancel requests orderly termination of a running detached job.",
+                    "enum": ["start", "resume", "status", "wait", "cancel"],
+                    "description": "start/resume are nonblocking; status is an immediate snapshot; wait blocks for terminal state up to wait_timeout_sec; cancel requests orderly termination.",
                 },
                 "plan_path": {
                     "type": "string",
@@ -183,7 +188,7 @@ TOOLS = [
                 },
                 "session_id": {
                     "type": "string",
-                    "description": "For resume/cancel/status: session id returned by a prior start.",
+                    "description": "For resume/cancel/status/wait: session id returned by a prior start.",
                 },
                 "prompt": {
                     "type": "string",
@@ -193,6 +198,12 @@ TOOLS = [
                     "type": "integer",
                     "minimum": 0,
                     "description": "For start/resume: optional hard wall-clock limit in seconds. 0 (default) means unlimited. Any nonnegative integer accepted.",
+                },
+                "wait_timeout_sec": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1500,
+                    "description": "For wait: maximum seconds to block inside the bridge. Default 1500. A timeout returns compact RUNNING; it does not cancel GigaCode.",
                 },
             },
             "required": ["action"],
@@ -537,6 +548,41 @@ def status_tool(arguments: dict) -> dict:
         },
     }
     return text_result(payload)
+
+
+def wait_tool(arguments: dict) -> dict:
+    raw_sid = arguments.get("session_id")
+    session_id = _validate_session_id(raw_sid)
+    if session_id is None:
+        return text_result({
+            "session_id": raw_sid if isinstance(raw_sid, str) else "",
+            "status": "FAILED",
+            "summary": "wait requires a valid UUID session_id.",
+        }, is_error=True)
+
+    wait_timeout_sec = int(arguments.get("wait_timeout_sec", DEFAULT_WAIT_TIMEOUT_SEC))
+    deadline = time.monotonic() + wait_timeout_sec
+    started = time.monotonic()
+
+    while True:
+        result = status_tool({"session_id": session_id})
+        payload = json.loads(result["content"][0]["text"])
+        if payload.get("status") != "RUNNING":
+            return result
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            payload["wait"] = {
+                "timed_out": True,
+                "waited_sec": round(time.monotonic() - started, 1),
+            }
+            payload["summary"] = (
+                "GigaCode is still executing after the bounded MCP wait. "
+                "The job continues in the background."
+            )
+            return text_result(payload)
+
+        time.sleep(min(WAIT_POLL_INTERVAL_SEC, remaining))
 
 
 def _new_process_group_kwargs() -> dict:
@@ -1387,12 +1433,22 @@ def handle(request: dict) -> dict | None:
                 if not isinstance(arguments.get("session_id"), str):
                     raise ValueError("status requires session_id as a string")
                 result = status_tool(arguments)
+            elif action == "wait":
+                if not isinstance(arguments.get("session_id"), str):
+                    raise ValueError("wait requires session_id as a string")
+                wait_timeout_value = arguments.get("wait_timeout_sec")
+                if wait_timeout_value is not None:
+                    if isinstance(wait_timeout_value, bool) or not isinstance(wait_timeout_value, int):
+                        raise ValueError("wait_timeout_sec must be an integer")
+                    if wait_timeout_value < 1 or wait_timeout_value > MAX_WAIT_TIMEOUT_SEC:
+                        raise ValueError(f"wait_timeout_sec must be between 1 and {MAX_WAIT_TIMEOUT_SEC}")
+                result = wait_tool(arguments)
             elif action == "cancel":
                 if not isinstance(arguments.get("session_id"), str):
                     raise ValueError("cancel requires session_id as a string")
                 result = cancel_tool(arguments)
             else:
-                raise ValueError("action must be start, resume, status, or cancel")
+                raise ValueError("action must be start, resume, status, wait, or cancel")
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
         except Exception as exc:
             return {

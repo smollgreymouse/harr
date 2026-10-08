@@ -14,6 +14,7 @@ from typing import Any
 
 SERVER_NAME = "lean-ctx"
 DEFAULT_TOOLS_APPROVAL_MODE = "auto"
+MCP_TOOL_TIMEOUT_SEC = 1900
 TRUSTED_TOOLS = (
     "ctx_read",
     "ctx_search",
@@ -40,6 +41,7 @@ LEANCTX = default_leanctx_command()
 _TABLE_RE = re.compile(r"^\s*\[(?!\[)(.*)\]\s*(?:#.*)?$")
 _ARRAY_TABLE_RE = re.compile(r"^\s*\[\[(.*)\]\]\s*(?:#.*)?$")
 _DEFAULT_TOOLS_APPROVAL_RE = re.compile(r"^\s*default_tools_approval_mode\s*=")
+_TOOL_TIMEOUT_RE = re.compile(r"^\s*tool_timeout_sec\s*=")
 
 
 def load_config_text() -> str:
@@ -63,6 +65,7 @@ def expected_entry() -> dict[str, Any]:
         "command": str(LEANCTX),
         "enabled": True,
         "default_tools_approval_mode": DEFAULT_TOOLS_APPROVAL_MODE,
+        "tool_timeout_sec": MCP_TOOL_TIMEOUT_SEC,
         "tools": {
             name: {"approval_mode": TRUSTED_TOOL_APPROVAL_MODE}
             for name in TRUSTED_TOOLS
@@ -85,6 +88,7 @@ def entry_is_managed(entry: dict[str, Any] | None) -> bool:
         entry.get("command") != str(LEANCTX)
         or entry.get("enabled", True) is not True
         or entry.get("default_tools_approval_mode") != DEFAULT_TOOLS_APPROVAL_MODE
+        or entry.get("tool_timeout_sec") != MCP_TOOL_TIMEOUT_SEC
     ):
         return False
     tools = entry.get("tools")
@@ -244,19 +248,23 @@ def ensure_approval_settings() -> None:
     if target_header is None:
         raise RuntimeError("Codex CLI did not create the LeanCTX MCP table")
 
-    table_end = len(lines)
-    for index in range(target_header + 1, len(lines)):
-        if table_header(lines[index]) is not None:
-            table_end = index
-            break
+    def upsert_setting(pattern: re.Pattern[str], replacement: str) -> None:
+        local_end = len(lines)
+        for idx in range(target_header + 1, len(lines)):
+            if table_header(lines[idx]) is not None:
+                local_end = idx
+                break
+        for idx in range(target_header + 1, local_end):
+            if pattern.match(lines[idx]):
+                lines[idx] = replacement
+                return
+        lines.insert(local_end, replacement)
 
-    replacement = f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"\n'
-    for index in range(target_header + 1, table_end):
-        if _DEFAULT_TOOLS_APPROVAL_RE.match(lines[index]):
-            lines[index] = replacement
-            break
-    else:
-        lines.insert(table_end, replacement)
+    upsert_setting(
+        _DEFAULT_TOOLS_APPROVAL_RE,
+        f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"\n',
+    )
+    upsert_setting(_TOOL_TIMEOUT_RE, f"tool_timeout_sec = {MCP_TOOL_TIMEOUT_SEC}\n")
 
     new_text = "".join(lines)
     for name in TRUSTED_TOOLS:
@@ -280,7 +288,8 @@ def managed_block() -> str:
         "[mcp_servers.lean-ctx]\n"
         f"command = {toml_basic_string(str(LEANCTX))}\n"
         "enabled = true\n"
-        f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"'
+        f'default_tools_approval_mode = "{DEFAULT_TOOLS_APPROVAL_MODE}"\n'
+        f"tool_timeout_sec = {MCP_TOOL_TIMEOUT_SEC}"
     )
     tools = "\n\n".join(
         f"[mcp_servers.lean-ctx.tools.{name}]\n"
@@ -334,9 +343,11 @@ def status() -> int:
     print(
         "codex-config\tstale\t"
         f"expected command={LEANCTX} enabled=true default_tools_approval_mode={DEFAULT_TOOLS_APPROVAL_MODE!r} "
+        f"tool_timeout_sec={MCP_TOOL_TIMEOUT_SEC!r} "
         f"trusted_tools={dict.fromkeys(TRUSTED_TOOLS, TRUSTED_TOOL_APPROVAL_MODE)!r}; "
         f"got command={entry.get('command')!r} enabled={entry.get('enabled', True)!r} "
         f"default_tools_approval_mode={entry.get('default_tools_approval_mode')!r} "
+        f"tool_timeout_sec={entry.get('tool_timeout_sec')!r} "
         f"trusted_tools={actual_modes!r}"
     )
     return 1

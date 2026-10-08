@@ -26,7 +26,7 @@
 <!-- harr-mcp:grafana:end -->
 <!-- harr-mcp:gigacode:start -->
 - For substantial implementation after architecture, scope, invariants and acceptance criteria are fixed, use the installed `$gigacode-executor` skill and delegate through `{{CTX_TOOLS}}` -> `gigacode::gigacode`.
-- After confirmed `RUNNING`, enter WAIT ONLY: until a terminal handoff, do not read/search/edit delegated source, inspect intermediate diffs/artifacts, rerun validation, or inspect GigaCode internals. If completion is needed, only request compact public `status`.
+- After confirmed `RUNNING`, the delegated scope is frozen for the parent: do not read/search/edit it, inspect intermediate diffs/artifacts, rerun validation, or inspect GigaCode internals. The parent may do genuinely independent planner work. If no useful independent work remains and completion is needed, prefer one blocking `wait`; `status` remains the nonblocking snapshot path.
 - `DONE` means contract acceptance from the structured self-verification handoff, not an independent full code review. Missing evidence goes back to the same GigaCode session via `resume`; parent source/artifact inspection requires a concrete exception defined by `$gigacode-executor`.
 <!-- harr-mcp:gigacode:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.

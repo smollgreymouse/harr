@@ -77,7 +77,7 @@ sandbox = "off"
 [gateway]
 enabled = true
 cache_ttl_secs = 300
-call_timeout_secs = 120
+call_timeout_secs = 1800
 top_n = 3
 
 # Downstream servers are rendered from common/mcp/registry.json.

@@ -109,6 +109,11 @@ enabled = false
     $tomlLeanCommand = $leanCommand.Replace('\', '\\')
     if (-not $codexText.Contains('model = "keep-model"') -or -not $codexText.Contains($tomlLeanCommand)) { throw 'Codex config did not preserve existing settings and register LeanCTX' }
     if (-not $codexText.Contains('default_tools_approval_mode = "auto"')) { throw 'Codex LeanCTX tools were not auto-approved' }
+    if (-not $codexText.Contains('tool_timeout_sec = 1900')) { throw 'Codex LeanCTX tool timeout is too short for GigaCode wait' }
+    $openText = Get-Content -Raw (Join-Path $OpenCodeDir 'opencode.jsonc')
+    if (-not $openText.Contains('"timeout": 1900000')) { throw 'OpenCode LeanCTX tool timeout is too short for GigaCode wait' }
+    $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
+    if (-not $leanText.Contains('call_timeout_secs = 1800')) { throw 'LeanCTX downstream timeout is too short for GigaCode wait' }
 
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }

@@ -80,7 +80,7 @@ Use a direct `prompt` only for a bounded task that is already as precise as a pl
 
 Keep the returned `session_id`. Reuse that same session for ordinary corrections and architectural decisions; do not start a fresh executor context for every iteration.
 
-## WAIT ONLY phase
+## Delegated scope freeze and waiting
 
 After `start` or `resume` reports confirmed `RUNNING`, the delegated scope belongs to GigaCode.
 
@@ -94,7 +94,14 @@ Until a terminal handoff:
 - do **not** create review/check scripts;
 - do **not** inspect GigaCode chat/debug/runtime files or process internals.
 
-If completion is needed in the current interaction, the only normal operation is another compact `status` call. Repeated `RUNNING` states are transport/waiting events, not invitations to reason about implementation.
+The parent chooses between two valid waiting modes:
+
+- **Do useful independent work:** if there is real planner/product work outside the delegated scope, keep doing it. When the result is later needed, use one nonblocking `status` snapshot or switch to `wait`.
+- **Wait for completion:** if there is no useful independent work and the current interaction needs the result, call `wait` once. The MCP bridge performs the polling internally and wakes the parent only on terminal state or bounded wait timeout.
+
+Do not build a parent-model status loop when `wait` can do the waiting. A bounded `wait` timeout returns compact `RUNNING` and does **not** cancel GigaCode; the parent may wait again later.
+
+If the user interrupts while `wait` is pending, the detached GigaCode job remains the owner of the delegated scope. Resume with `status`/`wait`; do not restart implementation.
 
 If the user asks for progress while the worker is running, report only the public state (for example, `RUNNING` and elapsed time). Do not summarize internal executor activity.
 
@@ -177,7 +184,7 @@ architecture / contract
         ↓
 GigaCode start
         ↓
-WAIT ONLY (status)
+independent planner work OR MCP wait
         ↓
 DONE handoff
         ↓

@@ -33,9 +33,11 @@ arguments = {
 
 Optional `timeout_sec` (default 0 = unlimited) sets a positive hard wall-clock limit. Use it only for bounded tasks where automatic termination on deadline is safer than indefinite execution.
 
-## Status / WAIT ONLY
+## Nonblocking status and blocking wait
 
-After confirmed `RUNNING`, normal parent work on the delegated scope stops. If completion is needed in the current interaction, repeated calls may request only compact public `status`:
+After confirmed `RUNNING`, normal parent work on the delegated scope stops, but the parent may still do genuinely independent planner/product work.
+
+Use `status` for an immediate nonblocking snapshot:
 
 ```text
 arguments = {
@@ -44,7 +46,19 @@ arguments = {
 }
 ```
 
-A RUNNING status intentionally exposes only compact public runtime state; it does not return GigaCode event history, internal logs, model text, or tool traces. Repeated RUNNING results are waiting/transport events, not prompts to inspect the implementation.
+When there is no useful independent work and the current interaction needs the result, prefer one bridge-local wait:
+
+```text
+arguments = {
+  "action": "wait",
+  "session_id": "<session-id>",
+  "wait_timeout_sec": 1500
+}
+```
+
+`wait` polls only inside the MCP bridge, so the parent model is not re-entered for every RUNNING check. A bounded wait timeout returns compact `RUNNING`; it never cancels the detached GigaCode job.
+
+RUNNING responses intentionally expose only compact public runtime state; they do not return GigaCode event history, internal logs, model text, or tool traces.
 
 A final handoff is `DONE`, `FAILED` or `ESCALATE`. `ESCALATE` is designed to contain enough exact code evidence for the planner to decide without rereading files merely to rediscover the mismatch.
 
@@ -79,7 +93,7 @@ Keep one session per logical implementation task. While a session is `RUNNING`, 
 
 ## Runtime safeguards
 
-The bridge launches GigaCode detached, performs a short startup handshake (20s bounded, independent of timeout), and preserves the same GigaCode session for resume. The default hard timeout is 0 (unlimited); callers may set a positive `timeout_sec` to impose an explicit deadline. No-progress inactivity is tracked as informational status only — the bridge never automatically kills for inactivity.
+The bridge launches GigaCode detached, performs a short startup handshake (20s bounded, independent of timeout), and preserves the same GigaCode session for resume. The default hard timeout is 0 (unlimited); callers may set a positive `timeout_sec` to impose an explicit deadline. `wait` is independently bounded to at most 1500 seconds per MCP call; Harr configures LeanCTX downstream calls for 1800 seconds and host-side LeanCTX tool calls for 1900 seconds, leaving transport margin around the wait. No-progress inactivity is tracked as informational status only — the bridge never automatically kills for inactivity.
 
 Cancellation is explicit via `action=cancel`; there is no automatic inactivity or total-deadline cancellation unless the caller requested a positive `timeout_sec`.
 

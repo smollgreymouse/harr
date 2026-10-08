@@ -25,9 +25,11 @@ spec.loader.exec_module(server)
 # -------------------------------------------------------------------
 # 1. Version and constants
 # -------------------------------------------------------------------
-assert server.SERVER_VERSION == "1.8.0", f"got {server.SERVER_VERSION}"
+assert server.SERVER_VERSION == "1.9.0", f"got {server.SERVER_VERSION}"
 assert server.DEFAULT_HARD_TIMEOUT_SEC == 0, f"got {server.DEFAULT_HARD_TIMEOUT_SEC}"
 assert server.DEFAULT_STALL_TIMEOUT_SEC == 0, f"got {server.DEFAULT_STALL_TIMEOUT_SEC}"
+assert server.DEFAULT_WAIT_TIMEOUT_SEC == 1500
+assert server.MAX_WAIT_TIMEOUT_SEC == 1500
 assert server.STARTUP_CONFIRM_TIMEOUT_SEC == 20.0
 
 # -------------------------------------------------------------------
@@ -36,7 +38,8 @@ assert server.STARTUP_CONFIRM_TIMEOUT_SEC == 20.0
 assert len(server.TOOLS) == 1
 tool = server.TOOLS[0]
 assert tool["name"] == "gigacode"
-assert tool["inputSchema"]["properties"]["action"]["enum"] == ["start", "resume", "status", "cancel"]
+assert tool["inputSchema"]["properties"]["action"]["enum"] == ["start", "resume", "status", "wait", "cancel"]
+assert tool["inputSchema"]["properties"]["wait_timeout_sec"]["maximum"] == 1500
 assert tool["inputSchema"]["properties"]["timeout_sec"]["minimum"] == 0
 assert "cancel" in tool["description"]
 assert "unlimited" in tool["description"] or "0=unlimited" in tool["description"]
@@ -152,6 +155,32 @@ assert "runtime_log" not in running_data["runtime"]
 assert "chat" not in running_data["runtime"]
 assert "worker_pid" not in running_data["runtime"]
 assert "gigacode_pid" not in running_data["runtime"]
+
+# wait is a bridge-local blocking primitive: terminal state returns immediately,
+# while a bounded timeout returns RUNNING without cancelling the detached worker.
+terminal_payload = {
+    "session_id": fake_sid,
+    "status": "DONE",
+    "summary": "terminal",
+}
+with patch.object(server, "status_tool", return_value=server.text_result(terminal_payload)):
+    waited = server.wait_tool({"session_id": fake_sid, "wait_timeout_sec": 10})
+    waited_data = json.loads(waited["content"][0]["text"])
+assert waited_data["status"] == "DONE"
+
+running_payload = {
+    "session_id": fake_sid,
+    "status": "RUNNING",
+    "summary": "still running",
+    "runtime": {"phase": "running"},
+}
+with patch.object(server, "status_tool", return_value=server.text_result(running_payload)), \
+     patch.object(server.time, "monotonic", side_effect=[0.0, 0.0, 2.0, 2.0]):
+    wait_timeout = server.wait_tool({"session_id": fake_sid, "wait_timeout_sec": 1})
+wait_timeout_data = json.loads(wait_timeout["content"][0]["text"])
+assert wait_timeout_data["status"] == "RUNNING"
+assert wait_timeout_data["wait"]["timed_out"] is True
+assert "continues in the background" in wait_timeout_data["summary"]
 
 assert server._request_cancel(fake_sid, fake_jid) is True
 assert server._check_cancel_request(fake_sid, fake_jid) is True

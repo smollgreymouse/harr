@@ -105,7 +105,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
         assert ("use the installed `$gigacode-executor` skill" in policy) == ("gigacode" in expected)
         assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
-        assert ("enter WAIT ONLY" in policy) == ("gigacode" in expected)
+        assert ("delegated scope is frozen for the parent" in policy) == ("gigacode" in expected)
         assert ("contract acceptance from the structured self-verification handoff" in policy) == ("gigacode" in expected)
         assert "<!-- harr-mcp:" not in policy
 
@@ -153,8 +153,9 @@ def check(spec: str, expected: list[str]) -> None:
             gigacode_text = gigacode_ref.read_text(encoding="utf-8")
             assert "gigacode::gigacode" in gigacode_text
             assert "startup_confirmed=true" in gigacode_text
-            assert "Status / WAIT ONLY" in gigacode_text
-            assert "does not return GigaCode event history" in gigacode_text
+            assert "Nonblocking status and blocking wait" in gigacode_text
+            assert "wait` polls only inside the MCP bridge" in gigacode_text
+            assert "do not return GigaCode event history" in gigacode_text
             assert "second full parent code review" in gigacode_text
         assert "<!-- harr-mcp:" not in skill
 
