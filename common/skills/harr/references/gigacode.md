@@ -58,6 +58,8 @@ arguments = {
 
 `wait` polls only inside the MCP bridge, so the parent model is not re-entered for every RUNNING check. A bounded wait timeout returns compact `RUNNING`; it never cancels the detached GigaCode job.
 
+For explicit transcript inspection, `messages` returns only GigaCode assistant prose and omits tool calls/results plus runtime/debug events. It supports `after_revision` and `message_limit` so callers can fetch only new messages without duplicates. Normal waiting must not call it automatically. `messages` is still a normal MCP result and therefore belongs to the parent tool context; it is not the UI-only live-stream mechanism.
+
 RUNNING responses intentionally expose only compact public runtime state; they do not return GigaCode event history, internal logs, model text, or tool traces.
 
 A final handoff is `DONE`, `FAILED` or `ESCALATE`. `ESCALATE` is designed to contain enough exact code evidence for the planner to decide without rereading files merely to rediscover the mismatch.

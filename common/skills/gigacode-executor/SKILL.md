@@ -103,7 +103,7 @@ Do not build a parent-model status loop when `wait` can do the waiting. A bounde
 
 If the user interrupts while `wait` is pending, the detached GigaCode job remains the owner of the delegated scope. Resume with `status`/`wait`; do not restart implementation.
 
-If the user asks for progress while the worker is running, report only the public state (for example, `RUNNING` and elapsed time). Do not summarize internal executor activity.
+If the user asks for progress while the worker is running, `messages` may be used explicitly to fetch GigaCode assistant prose. This is an opt-in transcript read, not part of normal supervision. Because `messages` is an ordinary MCP tool result, its returned prose enters the parent tool context; do not call it automatically during ordinary waiting, and never use it as a substitute for the terminal acceptance handoff. UI-only live streaming must use a separate progress/event channel rather than `messages`.
 
 ## Terminal handoff
 

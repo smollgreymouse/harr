@@ -28,7 +28,7 @@ from collections import deque
 
 
 SERVER_NAME = "gigacode"
-SERVER_VERSION = "1.9.0"
+SERVER_VERSION = "1.10.0"
 ROOT = Path.cwd().resolve()
 DEFAULT_HARD_TIMEOUT_SEC = 0
 DEFAULT_STALL_TIMEOUT_SEC = 0
@@ -168,6 +168,8 @@ TOOLS = [
             "GigaCode model/tool activity is observed; otherwise they return STARTING or FAILED. "
             "action=status is a compact nonblocking public state read returning RUNNING or the final "
             "DONE/FAILED/ESCALATE handoff without exposing executor event history. "
+            "action=messages returns only GigaCode assistant prose from the recorded session, never "
+            "tool calls/results or runtime/debug events. "
             "action=wait blocks inside the MCP bridge until terminal state or a bounded wait timeout, "
             "so the parent model does not wake for polling. "
             "hard_timeout_sec=0 means unlimited and stall_elapsed_sec is informational. "
@@ -179,8 +181,8 @@ TOOLS = [
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "resume", "status", "wait", "cancel"],
-                    "description": "start/resume are nonblocking; status is an immediate snapshot; wait blocks for terminal state up to wait_timeout_sec; cancel requests orderly termination.",
+                    "enum": ["start", "resume", "status", "messages", "wait", "cancel"],
+                    "description": "start/resume are nonblocking; status is an immediate snapshot; messages returns assistant prose; wait blocks for terminal state up to wait_timeout_sec; cancel requests orderly termination.",
                 },
                 "plan_path": {
                     "type": "string",
@@ -188,7 +190,7 @@ TOOLS = [
                 },
                 "session_id": {
                     "type": "string",
-                    "description": "For resume/cancel/status/wait: session id returned by a prior start.",
+                    "description": "For resume/cancel/status/messages/wait: session id returned by a prior start.",
                 },
                 "prompt": {
                     "type": "string",
@@ -204,6 +206,17 @@ TOOLS = [
                     "minimum": 1,
                     "maximum": 1500,
                     "description": "For wait: maximum seconds to block inside the bridge. Default 1500. A timeout returns compact RUNNING; it does not cancel GigaCode.",
+                },
+                "after_revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "For messages: return assistant messages newer than this revision. Omit to return the latest messages.",
+                },
+                "message_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "For messages: maximum number of assistant messages to return. Default 8.",
                 },
             },
             "required": ["action"],
@@ -382,6 +395,50 @@ def _activity_after_offset(session_id: str, offset: int) -> dict | None:
     return None
 
 
+def _assistant_messages(session_id: str) -> list[dict]:
+    """Return only user-visible assistant prose from the recorded GigaCode chat.
+
+    Revisions are monotonic within the append-only chat transcript. Tool calls,
+    tool results, system/runtime events, and empty text parts are deliberately
+    excluded.
+    """
+    path = _find_chat_path(session_id)
+    if path is None:
+        return []
+
+    messages: list[dict] = []
+    revision = 0
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    item = json.loads(line)
+                except Exception:
+                    continue
+                if item.get("type") != "assistant":
+                    continue
+                timestamp = item.get("timestamp")
+                parts = item.get("message", {}).get("parts", [])
+                for part in parts:
+                    if not isinstance(part, dict):
+                        continue
+                    text = part.get("text")
+                    if not isinstance(text, str):
+                        continue
+                    text = text.strip()
+                    if not text:
+                        continue
+                    revision += 1
+                    messages.append({
+                        "revision": revision,
+                        "timestamp": timestamp,
+                        "text": text,
+                    })
+    except OSError:
+        return []
+    return messages
+
+
 def _tail_chat_events(session_id: str, limit: int = 12) -> list[dict]:
     path = _find_chat_path(session_id)
     if path is None:
@@ -548,6 +605,40 @@ def status_tool(arguments: dict) -> dict:
         },
     }
     return text_result(payload)
+
+
+def messages_tool(arguments: dict) -> dict:
+    raw_sid = arguments.get("session_id")
+    session_id = _validate_session_id(raw_sid)
+    if session_id is None:
+        return text_result({
+            "session_id": raw_sid if isinstance(raw_sid, str) else "",
+            "status": "FAILED",
+            "summary": "messages requires a valid UUID session_id.",
+        }, is_error=True)
+
+    messages = _assistant_messages(session_id)
+    latest_revision = messages[-1]["revision"] if messages else 0
+    limit = int(arguments.get("message_limit", 8))
+    after_revision = arguments.get("after_revision")
+
+    if after_revision is None:
+        selected = messages[-limit:]
+        next_revision = latest_revision
+        has_more = False
+    else:
+        selected = [item for item in messages if item["revision"] > after_revision][:limit]
+        next_revision = selected[-1]["revision"] if selected else int(after_revision)
+        has_more = latest_revision > next_revision
+
+    return text_result({
+        "session_id": session_id,
+        "status": "MESSAGES",
+        "revision": next_revision,
+        "latest_revision": latest_revision,
+        "has_more": has_more,
+        "messages": selected,
+    })
 
 
 def wait_tool(arguments: dict) -> dict:
@@ -1433,6 +1524,20 @@ def handle(request: dict) -> dict | None:
                 if not isinstance(arguments.get("session_id"), str):
                     raise ValueError("status requires session_id as a string")
                 result = status_tool(arguments)
+            elif action == "messages":
+                if not isinstance(arguments.get("session_id"), str):
+                    raise ValueError("messages requires session_id as a string")
+                after_revision = arguments.get("after_revision")
+                if after_revision is not None:
+                    if isinstance(after_revision, bool) or not isinstance(after_revision, int) or after_revision < 0:
+                        raise ValueError("after_revision must be a nonnegative integer")
+                message_limit = arguments.get("message_limit")
+                if message_limit is not None:
+                    if isinstance(message_limit, bool) or not isinstance(message_limit, int):
+                        raise ValueError("message_limit must be an integer")
+                    if message_limit < 1 or message_limit > 50:
+                        raise ValueError("message_limit must be between 1 and 50")
+                result = messages_tool(arguments)
             elif action == "wait":
                 if not isinstance(arguments.get("session_id"), str):
                     raise ValueError("wait requires session_id as a string")
@@ -1448,7 +1553,7 @@ def handle(request: dict) -> dict | None:
                     raise ValueError("cancel requires session_id as a string")
                 result = cancel_tool(arguments)
             else:
-                raise ValueError("action must be start, resume, status, wait, or cancel")
+                raise ValueError("action must be start, resume, status, messages, wait, or cancel")
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
         except Exception as exc:
             return {

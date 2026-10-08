@@ -116,7 +116,7 @@ def render_leanctx(args: argparse.Namespace, data: dict) -> None:
     text = text.replace("{{HARR_SHELL_ALLOWLIST_EXTRA}}", allow)
 
     allow_paths: list[str] = []
-    for raw in args.allow_path:
+    for raw in getattr(args, "allow_path", []):
         path = Path(raw).expanduser()
         if not path.is_absolute():
             raise SystemExit(f"LeanCTX allow path must be absolute: {raw}")

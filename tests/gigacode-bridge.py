@@ -25,7 +25,7 @@ spec.loader.exec_module(server)
 # -------------------------------------------------------------------
 # 1. Version and constants
 # -------------------------------------------------------------------
-assert server.SERVER_VERSION == "1.9.0", f"got {server.SERVER_VERSION}"
+assert server.SERVER_VERSION == "1.10.0", f"got {server.SERVER_VERSION}"
 assert server.DEFAULT_HARD_TIMEOUT_SEC == 0, f"got {server.DEFAULT_HARD_TIMEOUT_SEC}"
 assert server.DEFAULT_STALL_TIMEOUT_SEC == 0, f"got {server.DEFAULT_STALL_TIMEOUT_SEC}"
 assert server.DEFAULT_WAIT_TIMEOUT_SEC == 1500
@@ -38,7 +38,9 @@ assert server.STARTUP_CONFIRM_TIMEOUT_SEC == 20.0
 assert len(server.TOOLS) == 1
 tool = server.TOOLS[0]
 assert tool["name"] == "gigacode"
-assert tool["inputSchema"]["properties"]["action"]["enum"] == ["start", "resume", "status", "wait", "cancel"]
+assert tool["inputSchema"]["properties"]["action"]["enum"] == ["start", "resume", "status", "messages", "wait", "cancel"]
+assert tool["inputSchema"]["properties"]["after_revision"]["minimum"] == 0
+assert tool["inputSchema"]["properties"]["message_limit"]["maximum"] == 50
 assert tool["inputSchema"]["properties"]["wait_timeout_sec"]["maximum"] == 1500
 assert tool["inputSchema"]["properties"]["timeout_sec"]["minimum"] == 0
 assert "cancel" in tool["description"]
@@ -182,6 +184,67 @@ assert wait_timeout_data["status"] == "RUNNING"
 assert wait_timeout_data["wait"]["timed_out"] is True
 assert "continues in the background" in wait_timeout_data["summary"]
 
+# messages exposes only assistant prose and supports monotonic revisions.
+chat_path = Path(_sandbox.name) / "chat.jsonl"
+chat_rows = [
+    {"timestamp": "t0", "type": "system", "systemPayload": {"uiEvent": {"event.name": "gigacode.tool_call"}}},
+    {"timestamp": "t1", "type": "assistant", "message": {"parts": [
+        {"text": "First visible message."},
+        {"functionCall": {"name": "read_file", "args": {"path": "x"}}},
+    ]}},
+    {"timestamp": "t2", "type": "tool_result", "message": {"parts": [
+        {"functionResponse": {"name": "read_file", "response": {"output": "secret tool output"}}},
+    ]}},
+    {"timestamp": "t3", "type": "assistant", "message": {"parts": [
+        {"text": "Second visible message.\nWith detail."},
+    ]}},
+    {"timestamp": "t4", "type": "assistant", "message": {"parts": [
+        {"functionCall": {"name": "grep_search", "args": {}}},
+    ]}},
+    {"timestamp": "t5", "type": "assistant", "message": {"parts": [
+        {"text": "Third visible message."},
+    ]}},
+]
+chat_path.write_text("\n".join(json.dumps(row) for row in chat_rows) + "\n", encoding="utf-8")
+with patch.object(server, "_find_chat_path", return_value=chat_path):
+    all_messages = server._assistant_messages(fake_sid)
+    assert [m["revision"] for m in all_messages] == [1, 2, 3]
+    assert [m["text"] for m in all_messages] == [
+        "First visible message.",
+        "Second visible message.\nWith detail.",
+        "Third visible message.",
+    ]
+
+    latest = server.messages_tool({"session_id": fake_sid, "message_limit": 2})
+    latest_data = json.loads(latest["content"][0]["text"])
+    assert [m["revision"] for m in latest_data["messages"]] == [2, 3]
+    assert latest_data["revision"] == 3
+    assert latest_data["latest_revision"] == 3
+    assert latest_data["has_more"] is False
+    assert "secret tool output" not in latest["content"][0]["text"]
+    assert "read_file" not in latest["content"][0]["text"]
+
+    incremental = server.messages_tool({
+        "session_id": fake_sid,
+        "after_revision": 1,
+        "message_limit": 1,
+    })
+    incremental_data = json.loads(incremental["content"][0]["text"])
+    assert [m["revision"] for m in incremental_data["messages"]] == [2]
+    assert incremental_data["revision"] == 2
+    assert incremental_data["latest_revision"] == 3
+    assert incremental_data["has_more"] is True
+
+    remainder = server.messages_tool({
+        "session_id": fake_sid,
+        "after_revision": incremental_data["revision"],
+        "message_limit": 10,
+    })
+    remainder_data = json.loads(remainder["content"][0]["text"])
+    assert [m["revision"] for m in remainder_data["messages"]] == [3]
+    assert remainder_data["revision"] == 3
+    assert remainder_data["has_more"] is False
+
 assert server._request_cancel(fake_sid, fake_jid) is True
 assert server._check_cancel_request(fake_sid, fake_jid) is True
 server._cleanup_control(fake_sid, fake_jid)
@@ -273,7 +336,28 @@ result_text = json.loads(bad_status["result"]["content"][0]["text"])
 assert result_text["status"] == "FAILED"
 
 # -------------------------------------------------------------------
-# 12. cancel dispatch also rejects non-UUID
+# 12. messages dispatch validates cursor and limit
+# -------------------------------------------------------------------
+bad_messages_cursor = server.handle({
+    "jsonrpc": "2.0", "id": 17, "method": "tools/call",
+    "params": {"name": "gigacode", "arguments": {
+        "action": "messages", "session_id": fake_sid, "after_revision": True,
+    }},
+})
+assert bad_messages_cursor is not None
+assert bad_messages_cursor.get("result", {}).get("isError") is True
+
+bad_messages_limit = server.handle({
+    "jsonrpc": "2.0", "id": 18, "method": "tools/call",
+    "params": {"name": "gigacode", "arguments": {
+        "action": "messages", "session_id": fake_sid, "message_limit": 51,
+    }},
+})
+assert bad_messages_limit is not None
+assert bad_messages_limit.get("result", {}).get("isError") is True
+
+# -------------------------------------------------------------------
+# 13. cancel dispatch also rejects non-UUID
 # -------------------------------------------------------------------
 bad_cancel = server.handle({
     "jsonrpc": "2.0", "id": 17, "method": "tools/call",

@@ -652,7 +652,7 @@ GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
 gigacode::gigacode
 ```
 
-That one schema carries `action=start|resume|status|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. Harr adds only its own managed global skill directories to LeanCTX `allow_paths`, so PathJail remains enabled while those skills can be read from projects outside the home config tree. A normal delegated flow is:
+That one schema carries `action=start|resume|status|messages|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. Harr adds only its own managed global skill directories to LeanCTX `allow_paths`, so PathJail remains enabled while those skills can be read from projects outside the home config tree. A normal delegated flow is:
 
 ```text
 parent: architecture + execution contract
@@ -665,7 +665,7 @@ parent: architecture + execution contract
 
 Harr ships only the bridge. The external `gigacode` CLI must already be installed and authenticated. The bridge deliberately treats it as a black box: it does not configure, inspect, or depend on GigaCode's own tool names, shell implementation, editor, extensions, or MCP servers.
 
-Normal RUNNING status is intentionally compact and does not expose GigaCode event history, internal logs, model text, or tool traces. `status` remains nonblocking; `wait` blocks inside the bridge for up to 1500 seconds so the parent model does not spend turns polling. Before a worker handoff is accepted as `DONE`, the bridge requires criterion-by-criterion PASS evidence, no unresolved blockers, and a successful final diff/scope self-review. Missing evidence is returned to the same GigaCode session with `resume`; the expensive parent does not repeat the executor's code reading and test loop by default.
+Normal RUNNING status is intentionally compact and does not expose GigaCode event history, internal logs, model text, or tool traces. `status` remains nonblocking; `wait` blocks inside the bridge for up to 1500 seconds so the parent model does not spend turns polling. Explicit `messages` calls can fetch only GigaCode assistant prose with a revision cursor, but because that is a normal MCP result it enters the parent tool context and is not used for automatic monitoring. Before a worker handoff is accepted as `DONE`, the bridge requires criterion-by-criterion PASS evidence, no unresolved blockers, and a successful final diff/scope self-review. Missing evidence is returned to the same GigaCode session with `resume`; the expensive parent does not repeat the executor's code reading and test loop by default.
 
 The bridge keeps a persistent GigaCode session, performs a bounded startup handshake, and runs execution detached. Hard timeout defaults to unlimited; cancellation is explicit unless the caller supplies a positive `timeout_sec`. One `wait` call is bounded to 1500 seconds; Harr configures the LeanCTX downstream timeout to 1800 seconds and Codex/OpenCode host-side LeanCTX timeouts to 1900 seconds so the blocking wait completes without forcing model-level polling.
 
