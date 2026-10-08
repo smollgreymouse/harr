@@ -158,6 +158,9 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]
+grep -q 'WAIT ONLY phase' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
 grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"
 grep -q 'do not attempt bare network Git first' "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md"
@@ -199,6 +202,27 @@ for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
 done
 [[ "$(grep -c '^approval_mode = "approve"$' "${CODEX_HOME}/config.toml")" -eq 5 ]]
 ! grep -q '^\[mcp_servers\.lean-ctx\.tools\.ctx_call\]$' "${CODEX_HOME}/config.toml"
+
+# Optional GigaCode skill follows the saved MCP selection.
+python3 "${ROOT}/common/mcp/selector.py" \
+  --catalog "${ROOT}/common/mcp/registry.json" \
+  --selection "${XDG_CONFIG_HOME}/harr/mcp-selection.json" \
+  --effective "${XDG_CONFIG_HOME}/harr/mcp-registry.json" \
+  --remove gigacode
+"${ROOT}/linux/harr" agents apply all
+[[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor" ]]
+! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
+
+python3 "${ROOT}/common/mcp/selector.py" \
+  --catalog "${ROOT}/common/mcp/registry.json" \
+  --selection "${XDG_CONFIG_HOME}/harr/mcp-selection.json" \
+  --effective "${XDG_CONFIG_HOME}/harr/mcp-registry.json" \
+  --add gigacode
+"${ROOT}/linux/harr" agents apply all
+[[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
+grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
 
 mkdir -p "${HOME}/.local/libexec/harr/state"
 install -m 0755 "${ROOT}/linux/files/state/harr-state" "${HOME}/.local/libexec/harr/state/harr-state"

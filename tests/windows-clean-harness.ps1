@@ -101,6 +101,9 @@ enabled = false
     if (-not (Test-Path (Join-Path $OpenCodeDir 'commands\custom.md'))) { throw 'Unrelated OpenCode command was removed' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\harr\SKILL.md'))) { throw 'Harr skill missing' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\lean-ctx\SKILL.md'))) { throw 'LeanCTX skill missing' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed' }
+    if (Test-Path (Join-Path $CodexDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed for Codex' }
+    if ($codexAgents -match '\$gigacode-executor') { throw 'Disabled GigaCode routing leaked into Codex policy' }
 
     $codexText = Get-Content -Raw (Join-Path $CodexDir 'config.toml')
     $tomlLeanCommand = $leanCommand.Replace('\', '\\')

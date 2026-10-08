@@ -76,6 +76,9 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "grafana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor" ]]
+[[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
+! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
 # Retired LaunchAgent plists must be removed.
 for label in com.harr.mcp.gitlab com.harr.mcp.grafana; do
   if [[ -f "${HOME}/Library/LaunchAgents/${label}.plist" ]]; then

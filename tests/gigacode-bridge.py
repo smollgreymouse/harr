@@ -25,7 +25,7 @@ spec.loader.exec_module(server)
 # -------------------------------------------------------------------
 # 1. Version and constants
 # -------------------------------------------------------------------
-assert server.SERVER_VERSION == "1.7.0", f"got {server.SERVER_VERSION}"
+assert server.SERVER_VERSION == "1.8.0", f"got {server.SERVER_VERSION}"
 assert server.DEFAULT_HARD_TIMEOUT_SEC == 0, f"got {server.DEFAULT_HARD_TIMEOUT_SEC}"
 assert server.DEFAULT_STALL_TIMEOUT_SEC == 0, f"got {server.DEFAULT_STALL_TIMEOUT_SEC}"
 assert server.STARTUP_CONFIRM_TIMEOUT_SEC == 20.0
@@ -96,7 +96,7 @@ assert [item["name"] for item in listed["result"]["tools"]] == ["gigacode"]
 # -------------------------------------------------------------------
 sample = """worker note
 ```json
-{"status":"DONE","summary":"ok","changed":[],"verified":[],"escalation":null,"blockers":[]}
+{"status":"DONE","summary":"ok","changed":[{"path":"x.cpp","what":"implemented"}],"verified":[{"criterion":"C1","check":"unit","result":"PASS","evidence":"exit=0; 1 test passed"}],"self_review":{"criteria_complete":true,"diff_scope_clean":true,"unverified":[]},"escalation":null,"blockers":[]}
 ```
 """
 handoff = server.extract_json_object(sample)
@@ -105,7 +105,21 @@ assert handoff["status"] == "DONE"
 
 parsed, is_error = server.parse_worker_handoff(json.dumps(handoff), 0, "")
 assert parsed["summary"] == "ok"
+assert parsed["self_review"]["criteria_complete"] is True
 assert is_error is False
+
+invalid_done = {
+    "status": "DONE",
+    "summary": "claims success without acceptance evidence",
+    "changed": [],
+    "verified": [],
+    "escalation": None,
+    "blockers": [],
+}
+invalid_parsed, invalid_is_error = server.parse_worker_handoff(json.dumps(invalid_done), 0, "")
+assert invalid_is_error is True
+assert invalid_parsed["status"] == "FAILED"
+assert "self-verification" in invalid_parsed["summary"]
 
 # -------------------------------------------------------------------
 # 8. Cancel control helper round-trip (sandboxed CACHE_ROOT)
@@ -117,6 +131,28 @@ server.CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 fake_sid = str(server.uuid.uuid4())
 fake_jid = server.uuid.uuid4().hex[:12]
 assert server._check_cancel_request(fake_sid, fake_jid) is False
+
+# Public RUNNING status is deliberately compact: never leak executor event history
+# or bridge-internal log/process metadata into the expensive parent context.
+server._write_state(fake_sid, {
+    "phase": "running",
+    "session_id": fake_sid,
+    "job_id": fake_jid,
+    "pid": os.getpid(),
+    "elapsed_sec": 42.0,
+    "timeout_sec": 0,
+})
+running_status = server.status_tool({"session_id": fake_sid})
+running_data = json.loads(running_status["content"][0]["text"])
+assert running_data["status"] == "RUNNING"
+assert running_data["runtime"]["elapsed_sec"] == 42.0
+assert "last_events" not in running_data
+assert "polling" not in running_data
+assert "runtime_log" not in running_data["runtime"]
+assert "chat" not in running_data["runtime"]
+assert "worker_pid" not in running_data["runtime"]
+assert "gigacode_pid" not in running_data["runtime"]
+
 assert server._request_cancel(fake_sid, fake_jid) is True
 assert server._check_cancel_request(fake_sid, fake_jid) is True
 server._cleanup_control(fake_sid, fake_jid)

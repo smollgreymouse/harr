@@ -103,9 +103,10 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
-        assert ("GigaCode is the optional cheap implementation executor" in policy) == ("gigacode" in expected)
+        assert ("use the installed `$gigacode-executor` skill" in policy) == ("gigacode" in expected)
         assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
-        assert ("Do not poll GigaCode on a timer" in policy) == ("gigacode" in expected)
+        assert ("enter WAIT ONLY" in policy) == ("gigacode" in expected)
+        assert ("contract acceptance from the structured self-verification handoff" in policy) == ("gigacode" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -152,7 +153,9 @@ def check(spec: str, expected: list[str]) -> None:
             gigacode_text = gigacode_ref.read_text(encoding="utf-8")
             assert "gigacode::gigacode" in gigacode_text
             assert "startup_confirmed=true" in gigacode_text
-            assert "Do not poll in the same parent turn" in gigacode_text
+            assert "Status / WAIT ONLY" in gigacode_text
+            assert "does not return GigaCode event history" in gigacode_text
+            assert "second full parent code review" in gigacode_text
         assert "<!-- harr-mcp:" not in skill
 
 

@@ -28,7 +28,7 @@ from collections import deque
 
 
 SERVER_NAME = "gigacode"
-SERVER_VERSION = "1.7.0"
+SERVER_VERSION = "1.8.0"
 ROOT = Path.cwd().resolve()
 DEFAULT_HARD_TIMEOUT_SEC = 0
 DEFAULT_STALL_TIMEOUT_SEC = 0
@@ -73,6 +73,9 @@ During implementation:
 - Stay inside the plan's scope and design.
 - Do not perform unrelated cleanup.
 - Run the validation requested by the plan.
+- Before DONE, perform your own final acceptance pass: map every acceptance
+  criterion to a concrete verification result, inspect the final diff/scope for
+  unrelated changes, and identify anything still unverified.
 - Do not commit, push, or make external writes unless the plan explicitly says so.
 - If an unexpected architectural contradiction appears after edits have begun,
   stop making further changes and return ESCALATE. Report every file already changed;
@@ -96,8 +99,18 @@ surrounding prose. Use this schema:
     {"path": "relative/path", "what": "specific change"}
   ],
   "verified": [
-    {"check": "command or invariant checked", "result": "PASS" | "FAIL", "evidence": "compact decisive evidence"}
+    {
+      "criterion": "acceptance criterion id or short statement",
+      "check": "command or invariant checked",
+      "result": "PASS" | "FAIL",
+      "evidence": "compact decisive evidence including exit/result when applicable"
+    }
   ],
+  "self_review": {
+    "criteria_complete": true | false,
+    "diff_scope_clean": true | false,
+    "unverified": ["criterion or limitation still not proven"]
+  },
   "escalation": null | {
     "kind": "plan_code_mismatch" | "ambiguous_design" | "scope_conflict" | "unexpected_architecture" | "validation_contradiction" | "other",
     "expected": "what the plan assumed or required",
@@ -123,7 +136,9 @@ surrounding prose. Use this schema:
 }
 
 Rules for the handoff:
-- DONE: escalation must be null; include changed and verification evidence.
+- DONE: escalation must be null; blockers and self_review.unverified must be
+  empty; every acceptance criterion must appear in verified with result=PASS;
+  self_review.criteria_complete and self_review.diff_scope_clean must both be true.
 - ESCALATE: provide enough evidence for the planner to reason without rereading
   the cited source just to understand the mismatch. Prefer exact symbols,
   paths, line ranges, and a tiny decisive snippet. State expected vs observed,
@@ -134,6 +149,8 @@ Rules for the handoff:
   planner must provide it rather than proposing a plausible substitute.
 - FAILED: use for execution/tool/environment failures that do not require an
   architectural decision. Include the failed command/check and compact evidence.
+- For verification commands, include the exit/result outcome. Do not make the
+  parent rerun a check merely to know whether it passed.
 - Keep the whole JSON compact. Evidence should be sufficient, not exhaustive.
 - Never claim a check passed unless you actually performed it.
 """.strip()
@@ -146,10 +163,11 @@ TOOLS = [
             "Delegate execution to persistent GigaCode as a detached job. action=start and "
             "action=resume perform a short startup handshake and return RUNNING only after actual "
             "GigaCode model/tool activity is observed; otherwise they return STARTING or FAILED. "
-            "action=status is a fast state read returning RUNNING or the final DONE/FAILED/ESCALATE "
-            "handoff, plus runtime info including hard_timeout_sec (0=unlimited), stall_elapsed_sec, "
-            "and cancel_requested. action=cancel requests orderly termination of a running detached job. "
-            "Never tight-poll status. plan_path avoids resending an existing plan."
+            "action=status is a compact public state read returning RUNNING or the final "
+            "DONE/FAILED/ESCALATE handoff without exposing executor event history; "
+            "hard_timeout_sec=0 means unlimited and stall_elapsed_sec is informational. "
+            "action=cancel requests orderly termination of a running detached job. "
+            "plan_path avoids resending an existing plan."
         ),
         "inputSchema": {
             "type": "object",
@@ -157,7 +175,7 @@ TOOLS = [
                 "action": {
                     "type": "string",
                     "enum": ["start", "resume", "status", "cancel"],
-                    "description": "start a new task; resume an existing session; status inspects runtime/debug state; cancel requests orderly termination of a running detached job.",
+                    "description": "start a new task; resume an existing session; status returns compact public state/final handoff; cancel requests orderly termination of a running detached job.",
                 },
                 "plan_path": {
                     "type": "string",
@@ -457,7 +475,6 @@ def status_tool(arguments: dict) -> dict:
             "summary": "status requires a valid UUID session_id.",
         }, is_error=True)
     state = _load_state(session_id)
-    chat_path = _find_chat_path(session_id)
 
     if state and isinstance(state.get("handoff"), dict):
         handoff = state["handoff"]
@@ -469,28 +486,15 @@ def status_tool(arguments: dict) -> dict:
                 "job_id": state.get("job_id"),
                 "elapsed_sec": state.get("elapsed_sec"),
                 "exit_code": state.get("exit_code"),
-                "runtime_log": str(_runtime_log_path(session_id)),
             },
         }
         return text_result(payload)
-
-    chat_info = None
-    if chat_path is not None:
-        try:
-            stat = chat_path.stat()
-            chat_info = {
-                "size": stat.st_size,
-                "age_sec": round(max(0.0, time.time() - stat.st_mtime), 1),
-            }
-        except OSError:
-            pass
 
     if state is None:
         return text_result({
             "session_id": session_id,
             "status": "UNKNOWN",
             "summary": "No detached runtime state exists for this session.",
-            "last_events": _tail_chat_events(session_id, limit=6),
         })
 
     process_running = _pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))
@@ -507,12 +511,11 @@ def status_tool(arguments: dict) -> dict:
             "blockers": [{
                 "kind": "tool",
                 "detail": "worker process is no longer running but runtime state is unfinished",
-                "evidence": json.dumps(_tail_chat_events(session_id, limit=6), ensure_ascii=False),
+                "evidence": f"phase={phase}; job_id={state.get('job_id')}",
             }],
             "runtime": {
                 "phase": phase,
                 "elapsed_sec": state.get("elapsed_sec"),
-                "runtime_log": str(_runtime_log_path(session_id)),
             },
         }
         return text_result(payload, is_error=True)
@@ -531,11 +534,7 @@ def status_tool(arguments: dict) -> dict:
             "stall_elapsed_sec": state.get("stall_elapsed_sec"),
             "cancel_requested": cancel_check,
             "process_running": process_running,
-            "chat": chat_info,
-            "runtime_log": str(_runtime_log_path(session_id)),
         },
-        "last_events": _tail_chat_events(session_id, limit=6),
-        "polling": "Do not tight-poll. Check status once after other useful work or when completion is needed.",
     }
     return text_result(payload)
 
@@ -977,7 +976,6 @@ def launch_detached_job(
                     "elapsed_sec": current.get("elapsed_sec"),
                     "exit_code": current.get("exit_code"),
                     "startup_confirmed": True,
-                    "runtime_log": str(_runtime_log_path(session_id)),
                 },
             }
 
@@ -993,15 +991,10 @@ def launch_detached_job(
                 "summary": "GigaCode accepted the task and produced confirmed activity.",
                 "job_id": job_id,
                 "startup_confirmed": True,
-                "startup_event": activity,
                 "runtime": {
                     "phase": current.get("phase", "running"),
-                    "worker_pid": current.get("worker_pid", worker.pid),
-                    "gigacode_pid": current.get("pid"),
                     "timeout_sec": timeout_sec,
-                    "runtime_log": str(_runtime_log_path(session_id)),
                 },
-                "polling": "Do not tight-poll. Use action=status after other useful work or when completion is needed.",
             }
 
         running = _pid_alive(current.get("pid")) or _pid_alive(current.get("worker_pid"))
@@ -1022,13 +1015,12 @@ def launch_detached_job(
             "blockers": [{
                 "kind": "tool",
                 "detail": "worker stopped during startup handshake",
-                "evidence": json.dumps(_tail_chat_events(session_id, limit=6), ensure_ascii=False),
+                "evidence": f"phase={current.get('phase')}; job_id={job_id}",
             }],
             "runtime": {
                 "phase": current.get("phase"),
                 "job_id": job_id,
                 "startup_confirmed": False,
-                "runtime_log": str(_runtime_log_path(session_id)),
             },
         }
 
@@ -1043,13 +1035,8 @@ def launch_detached_job(
         "startup_confirmed": False,
         "runtime": {
             "phase": current.get("phase", "running"),
-            "worker_pid": current.get("worker_pid", worker.pid),
-            "gigacode_pid": current.get("pid"),
             "timeout_sec": timeout_sec,
-            "runtime_log": str(_runtime_log_path(session_id)),
         },
-        "last_events": _tail_chat_events(session_id, limit=6),
-        "polling": "Do not tight-poll. Use action=status later if the task still matters.",
     }
 
 
@@ -1236,20 +1223,57 @@ def parse_worker_handoff(output: str, exit_code: int, stderr: str) -> tuple[dict
             }
             return payload, True
 
-    if handoff["status"] == "DONE" and handoff.get("escalation") is not None:
-        payload = {
-            "status": "FAILED",
-            "summary": "GigaCode returned DONE with a contradictory escalation payload.",
-            "changed": handoff.get("changed") if isinstance(handoff.get("changed"), list) else [],
-            "verified": handoff.get("verified") if isinstance(handoff.get("verified"), list) else [],
-            "escalation": None,
-            "blockers": [{
-                "kind": "other",
-                "detail": "DONE requires escalation=null",
-                "evidence": output[-4000:],
-            }],
-        }
-        return payload, True
+    if handoff["status"] == "DONE":
+        done_errors: list[str] = []
+        if handoff.get("escalation") is not None:
+            done_errors.append("escalation must be null")
+
+        blockers = handoff.get("blockers")
+        if blockers != []:
+            done_errors.append("blockers must be empty")
+
+        verified = handoff.get("verified")
+        if not isinstance(verified, list) or not verified:
+            done_errors.append("verified must be a non-empty list")
+        else:
+            for index, item in enumerate(verified):
+                if not isinstance(item, dict):
+                    done_errors.append(f"verified[{index}] must be an object")
+                    continue
+                if not isinstance(item.get("criterion"), str) or not item["criterion"].strip():
+                    done_errors.append(f"verified[{index}].criterion is required")
+                if not isinstance(item.get("check"), str) or not item["check"].strip():
+                    done_errors.append(f"verified[{index}].check is required")
+                if item.get("result") != "PASS":
+                    done_errors.append(f"verified[{index}].result must be PASS")
+                if not isinstance(item.get("evidence"), str) or not item["evidence"].strip():
+                    done_errors.append(f"verified[{index}].evidence is required")
+
+        self_review = handoff.get("self_review")
+        if not isinstance(self_review, dict):
+            done_errors.append("self_review is required")
+        else:
+            if self_review.get("criteria_complete") is not True:
+                done_errors.append("self_review.criteria_complete must be true")
+            if self_review.get("diff_scope_clean") is not True:
+                done_errors.append("self_review.diff_scope_clean must be true")
+            if self_review.get("unverified") != []:
+                done_errors.append("self_review.unverified must be empty")
+
+        if done_errors:
+            payload = {
+                "status": "FAILED",
+                "summary": "GigaCode returned DONE without a complete self-verification handoff.",
+                "changed": handoff.get("changed") if isinstance(handoff.get("changed"), list) else [],
+                "verified": verified if isinstance(verified, list) else [],
+                "escalation": None,
+                "blockers": [{
+                    "kind": "other",
+                    "detail": "; ".join(done_errors),
+                    "evidence": "Resume the same session and request the missing acceptance evidence/self-review.",
+                }],
+            }
+            return payload, True
 
     return handoff, handoff["status"] == "FAILED"
 

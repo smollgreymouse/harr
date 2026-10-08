@@ -6,6 +6,8 @@ The external `gigacode` CLI must already be installed, authenticated and availab
 
 ## Start
 
+For normal delegation, load and follow the installed `$gigacode-executor` skill. This reference is primarily for bridge setup and diagnostics.
+
 When the parent has already decided architecture, scope, invariants and acceptance criteria, prefer a plan file so the expensive parent does not resend its contents:
 
 ```text
@@ -27,13 +29,13 @@ arguments = {
 }
 ```
 
-`start` returns a persistent `session_id`. A confirmed `RUNNING` includes `startup_confirmed=true` plus the first real GigaCode model/tool activity; a merely alive process reports `STARTING`.
+`start` returns a persistent `session_id`. A confirmed `RUNNING` includes `startup_confirmed=true` only after the bridge has observed real GigaCode model/tool activity internally; the activity itself is not exposed to the parent. A merely alive process reports `STARTING`.
 
 Optional `timeout_sec` (default 0 = unlimited) sets a positive hard wall-clock limit. Use it only for bounded tasks where automatic termination on deadline is safer than indefinite execution.
 
-## Status without polling
+## Status / WAIT ONLY
 
-Do not poll in the same parent turn. On a later continuation, check once:
+After confirmed `RUNNING`, normal parent work on the delegated scope stops. If completion is needed in the current interaction, repeated calls may request only compact public `status`:
 
 ```text
 arguments = {
@@ -42,7 +44,7 @@ arguments = {
 }
 ```
 
-Status exposes `hard_timeout_sec` (0 means unlimited), `stall_elapsed_sec` (informational only; no auto-kill), `cancel_requested`, and `process_running`.
+A RUNNING status intentionally exposes only compact public runtime state; it does not return GigaCode event history, internal logs, model text, or tool traces. Repeated RUNNING results are waiting/transport events, not prompts to inspect the implementation.
 
 A final handoff is `DONE`, `FAILED` or `ESCALATE`. `ESCALATE` is designed to contain enough exact code evidence for the planner to decide without rereading files merely to rediscover the mismatch.
 
@@ -59,19 +61,21 @@ arguments = {
 
 Returns `CANCEL_REQUESTED` on success. The worker terminates the GigaCode process tree on its next loop iteration and records a terminal handoff identifying manual cancellation. The session remains resumable. Repeated cancel on a finished or unknown session produces a clear safe response. Cancel never targets arbitrary PIDs — only the session's active job.
 
-## Review and resume
+## Acceptance and resume
 
-After `DONE`, review independently. Send substantive defects back into the same executor context:
+`DONE` is accepted from the structured handoff by default; it is not a signal for a second full parent code review. The bridge requires GigaCode to report criterion-by-criterion PASS evidence plus final diff/scope self-review before DONE is considered valid.
+
+If the handoff lacks evidence or contradicts the fixed contract, send only the missing proof/decision back into the same executor context:
 
 ```text
 arguments = {
   "action": "resume",
   "session_id": "<session-id>",
-  "prompt": "Review found: <specific defect/evidence>. Required invariant: <...>. Rerun: <checks>."
+  "prompt": "Handoff lacks evidence for criterion C3. Verify C3, perform final scope review, and return a complete handoff. Do not redesign."
 }
 ```
 
-Keep one session per logical implementation task. While a session is `RUNNING`, do not edit its scope in the parent or build a competing implementation. The parent may make only a tiny obvious local correction directly; iterative debugging and non-trivial empirical probes belong to the executor.
+Keep one session per logical implementation task. While a session is `RUNNING`, do not read/edit/revalidate its scope in the parent. Parent source/artifact inspection after DONE requires a concrete exception from `$gigacode-executor`.
 
 ## Runtime safeguards
 
@@ -79,4 +83,4 @@ The bridge launches GigaCode detached, performs a short startup handshake (20s b
 
 Cancellation is explicit via `action=cancel`; there is no automatic inactivity or total-deadline cancellation unless the caller requested a positive `timeout_sec`.
 
-Normal planner work must use only the MCP handoff. GigaCode chat/debug/runtime files under `~/.gigacode` and `~/.cache/gigacode-mcp` are bridge diagnostics and should be read only when explicitly debugging a bridge/runtime failure.
+Normal planner work must use only the MCP handoff. GigaCode chat/debug/runtime files under `~/.gigacode` and `~/.cache/gigacode-mcp` are bridge diagnostics and should be read only when explicitly debugging a bridge/runtime failure; normal public status does not expose their event contents.
