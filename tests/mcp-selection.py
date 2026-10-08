@@ -55,11 +55,13 @@ def check(spec: str, expected: list[str]) -> None:
         secret_names = [row["name"] for row in secret_rows]
         assert ("gitlab" in secret_names) == ("gitlab" in expected)
         assert ("grafana" in secret_names) == ("grafana" in expected)
+        assert ("jira" in secret_names) == ("jira" in expected)
 
         config_dir = tmp / "mcp-config"
         run(MANAGER, "--registry", effective, "install-configs", "--config-dir", config_dir)
         assert (config_dir / "gitlab.env").exists() == ("gitlab" in expected)
         assert (config_dir / "grafana.env").exists() == ("grafana" in expected)
+        assert (config_dir / "jira.env").exists() == ("jira" in expected)
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
@@ -99,6 +101,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("gitlab::get_merge_request" in policy) == ("gitlab" in expected)
         assert ("source_branch=<current-local-branch>" in policy) == ("gitlab" in expected)
         assert ("MR author is the authenticated GitLab identity" in policy) == ("gitlab" in expected)
+        assert ("Jira issues, JQL searches" in policy) == ("jira" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
@@ -127,6 +130,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert "user.exec" in kube_text
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
+        assert ("harr secret set jira" in skill) == ("jira" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
         assert gitlab_ref.exists() == ("gitlab" in expected)
         if gitlab_ref.exists():
@@ -143,6 +147,7 @@ def check(spec: str, expected: list[str]) -> None:
             assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
+        assert (filtered_skill / "references" / "jira.md").exists() == ("jira" in expected)
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -151,8 +156,10 @@ servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
+assert servers["jira"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
-check("all", ["codegraph", "gitlab", "grafana"])
+check("jira", ["codegraph", "jira"])
+check("all", ["codegraph", "gitlab", "grafana", "jira"])
 print("cross-platform MCP selection: PASS")

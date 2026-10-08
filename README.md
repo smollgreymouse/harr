@@ -29,6 +29,8 @@ LeanCTX 3.9.15                         required
       +-- HTTP :3335 -----> Grafana MCP           optional
       |                     uvx mcp-grafana --transport streamable-http
       |
+      +-- stdio on demand --> Jira MCP (uvx mcp-atlassian) --> Jira REST API
+      |
       +-- future MCPs -----> common registry       required/optional metadata
 
 Unrelated third-party MCPs/skills may coexist beside this stack.
@@ -112,6 +114,7 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
+  [ ] Jira         optional  Jira Server/Data Center issues and JQL via local REST MCP
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -165,6 +168,7 @@ Configure secrets only for MCPs you enabled:
 ```text
 harr secret set gitlab
 harr secret set grafana
+harr secret set jira
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
@@ -481,6 +485,7 @@ harr mcp logs gitlab
 harr secret status
 harr secret set gitlab
 harr secret set grafana
+harr secret set jira
 harr secret unset gitlab
 harr secret unset grafana
 
@@ -629,6 +634,7 @@ Edit the installed `mcp/grafana.env` for your self-hosted Grafana URL. Store the
 
 ```text
 harr secret set grafana
+harr secret set jira
 harr secret status
 ```
 
@@ -646,6 +652,18 @@ search_dashboards
 Fetch a complete dashboard definition only when the targeted tools are insufficient.
 
 
+
+### Jira (Server/Data Center, local MCP)
+
+Jira is optional. Harr launches [sooperset/mcp-atlassian](https://github.com/sooperset/mcp-atlassian) as a local stdio MCP behind LeanCTX and connects to the configured Jira REST API. The Jira server does **not** need its own MCP plugin or Atlassian Cloud support; Docker is not required.
+
+1. Enable Jira through `harr mcp configure` (preserving other selected MCPs).
+2. Run `harr install mcp` to prepare the `uvx` runtime.
+3. Set `JIRA_URL=https://jira.company.example` in the Harr config root's `mcp/jira.env`.
+4. Run `harr secret set jira` to securely store a Jira Server/Data Center Personal Access Token.
+5. Restart the agent session to discover the `jira::*` tools via LeanCTX.
+
+This default preset uses `JIRA_PERSONAL_TOKEN`; it requires a Jira version supporting personal access tokens. Older installations without PAT support require a separately tested authentication integration. For Jira Cloud, use the Cloud username/API-token method rather than this Server/DC preset. See `common/skills/harr/references/jira.md`.
 
 ### Git
 

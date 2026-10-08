@@ -20,6 +20,9 @@
 - Create a new MR through `gitlab::create_merge_request` with `source_branch=<current-local-branch>` and the separately determined target branch. Use `gitlab::update_merge_request` only for an already identified existing MR; it is never a fallback for creation. Verify the resulting MR with `gitlab::get_merge_request` before reporting success.
 - Do not conflate Git commit author, GitLab MR author, assignee and reviewer. The MR author is the authenticated GitLab identity and is not assignable like a reviewer; resolve requested assignees/reviewers to GitLab user IDs and verify the created MR before claiming those identities were set.
 <!-- harr-mcp:gitlab:end -->
+<!-- harr-mcp:jira:start -->
+- Jira issues, JQL searches, comments, transitions, and project metadata: discover and call `jira::*` tools through `{{CTX_TOOLS}}`. The Jira MCP connects to the configured Jira REST API; the Jira server itself does not need an MCP endpoint. Respect project permissions and confirm before destructive/bulk issue updates.
+<!-- harr-mcp:jira:end -->
 <!-- harr-mcp:grafana:start -->
 - Grafana dashboard work, including a Grafana dashboard URL or `/goto/` short link: FIRST discover and use the relevant `grafana::*` operation through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary. Do not open the dashboard in a browser as the first action.
 - A browser is a Grafana fallback only after the Harr Grafana route cannot resolve the short link or does not expose the required operation; state that limitation before using it.
