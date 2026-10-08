@@ -63,11 +63,19 @@ def check(spec: str, expected: list[str]) -> None:
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
-            run(MANAGER, "--registry", effective, "render-leanctx", "--base", BASE, "--output", lean, "--platform", platform, "--runner-command", "harr-mcp-run")
+            allow_a = tmp / "codex-skills" / "gigacode-executor"
+            allow_b = tmp / "opencode-skills" / "gigacode-executor"
+            run(
+                MANAGER, "--registry", effective, "render-leanctx",
+                "--base", BASE, "--output", lean,
+                "--platform", platform, "--runner-command", "harr-mcp-run",
+                "--allow-path", allow_a, "--allow-path", allow_b,
+            )
             parsed = tomllib.loads(lean.read_text(encoding="utf-8"))
             assert parsed["gateway"]["top_n"] == 3
             assert "harr" in parsed["shell_allowlist_extra"]
             assert "clang-format" in parsed["shell_allowlist_extra"]
+            assert parsed["allow_paths"] == [str(allow_a), str(allow_b)]
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"

@@ -106,6 +106,15 @@ assert codex['mcp_servers']['lean-ctx']['default_tools_approval_mode'] == 'auto'
 assert codex['mcp_servers']['lean-ctx']['tool_timeout_sec'] == 1900
 opencode = json.loads((config / 'opencode/opencode.jsonc').read_text())
 assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
+lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
+assert lean['allow_paths'] == [
+    str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/lean-ctx'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor'),
+    str(config / 'opencode/skills/harr'),
+    str(config / 'opencode/skills/lean-ctx'),
+    str(config / 'opencode/skills/gigacode-executor'),
+]
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
 assert selection['enabled'] == ['codegraph']

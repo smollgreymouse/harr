@@ -186,6 +186,21 @@ done
 
 "${ROOT}/linux/install.sh" --harr-only
 grep -q '^call_timeout_secs = 1800$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+python3 - <<'PY'
+import os, tomllib
+from pathlib import Path
+config = Path(os.environ['XDG_CONFIG_HOME'])
+codex = Path(os.environ['CODEX_HOME'])
+lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
+assert lean['allow_paths'] == [
+    str(codex / 'skills/harr'),
+    str(codex / 'skills/lean-ctx'),
+    str(codex / 'skills/gigacode-executor'),
+    str(config / 'opencode/skills/harr'),
+    str(config / 'opencode/skills/lean-ctx'),
+    str(config / 'opencode/skills/gigacode-executor'),
+]
+PY
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
 [[ -f "${XDG_CONFIG_HOME}/systemd/user/harr-git-host.service" ]]
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]

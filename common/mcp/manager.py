@@ -114,6 +114,18 @@ def render_leanctx(args: argparse.Namespace, data: dict) -> None:
     text = Path(args.base).read_text(encoding="utf-8")
     allow = ",\n".join(f"    {toml_string(item)}" for item in shell_allowlist(args.platform))
     text = text.replace("{{HARR_SHELL_ALLOWLIST_EXTRA}}", allow)
+
+    allow_paths: list[str] = []
+    for raw in args.allow_path:
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            raise SystemExit(f"LeanCTX allow path must be absolute: {raw}")
+        value = str(path)
+        if value not in allow_paths:
+            allow_paths.append(value)
+    rendered_paths = ",\n".join(f"    {toml_string(item)}" for item in allow_paths)
+    text = text.replace("{{HARR_ALLOW_PATHS}}", rendered_paths)
+
     marker = "# {{HARR_GATEWAY_SERVERS}}"
     if marker not in text:
         raise SystemExit(f"LeanCTX base config has no marker: {marker}")
@@ -409,6 +421,7 @@ def main() -> None:
     p_render.add_argument("--output", required=True)
     p_render.add_argument("--platform", required=True, choices=["linux", "windows", "macos"])
     p_render.add_argument("--runner-command", default="harr-mcp-run")
+    p_render.add_argument("--allow-path", action="append", default=[])
 
     p_install = sub.add_parser("install-configs")
     p_install.add_argument("--config-dir", required=True)

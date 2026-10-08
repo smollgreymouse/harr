@@ -10,6 +10,12 @@ rules_scope = "global"
 minimal_overhead = true
 bypass_hints = "off"
 
+# Harr-managed global skills live outside the active project root but must remain
+# readable through ctx_read while PathJail stays enabled.
+allow_paths = [
+{{HARR_ALLOW_PATHS}}
+]
+
 tool_profile = ""
 tools_enabled = [
     "ctx_read",

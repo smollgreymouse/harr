@@ -15,11 +15,19 @@ cmd_leanctx_apply() {
     cp -a "$HARR_LEANCTX_CONFIG" "$backup"
     printf 'Backed up existing LeanCTX config to %s\n' "$backup"
   fi
+  local codex_skills="${CODEX_HOME:-${HOME}/.codex}/skills"
+  local opencode_skills="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
   mcp_manager render-leanctx \
     --base "$src" \
     --output "$HARR_LEANCTX_CONFIG" \
     --platform "${HARR_PLATFORM:-linux}" \
-    --runner-command harr-mcp-run
+    --runner-command harr-mcp-run \
+    --allow-path "${codex_skills}/harr" \
+    --allow-path "${codex_skills}/lean-ctx" \
+    --allow-path "${codex_skills}/gigacode-executor" \
+    --allow-path "${opencode_skills}/harr" \
+    --allow-path "${opencode_skills}/lean-ctx" \
+    --allow-path "${opencode_skills}/gigacode-executor"
   chmod 0600 "$HARR_LEANCTX_CONFIG"
   printf 'Applied Harr LeanCTX config from selected MCP registry: %s\n' "$HARR_LEANCTX_CONFIG"
   if [[ -x "${HOME}/.local/bin/lean-ctx" ]] && ! "${HOME}/.local/bin/lean-ctx" config validate >/dev/null 2>&1; then

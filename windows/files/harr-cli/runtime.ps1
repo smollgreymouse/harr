@@ -5,7 +5,7 @@ function Registry-Apply {
 
 function Apply-LeanCtx {
     New-Item -ItemType Directory -Force -Path $LeanConfigDir | Out-Null
-    Invoke-Manager @('render-leanctx', '--base', (Join-Path $CommonDir 'leanctx\config.base.toml'), '--output', $LeanConfig, '--platform', 'windows', '--runner-command', 'harr-mcp-run')
+    Invoke-Manager @('render-leanctx', '--base', (Join-Path $CommonDir 'leanctx\config.base.toml'), '--output', $LeanConfig, '--platform', 'windows', '--runner-command', 'harr-mcp-run', '--allow-path', (Join-Path $CodexHome 'skills\harr'), '--allow-path', (Join-Path $CodexHome 'skills\lean-ctx'), '--allow-path', (Join-Path $CodexHome 'skills\gigacode-executor'), '--allow-path', (Join-Path $OpenCodeHome 'skills\harr'), '--allow-path', (Join-Path $OpenCodeHome 'skills\lean-ctx'), '--allow-path', (Join-Path $OpenCodeHome 'skills\gigacode-executor'))
     Write-Host "Applied Harr LeanCTX config from selected MCP registry: $LeanConfig"
 }
 

@@ -114,6 +114,11 @@ enabled = false
     if (-not $openText.Contains('"timeout": 1900000')) { throw 'OpenCode LeanCTX tool timeout is too short for GigaCode wait' }
     $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
     if (-not $leanText.Contains('call_timeout_secs = 1800')) { throw 'LeanCTX downstream timeout is too short for GigaCode wait' }
+    if (-not $leanText.Contains('allow_paths = [')) { throw 'LeanCTX global skill allow_paths missing' }
+    $codexGigaSkillToml = (Join-Path $CodexDir 'skills\gigacode-executor').Replace('\', '\\')
+    $openGigaSkillToml = (Join-Path $OpenCodeDir 'skills\gigacode-executor').Replace('\', '\\')
+    if (-not $leanText.Contains($codexGigaSkillToml)) { throw 'Codex GigaCode skill path is not allowed by LeanCTX PathJail' }
+    if (-not $leanText.Contains($openGigaSkillToml)) { throw 'OpenCode GigaCode skill path is not allowed by LeanCTX PathJail' }
 
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }

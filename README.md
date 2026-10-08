@@ -652,7 +652,7 @@ GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
 gigacode::gigacode
 ```
 
-That one schema carries `action=start|resume|status|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. A normal delegated flow is:
+That one schema carries `action=start|resume|status|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. Harr adds only its own managed global skill directories to LeanCTX `allow_paths`, so PathJail remains enabled while those skills can be read from projects outside the home config tree. A normal delegated flow is:
 
 ```text
 parent: architecture + execution contract
