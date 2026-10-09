@@ -94,8 +94,6 @@ Until a terminal handoff:
 - do **not** create review/check scripts;
 - do **not** inspect GigaCode chat/debug/runtime files or process internals.
 
-**Routing guard:** The direct tool `gigacode_worker.gigacode` (if visible in Codex) is not the Harr LeanCTX downstream bridge and may accept only `start`, `resume`, and `status`. Never send `wait` to that direct tool. For this skill, use `lean-ctx.ctx_tools` (or `ctx_tools` in a namespace-qualified client) to call `gigacode::gigacode` with `arguments.action = "wait"`. If `ctx_tools` is unavailable, use nonblocking `status` on the direct tool rather than restarting the job; do not claim it supports `wait`.
-
 **Important: `wait` is an action of `gigacode::gigacode`, not a standalone MCP tool.** Do not search for a separate `wait` tool. Call it through `ctx_tools`:
 
 ```text
