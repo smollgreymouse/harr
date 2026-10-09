@@ -60,6 +60,29 @@ class TestLivePoll(unittest.TestCase):
   with patch.object(srv.gc,"messages_tool",side_effect=messages),patch.object(srv.gc,"status_tool",return_value=boxed({"status":"RUNNING"})):
    r=srv.wait_events("fake",0,1800)
    self.assertEqual(r["messages"][0]["text"],"ready")
+ def test_idle_poll_is_not_a_terminal_timeout(self):
+  with patch.object(srv.gc,"messages_tool",return_value=boxed({"messages":[],"revision":4,"has_more":False})),patch.object(srv.gc,"status_tool",return_value=boxed({"status":"RUNNING"})):
+   out=srv.wait_events("fake",4,80)
+  self.assertEqual(out["status"],"RUNNING")
+  self.assertEqual(out["revision"],4)
+  self.assertEqual(out["messages"],[])
+ def test_backend_transient_error_allows_retry_at_same_cursor(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  srv.register(sid)
+  scope=srv.register_scope(sid,3)
+  calls=[]
+  def fail_then_success(*args):
+   calls.append(args[1])
+   if len(calls)==1:raise OSError("transport dropped")
+   return {"messages":[{"revision":4,"text":"recovered"}],"revision":4,"has_more":False,"status":"RUNNING"}
+  responses=[];errors=[]
+  req={"id":9,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"scope_id":scope,"after_revision":3,"wait_ms":0}}}
+  with patch.object(srv,"wait_events",side_effect=fail_then_success),patch.object(srv,"result",side_effect=lambda i,v:responses.append(v)),patch.object(srv,"err",side_effect=lambda i,v:errors.append(v)),patch.object(srv,"record"):
+   srv.dispatch(req)
+   srv.dispatch(req)
+  self.assertEqual(len(errors),1)
+  self.assertEqual(calls,[3,3])
+  self.assertEqual(responses[0]["structuredContent"]["messages"][0]["text"],"recovered")
  def test_terminal_returns_without_wait(self):
   for state in ("DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"):
    with self.subTest(state=state),patch.object(srv.gc,"messages_tool",return_value=boxed({"messages":[],"revision":0,"has_more":False})),patch.object(srv.gc,"status_tool",return_value=boxed({"status":state})):
