@@ -21,6 +21,8 @@ class TestLivePoll(unittest.TestCase):
   self.addCleanup(self.t.cleanup)
   self.stack=patch.object(srv,"ACTIVE",pathlib.Path(self.t.name)/"sessions.json")
   self.stack.start();self.addCleanup(self.stack.stop)
+  scope_patch=patch.object(srv,"SCOPES",pathlib.Path(self.t.name)/"scopes.json")
+  scope_patch.start();self.addCleanup(scope_patch.stop)
  def test_model_cannot_discover_poll(self):
   tools=srv.tools()
   self.assertEqual(next(t for t in tools if t["name"]=="panel_event_ui")["_meta"]["ui"]["visibility"],["app"])
@@ -89,14 +91,16 @@ class TestLivePoll(unittest.TestCase):
   captured=[]
   with patch.object(srv.gc,"start_tool",return_value=boxed({"session_id":sid,"status":"RUNNING","messages":[{"text":"SECRET-PROGRESS"}]})),patch.object(srv,"result",side_effect=lambda i,v:captured.append(v)),patch.object(srv,"record"):
    srv.dispatch({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"show_gigacode_live","arguments":{}}})
-  self.assertEqual(captured[0]["structuredContent"],{"session_id":sid,"status":"RUNNING"})
+  self.assertEqual(captured[0]["structuredContent"]["session_id"],sid)
+  self.assertEqual(captured[0]["structuredContent"]["status"],"RUNNING")
+  self.assertTrue(captured[0]["structuredContent"]["scope_id"])
   self.assertNotIn("SECRET-PROGRESS",json.dumps(captured))
  def test_app_poll_text_only_in_app_result(self):
   sid="11111111-1111-1111-1111-111111111111"
   srv.register(sid)
   captured=[]
   with patch.object(srv,"wait_events",return_value={"messages":[{"revision":1,"text":"SECRET-PROGRESS"}],"revision":1,"has_more":False,"status":"RUNNING"}),patch.object(srv,"result",side_effect=lambda i,v:captured.append(v)),patch.object(srv,"record"):
-   srv.dispatch({"id":7,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"after_revision":0,"wait_ms":0}}})
+   srv.dispatch({"id":7,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"scope_id":srv.register_scope(sid,0),"after_revision":0,"wait_ms":0}}})
   self.assertNotIn("SECRET-PROGRESS",json.dumps(captured[0]["content"]))
   self.assertIn("SECRET-PROGRESS",json.dumps(captured[0]["structuredContent"]))
  def test_attach_second_panel_does_not_launch_second_worker(self):
@@ -106,7 +110,9 @@ class TestLivePoll(unittest.TestCase):
   with patch.object(srv.gc,"start_tool") as start,patch.object(srv.gc,"status_tool",return_value=boxed({"status":"RUNNING"})),patch.object(srv,"result",side_effect=lambda i,v:captured.append(v)),patch.object(srv,"record"):
    srv.dispatch({"id":11,"method":"tools/call","params":{"name":"show_gigacode_live","arguments":{"session_id":sid}}})
   start.assert_not_called()
-  self.assertEqual(captured[0]["structuredContent"],{"session_id":sid,"status":"RUNNING"})
+  self.assertEqual(captured[0]["structuredContent"]["session_id"],sid)
+  self.assertEqual(captured[0]["structuredContent"]["status"],"RUNNING")
+  self.assertTrue(captured[0]["structuredContent"]["scope_id"])
  def test_attach_unknown_session_rejected(self):
   errors=[]
   with patch.object(srv.gc,"start_tool") as start,patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):
@@ -118,7 +124,7 @@ class TestLivePoll(unittest.TestCase):
   srv.register(sid)
   errors=[]
   with patch.object(srv.gc,"messages_tool",side_effect=OSError("transcript unavailable")),patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):
-   srv.dispatch({"id":13,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"wait_ms":100}}})
+   srv.dispatch({"id":13,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"scope_id":srv.register_scope(sid,0),"wait_ms":100}}})
   self.assertEqual(len(errors),1)
   self.assertIn("unavailable",errors[0])
  def test_status_failure_is_exposed_to_panel(self):
@@ -162,6 +168,22 @@ class TestLivePoll(unittest.TestCase):
  def test_restoration_handles_corrupted_registry(self):
   srv.ACTIVE.write_text('{broken')
   self.assertEqual(srv.restored_sessions(),[])
+ def test_scope_isolated_from_other_calls(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  other="22222222-2222-2222-2222-222222222222"
+  scope=srv.register_scope(sid,5)
+  self.assertEqual(srv.lookup_scope(scope,sid)["initial_revision"],5)
+  self.assertIsNone(srv.lookup_scope(scope,other))
+  self.assertIsNone(srv.lookup_scope("invalid",sid))
+ def test_scope_minimum_revision_prevents_old_turn_replay(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  srv.register(sid)
+  scope=srv.register_scope(sid,5)
+  captured=[]
+  with patch.object(srv,"wait_events",return_value={"messages":[],"revision":5,"status":"RUNNING","has_more":False}) as waiter,patch.object(srv,"result",side_effect=lambda i,v:captured.append(v)),patch.object(srv,"record"):
+   srv.dispatch({"id":17,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"scope_id":scope,"after_revision":0,"wait_ms":0}}})
+  self.assertEqual(waiter.call_args.args[1],5)
+  self.assertEqual(captured[0]["structuredContent"]["revision"],5)
  def test_invalid_session_rejected(self):
   errors=[]
   with patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):

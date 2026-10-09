@@ -11,6 +11,7 @@ STATIC_URI="ui://harr-gigacode/static-ab.html"
 STATE=pathlib.Path.home()/"codex-desktop-test/state"
 STATE.mkdir(exist_ok=True,parents=True)
 ACTIVE=STATE/"gigacode-ui-sessions.json"
+SCOPES=STATE/"gigacode-ui-invocations.json"
 OUTPUT_LOCK=threading.Lock()
 REGISTRY_LOCK=threading.Lock()
 TERMINAL={"DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"}
@@ -33,7 +34,7 @@ def tools():
  {"name":"show_gigacode_live","description":"Start a read-only GigaCode test and show its live output in an embedded panel. Only session ID/status returned to the model; intermediate transcript is app-only.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Attach another panel to an existing test session; omit to start new."},"scenario":{"type":"string","enum":["short","long_readonly"]}},"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_gigacode_ui","description":"App-only list of isolated test sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
- {"name":"poll_gigacode_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
+ {"name":"poll_gigacode_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(sid):
  with REGISTRY_LOCK:
   try: return sid in json.loads(ACTIVE.read_text())
@@ -47,6 +48,25 @@ def register(sid):
   tmp=ACTIVE.with_suffix(".tmp")
   tmp.write_text(json.dumps(ids))
   tmp.replace(ACTIVE)
+
+def register_scope(session_id, after_revision):
+ scope_id=str(uuid.uuid4())
+ with REGISTRY_LOCK:
+  try: scopes=json.loads(SCOPES.read_text())
+  except (OSError,ValueError):scopes={}
+  scopes[scope_id]={"session_id":session_id,"initial_revision":after_revision}
+  temp=SCOPES.with_suffix(".tmp")
+  temp.write_text(json.dumps(scopes))
+  temp.replace(SCOPES)
+ return scope_id
+
+def lookup_scope(scope_id,session_id):
+ with REGISTRY_LOCK:
+  try: scope=json.loads(SCOPES.read_text()).get(scope_id)
+  except (OSError,ValueError,TypeError):return None
+ if not isinstance(scope,dict) or scope.get("session_id")!=session_id:return None
+ return scope
+
 
 def restored_sessions():
  """Only this workspace's live jobs plus recent finished jobs; do not delete history."""
@@ -118,14 +138,18 @@ def dispatch(req):
       raise ValueError("cannot attach unrecognized test session")
      sid=requested
      started={"status":unbox(gc.status_tool({"session_id":sid})).get("status","UNKNOWN")}
+     first_revision=unbox(gc.messages_tool({"session_id":sid,"after_revision":0,"message_limit":1})).get("latest_revision",0)
      record("attached",session_id=sid,status=started.get("status"))
     else:
      started=unbox(gc.start_tool({"action":"start","prompt":task,"timeout_sec":180}))
      sid=started.get("session_id","")
      if not gc._validate_session_id(sid):raise ValueError("GigaCode returned invalid session")
      register(sid)
+     first_revision=0
      record("launched",session_id=sid,status=started.get("status"))
-    result(id,{"content":[{"type":"text","text":json.dumps({"session_id":sid,"status":started.get("status")})}],"structuredContent":{"session_id":sid,"status":started.get("status")},"_meta":{"ui":{"resourceUri":URI},"ui/resourceUri":URI,"openai/outputTemplate":URI}})
+    scope_id=register_scope(sid,first_revision)
+    visible={"session_id":sid,"scope_id":scope_id,"initial_revision":first_revision,"status":started.get("status")}
+    result(id,{"content":[{"type":"text","text":json.dumps(visible)}],"structuredContent":visible,"_meta":{"ui":{"resourceUri":URI},"ui/resourceUri":URI,"openai/outputTemplate":URI}})
    elif name=="panel_event_ui":
     args=p.get("arguments") or {}
     event=str(args.get("event",""))[:48]
@@ -141,7 +165,9 @@ def dispatch(req):
     sid=args.get("session_id","")
     if not isinstance(sid,str) or not gc._validate_session_id(sid) or not registered(sid):
      raise ValueError("unrecognized test session")
-    revision=max(0,int(args.get("after_revision",0)))
+    scope=lookup_scope(args.get("scope_id"),sid)
+    if scope is None:raise ValueError("unrecognized invocation scope")
+    revision=max(int(scope["initial_revision"]),int(args.get("after_revision",0)))
     wait_ms=min(15000,max(0,int(args.get("wait_ms",10000))))
     data=wait_events(sid,revision,wait_ms)
     record("app_poll",session_id=sid,count=len(data["messages"]),revision=data["revision"],status=data["status"],wait_ms=wait_ms)

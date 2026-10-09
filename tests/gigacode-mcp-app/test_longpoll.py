@@ -16,11 +16,12 @@ def request(id,method,params=None,timeout=30):
   if not ok:raise RuntimeError('timeout '+str(id))
   return results.pop(id)
 assert request(1,'initialize')['result']['serverInfo']['version']=='0.2'
-s=request(2,'tools/call',{'name':'show_gigacode_live','arguments':{}},timeout=45)['result']['structuredContent']['session_id']
+launch=request(2,'tools/call',{'name':'show_gigacode_live','arguments':{}},timeout=45)['result']['structuredContent']
+s=launch['session_id'];scope=launch['scope_id']
 print('session',s,flush=True)
 # Two concurrent requests same session; their cursors must be independent.
 for n in (3,4):
- p.stdin.write(json.dumps({'jsonrpc':'2.0','id':n,'method':'tools/call','params':{'name':'poll_gigacode_ui','arguments':{'session_id':s,'after_revision':99999,'wait_ms':3500}}})+'\n');p.stdin.flush()
+ p.stdin.write(json.dumps({'jsonrpc':'2.0','id':n,'method':'tools/call','params':{'name':'poll_gigacode_ui','arguments':{'session_id':s,'scope_id':scope,'after_revision':99999,'wait_ms':3500}}})+'\n');p.stdin.flush()
 t=time.monotonic()
 with cv:
  assert cv.wait_for(lambda:3 in results and 4 in results,12), 'parallel long-poll timed out'
@@ -31,7 +32,7 @@ print('parallel polls',a['result']['structuredContent']['status'],b['result']['s
 assert elapsed<6
 deadline=time.monotonic()+28
 while True:
- x=request(5,'tools/call',{'name':'poll_gigacode_ui','arguments':{'session_id':s,'after_revision':0,'wait_ms':3000}},timeout=10)
+ x=request(5,'tools/call',{'name':'poll_gigacode_ui','arguments':{'session_id':s,'scope_id':scope,'after_revision':0,'wait_ms':3000}},timeout=10)
  d=x['result']['structuredContent']
  if d['messages'] or d['status'] not in ('RUNNING','STARTING','PENDING') or time.monotonic()>deadline:break
 print('replay count',len(d['messages']),'revision',d['revision'],'status',d['status'])
