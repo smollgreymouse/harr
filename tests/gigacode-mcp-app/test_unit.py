@@ -23,8 +23,17 @@ class TestLivePoll(unittest.TestCase):
   self.stack.start();self.addCleanup(self.stack.stop)
  def test_model_cannot_discover_poll(self):
   tools=srv.tools()
-  self.assertEqual(tools[1]["_meta"]["ui"]["visibility"],["app"])
-  self.assertEqual(tools[0]["_meta"]["ui"]["visibility"],["model","app"])
+  self.assertEqual(next(t for t in tools if t["name"]=="panel_event_ui")["_meta"]["ui"]["visibility"],["app"])
+  self.assertEqual(next(t for t in tools if t["name"]=="show_gigacode_live")["_meta"]["ui"]["visibility"],["model","app"])
+ def test_static_ab_stays_separate_from_live_worker(self):
+  t=next(x for x in srv.tools() if x["name"]=="show_static_ab")
+  self.assertEqual(t["_meta"]["ui"]["resourceUri"],srv.STATIC_URI)
+  self.assertNotEqual(srv.STATIC_URI,srv.URI)
+  self.assertNotIn("setTimeout",srv.STATIC_HTML)
+  with patch.object(srv.gc,"start_tool") as start,patch.object(srv,"result") as result,patch.object(srv,"record"):
+   srv.dispatch({"id":7,"method":"tools/call","params":{"name":"show_static_ab","arguments":{}}})
+  start.assert_not_called()
+  self.assertEqual(result.call_args.args[1]["structuredContent"]["variant"],"static")
  def test_independent_cursors(self):
   data=[{"revision":1,"text":"first"},{"revision":2,"text":"second"},{"revision":3,"text":"third"}]
   def messages(args):

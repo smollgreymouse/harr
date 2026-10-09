@@ -7,6 +7,7 @@ os.chdir(WORK)
 spec=importlib.util.spec_from_file_location("harr_test_gigacode",str(ROOT/"common/mcp/gigacode_server.py"))
 gc=importlib.util.module_from_spec(spec);spec.loader.exec_module(gc)
 URI="ui://harr-gigacode/live.html"
+STATIC_URI="ui://harr-gigacode/static-ab.html"
 STATE=pathlib.Path.home()/"codex-desktop-test/state"
 STATE.mkdir(exist_ok=True,parents=True)
 ACTIVE=STATE/"gigacode-ui-sessions.json"
@@ -17,6 +18,7 @@ MAX_RESTORED_ACTIVE=8
 MAX_RESTORED_FINISHED=3
 LOG=STATE/"gigacode-ui-server.jsonl"
 HTML=(ROOT/"tests/gigacode-mcp-app/panel.html").read_text()
+STATIC_HTML=(ROOT/"tests/gigacode-mcp-app/static-ab.html").read_text()
 def record(event,**data):
  with LOG.open("a") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
 def result(id,obj):
@@ -27,6 +29,7 @@ def unbox(r):
  return json.loads(r["content"][0]["text"])
 def tools():
  return [
+ {"name":"show_static_ab","description":"Render a completely static MCP App for A/B layout diagnosis; no worker, scripts or polling.","inputSchema":{"type":"object","properties":{},"additionalProperties":False},"_meta":{"ui":{"resourceUri":STATIC_URI,"visibility":["model","app"]},"ui/resourceUri":STATIC_URI,"openai/outputTemplate":STATIC_URI}},
  {"name":"show_gigacode_live","description":"Start a read-only GigaCode test and show its live output in an embedded panel. Only session ID/status returned to the model; intermediate transcript is app-only.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Attach another panel to an existing test session; omit to start new."},"scenario":{"type":"string","enum":["short","long_readonly"]}},"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_gigacode_ui","description":"App-only list of isolated test sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
@@ -95,7 +98,10 @@ def dispatch(req):
   elif method=="tools/list":result(id,{"tools":tools()})
   elif method=="tools/call":
    name=p.get("name")
-   if name=="show_gigacode_live":
+   if name=="show_static_ab":
+    record("static_ab_opened")
+    result(id,{"content":[{"type":"text","text":"Static A/B panel opened; no GigaCode worker."}],"structuredContent":{"variant":"static","status":"READY"},"_meta":{"ui":{"resourceUri":STATIC_URI},"ui/resourceUri":STATIC_URI,"openai/outputTemplate":STATIC_URI}})
+   elif name=="show_gigacode_live":
     task=("Прочитай README.md в текущем каталоге. Укажи, что это Harr, назови два раздела и верни структурированный DONE. Ничего не изменяй, не коммить, не запускай опасных команд. Перед финальным ответом коротко сообщи о выполненных шагах.")
     args=p.get("arguments") or {}
     scenario=args.get("scenario","short")
@@ -143,8 +149,10 @@ def dispatch(req):
    else:err(id,"unknown tool")
   elif method=="resources/read":
    record("resource_read",uri=p.get("uri"))
-   result(id,{"contents":[{"uri":URI,"mimeType":"text/html;profile=mcp-app","text":HTML}]})
-  elif method=="resources/list":result(id,{"resources":[{"uri":URI,"name":"GigaCode live","mimeType":"text/html;profile=mcp-app"}]})
+   uri=p.get("uri")
+   if uri not in (URI,STATIC_URI):raise ValueError("unknown resource")
+   result(id,{"contents":[{"uri":uri,"mimeType":"text/html;profile=mcp-app","text":STATIC_HTML if uri==STATIC_URI else HTML}]})
+  elif method=="resources/list":result(id,{"resources":[{"uri":URI,"name":"GigaCode live","mimeType":"text/html;profile=mcp-app"},{"uri":STATIC_URI,"name":"Static A/B probe","mimeType":"text/html;profile=mcp-app"}]})
   elif method=="resources/templates/list":result(id,{"resourceTemplates":[]})
   elif method=="ping":result(id,{})
   else:err(id,"unsupported method")
