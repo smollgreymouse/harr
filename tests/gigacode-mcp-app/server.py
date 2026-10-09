@@ -26,6 +26,8 @@ def unbox(r):
 def tools():
  return [
  {"name":"show_gigacode_live","description":"Start a read-only GigaCode test and show its live output in an embedded panel. Only session ID/status returned to the model; intermediate transcript is app-only.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Attach another panel to an existing test session; omit to start new."},"scenario":{"type":"string","enum":["short","long_readonly"]}},"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
+ {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"list_gigacode_ui","description":"App-only list of isolated test sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"poll_gigacode_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(sid):
  with REGISTRY_LOCK:
@@ -92,6 +94,17 @@ def dispatch(req):
      register(sid)
      record("launched",session_id=sid,status=started.get("status"))
     result(id,{"content":[{"type":"text","text":json.dumps({"session_id":sid,"status":started.get("status")})}],"structuredContent":{"session_id":sid,"status":started.get("status")},"_meta":{"ui":{"resourceUri":URI},"ui/resourceUri":URI,"openai/outputTemplate":URI}})
+   elif name=="panel_event_ui":
+    args=p.get("arguments") or {}
+    event=str(args.get("event",""))[:48]
+    pid=str(args.get("panel_id",""))[:80]
+    record("panel_lifecycle",panel_id=pid,event=event,session_id=str(args.get("session_id",""))[:80])
+    result(id,{"content":[{"type":"text","text":"ok"}],"structuredContent":{"ok":True}})
+   elif name=="list_gigacode_ui":
+    with REGISTRY_LOCK:
+     try: ids=json.loads(ACTIVE.read_text())
+     except (OSError,ValueError):ids=[]
+    result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
    elif name=="poll_gigacode_ui":
     args=p.get("arguments") or {}
     sid=args.get("session_id","")
