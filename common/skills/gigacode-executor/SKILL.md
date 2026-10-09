@@ -94,6 +94,20 @@ Until a terminal handoff:
 - do **not** create review/check scripts;
 - do **not** inspect GigaCode chat/debug/runtime files or process internals.
 
+**Important: `wait` is an action of `gigacode::gigacode`, not a standalone MCP tool.** Do not search for a separate `wait` tool. Call it through `ctx_tools`:
+
+```text
+action = "call"
+tool = "gigacode::gigacode"
+arguments = {
+  "action": "wait",
+  "session_id": "<session_id from start>",
+  "wait_timeout_sec": 120
+}
+```
+
+For a nonblocking snapshot use the same downstream tool with `arguments.action = "status"`. If only `ctx_tools` is shown in the tool list, that is expected.
+
 The parent chooses between two valid waiting modes:
 
 - **Do useful independent work:** if there is real planner/product work outside the delegated scope, keep doing it. When the result is later needed, use one nonblocking `status` snapshot or switch to `wait`.
