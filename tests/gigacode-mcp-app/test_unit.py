@@ -127,6 +127,32 @@ class TestLivePoll(unittest.TestCase):
    srv.dispatch({'id':99,'method':'tools/call','params':{'name':'panel_event_ui','arguments':{'panel_id':'p-1','event':'created','session_id':'sid-1'}}})
   self.assertTrue(any(e=='panel_lifecycle' and d['lifecycle_event']=='created' for e,d in captured))
   out.assert_called_once()
+ def test_restoration_scoped_sorted_and_limited(self):
+  ids=[f"{i:08x}-1111-1111-1111-111111111111" for i in range(17)]
+  srv.ACTIVE.write_text(json.dumps(ids))
+  class FakePath:
+   def __init__(self,n):self.n=n
+   def stat(self):
+    from types import SimpleNamespace
+    return SimpleNamespace(st_mtime=self.n)
+  def state(sid):
+   n=int(sid[:8],16)
+   if n==16:return None # belongs to a different workspace
+   return {"phase":"running" if n<10 else "finished","handoff":{"status":"DONE"} if n>=10 else None}
+  with patch.object(srv.gc,"_load_state",side_effect=state),patch.object(srv.gc,"_state_path",side_effect=lambda sid:FakePath(int(sid[:8],16))):
+   selected=srv.restored_sessions()
+  self.assertEqual(selected,ids[9:1:-1]+ids[15:12:-1])
+  self.assertNotIn(ids[16],selected)
+  self.assertEqual(len(selected),11)
+ def test_restoration_does_not_remove_history(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  srv.ACTIVE.write_text(json.dumps([sid]))
+  with patch.object(srv.gc,"_load_state",return_value=None):
+   self.assertEqual(srv.restored_sessions(),[])
+  self.assertEqual(json.loads(srv.ACTIVE.read_text()),[sid])
+ def test_restoration_handles_corrupted_registry(self):
+  srv.ACTIVE.write_text('{broken')
+  self.assertEqual(srv.restored_sessions(),[])
  def test_invalid_session_rejected(self):
   errors=[]
   with patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):

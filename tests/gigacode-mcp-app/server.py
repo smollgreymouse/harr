@@ -13,6 +13,8 @@ ACTIVE=STATE/"gigacode-ui-sessions.json"
 OUTPUT_LOCK=threading.Lock()
 REGISTRY_LOCK=threading.Lock()
 TERMINAL={"DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"}
+MAX_RESTORED_ACTIVE=8
+MAX_RESTORED_FINISHED=3
 LOG=STATE/"gigacode-ui-server.jsonl"
 HTML=(ROOT/"tests/gigacode-mcp-app/panel.html").read_text()
 def record(event,**data):
@@ -42,6 +44,30 @@ def register(sid):
   tmp=ACTIVE.with_suffix(".tmp")
   tmp.write_text(json.dumps(ids))
   tmp.replace(ACTIVE)
+
+def restored_sessions():
+ """Only this workspace's live jobs plus recent finished jobs; do not delete history."""
+ with REGISTRY_LOCK:
+  try: ids=json.loads(ACTIVE.read_text())
+  except (OSError,ValueError): ids=[]
+ if not isinstance(ids,list): return []
+ active=[]
+ finished=[]
+ for sid in dict.fromkeys(x for x in ids if isinstance(x,str)):
+  if not gc._validate_session_id(sid): continue
+  state=gc._load_state(sid)
+  # gc._load_state resolves under WORKSPACE_KEY, never in another workspace.
+  if not isinstance(state,dict): continue
+  state_path=gc._state_path(sid)
+  try: modified=state_path.stat().st_mtime
+  except OSError: continue
+  status=(state.get("handoff") or {}).get("status") if state.get("phase")=="finished" else "RUNNING"
+  entry=(modified,sid)
+  (finished if status in TERMINAL else active).append(entry)
+ active.sort(reverse=True)
+ finished.sort(reverse=True)
+ return [sid for _,sid in active[:MAX_RESTORED_ACTIVE]+finished[:MAX_RESTORED_FINISHED]]
+
 
 def wait_events(sid,revision,wait_ms):
  """Bounded server-side long poll. Independent cursor and deadline per panel."""
@@ -101,9 +127,8 @@ def dispatch(req):
     record("panel_lifecycle",panel_id=pid,lifecycle_event=event,session_id=str(args.get("session_id",""))[:80])
     result(id,{"content":[{"type":"text","text":"ok"}],"structuredContent":{"ok":True}})
    elif name=="list_gigacode_ui":
-    with REGISTRY_LOCK:
-     try: ids=json.loads(ACTIVE.read_text())
-     except (OSError,ValueError):ids=[]
+    ids=restored_sessions()
+    record("restored_list",sessions=len(ids))
     result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
    elif name=="poll_gigacode_ui":
     args=p.get("arguments") or {}
