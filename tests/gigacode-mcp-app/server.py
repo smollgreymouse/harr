@@ -13,7 +13,6 @@ ACTIVE=STATE/"gigacode-ui-sessions.json"
 OUTPUT_LOCK=threading.Lock()
 REGISTRY_LOCK=threading.Lock()
 TERMINAL={"DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"}
-LONG_POLL_SEC=10.0
 LOG=STATE/"gigacode-ui-server.jsonl"
 HTML=(ROOT/"tests/gigacode-mcp-app/panel.html").read_text()
 def record(event,**data):
@@ -26,7 +25,7 @@ def unbox(r):
  return json.loads(r["content"][0]["text"])
 def tools():
  return [
- {"name":"show_gigacode_live","description":"Start a read-only GigaCode test and show its live output in an embedded panel. Only session ID/status returned to the model; intermediate transcript is app-only.","inputSchema":{"type":"object","properties":{},"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
+ {"name":"show_gigacode_live","description":"Start a read-only GigaCode test and show its live output in an embedded panel. Only session ID/status returned to the model; intermediate transcript is app-only.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Attach another panel to an existing test session; omit to start new."},"scenario":{"type":"string","enum":["short","long_readonly"]}},"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"poll_gigacode_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(sid):
  with REGISTRY_LOCK:
@@ -70,10 +69,28 @@ def dispatch(req):
    name=p.get("name")
    if name=="show_gigacode_live":
     task=("Прочитай README.md в текущем каталоге. Укажи, что это Harr, назови два раздела и верни структурированный DONE. Ничего не изменяй, не коммить, не запускай опасных команд. Перед финальным ответом коротко сообщи о выполненных шагах.")
-    started=unbox(gc.start_tool({"action":"start","prompt":task,"timeout_sec":180}))
-    sid=started.get("session_id","")
-    register(sid)
-    record("launched",session_id=sid,status=started.get("status"))
+    args=p.get("arguments") or {}
+    scenario=args.get("scenario","short")
+    if scenario not in ("short","long_readonly"):raise ValueError("invalid test scenario")
+    if scenario=="long_readonly":
+     task=("Выполни подробный аудит README.md без изменений файлов. "
+           "Последовательно проверь заголовок, архитектуру, MCP-конфигурацию, Quickstart, "
+           "описание установки и troubleshooting. Для каждого пункта приводи короткое наблюдение "
+           "и проверяй соответствующие разделы README через read_file; в конце дай структурированный DONE. "
+           "Ничего не записывай и не меняй. Сделай не менее 6 отдельных шагов проверки.")
+    requested=args.get("session_id")
+    if requested:
+     if not isinstance(requested,str) or not gc._validate_session_id(requested) or not registered(requested):
+      raise ValueError("cannot attach unrecognized test session")
+     sid=requested
+     started={"status":unbox(gc.status_tool({"session_id":sid})).get("status","UNKNOWN")}
+     record("attached",session_id=sid,status=started.get("status"))
+    else:
+     started=unbox(gc.start_tool({"action":"start","prompt":task,"timeout_sec":180}))
+     sid=started.get("session_id","")
+     if not gc._validate_session_id(sid):raise ValueError("GigaCode returned invalid session")
+     register(sid)
+     record("launched",session_id=sid,status=started.get("status"))
     result(id,{"content":[{"type":"text","text":json.dumps({"session_id":sid,"status":started.get("status")})}],"structuredContent":{"session_id":sid,"status":started.get("status")},"_meta":{"ui":{"resourceUri":URI},"ui/resourceUri":URI,"openai/outputTemplate":URI}})
    elif name=="poll_gigacode_ui":
     args=p.get("arguments") or {}

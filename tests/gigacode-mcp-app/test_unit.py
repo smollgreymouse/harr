@@ -90,6 +90,37 @@ class TestLivePoll(unittest.TestCase):
    srv.dispatch({"id":7,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"after_revision":0,"wait_ms":0}}})
   self.assertNotIn("SECRET-PROGRESS",json.dumps(captured[0]["content"]))
   self.assertIn("SECRET-PROGRESS",json.dumps(captured[0]["structuredContent"]))
+ def test_attach_second_panel_does_not_launch_second_worker(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  srv.register(sid)
+  captured=[]
+  with patch.object(srv.gc,"start_tool") as start,patch.object(srv.gc,"status_tool",return_value=boxed({"status":"RUNNING"})),patch.object(srv,"result",side_effect=lambda i,v:captured.append(v)),patch.object(srv,"record"):
+   srv.dispatch({"id":11,"method":"tools/call","params":{"name":"show_gigacode_live","arguments":{"session_id":sid}}})
+  start.assert_not_called()
+  self.assertEqual(captured[0]["structuredContent"],{"session_id":sid,"status":"RUNNING"})
+ def test_attach_unknown_session_rejected(self):
+  errors=[]
+  with patch.object(srv.gc,"start_tool") as start,patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):
+   srv.dispatch({"id":12,"method":"tools/call","params":{"name":"show_gigacode_live","arguments":{"session_id":"11111111-1111-1111-1111-111111111111"}}})
+  start.assert_not_called()
+  self.assertTrue(errors)
+ def test_worker_status_exception_is_mcp_error(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  srv.register(sid)
+  errors=[]
+  with patch.object(srv.gc,"messages_tool",side_effect=OSError("transcript unavailable")),patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):
+   srv.dispatch({"id":13,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"wait_ms":100}}})
+  self.assertEqual(len(errors),1)
+  self.assertIn("unavailable",errors[0])
+ def test_status_failure_is_exposed_to_panel(self):
+  with patch.object(srv.gc,"messages_tool",return_value=boxed({"messages":[],"revision":0,"has_more":False})),patch.object(srv.gc,"status_tool",return_value=boxed({"status":"FAILED","summary":"worker stopped"})):
+   r=srv.wait_events("fake",0,10000)
+  self.assertEqual(r["status"],"FAILED")
+ def test_persisted_session_survives_registry_reload(self):
+  sid="11111111-1111-1111-1111-111111111111"
+  srv.register(sid)
+  self.assertEqual(json.loads(srv.ACTIVE.read_text()),[sid])
+  self.assertTrue(srv.registered(sid))
  def test_invalid_session_rejected(self):
   errors=[]
   with patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):

@@ -22,12 +22,18 @@ print('session',s,flush=True)
 for n in (3,4):
  p.stdin.write(json.dumps({'jsonrpc':'2.0','id':n,'method':'tools/call','params':{'name':'poll_gigacode_ui','arguments':{'session_id':s,'after_revision':99999,'wait_ms':3500}}})+'\n');p.stdin.flush()
 t=time.monotonic()
-a=request(3,'ping',timeout=7)
-b=request(4,'ping',timeout=7)
+with cv:
+ assert cv.wait_for(lambda:3 in results and 4 in results,12), 'parallel long-poll timed out'
+ a=results.pop(3);b=results.pop(4)
+assert 'result' in a and 'result' in b,(a,b)
 elapsed=round(time.monotonic()-t,2)
-print('parallel polls',a.get('result',{}).get('structuredContent',{}).get('status'),b.get('result',{}).get('structuredContent',{}).get('status'),'elapsed',elapsed,flush=True)
+print('parallel polls',a['result']['structuredContent']['status'],b['result']['structuredContent']['status'],'elapsed',elapsed,flush=True)
 assert elapsed<6
-x=request(5,'tools/call',{'name':'poll_gigacode_ui','arguments':{'session_id':s,'after_revision':0,'wait_ms':1000}},timeout=10)
-d=x['result']['structuredContent'];print('replay count',len(d['messages']),'revision',d['revision'],'status',d['status'])
-assert len(d['messages'])>0
+deadline=time.monotonic()+28
+while True:
+ x=request(5,'tools/call',{'name':'poll_gigacode_ui','arguments':{'session_id':s,'after_revision':0,'wait_ms':3000}},timeout=10)
+ d=x['result']['structuredContent']
+ if d['messages'] or d['status'] not in ('RUNNING','STARTING','PENDING') or time.monotonic()>deadline:break
+print('replay count',len(d['messages']),'revision',d['revision'],'status',d['status'])
+assert len(d['messages'])>0,d
 p.terminate()
