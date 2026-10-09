@@ -8,7 +8,7 @@ description: LeanCTX-specific troubleshooting/reference on a Harr-managed machin
 
 Use this skill only for LeanCTX-specific behavior or failures. Normal tool routing is already injected into the host's global `AGENTS.md` by Harr.
 
-Harr owns LeanCTX and currently pins `3.9.15`. Do not run upstream `lean-ctx setup`, `lean-ctx onboard`, or `lean-ctx update`.
+Harr owns LeanCTX and currently pins the Harr progress-aware LeanCTX 3.11.0 build. Do not run upstream `lean-ctx setup`, `lean-ctx onboard`, or `lean-ctx update`.
 
 Direct Harr profile:
 

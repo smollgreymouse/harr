@@ -28,13 +28,14 @@ from collections import deque
 
 
 SERVER_NAME = "gigacode"
-SERVER_VERSION = "1.10.0"
+SERVER_VERSION = "1.11.0"
 ROOT = Path.cwd().resolve()
 DEFAULT_HARD_TIMEOUT_SEC = 0
 DEFAULT_STALL_TIMEOUT_SEC = 0
 DEFAULT_WAIT_TIMEOUT_SEC = 1500
 MAX_WAIT_TIMEOUT_SEC = 1500
 WAIT_POLL_INTERVAL_SEC = 1.0
+MAX_PROGRESS_MESSAGE_CHARS = 8000
 STARTUP_CONFIRM_TIMEOUT_SEC = 20.0
 STARTUP_CONFIRM_POLL_SEC = 0.25
 POLL_INTERVAL_SEC = 5.0
@@ -395,6 +396,105 @@ def _activity_after_offset(session_id: str, offset: int) -> dict | None:
     return None
 
 
+def _assistant_messages_after_offset(session_id: str, offset: int) -> tuple[int, list[dict]]:
+    """Read newly appended assistant prose from the GigaCode JSONL transcript.
+
+    Offsets are byte offsets into the append-only file. Incomplete trailing JSONL
+    records are left unread until the next poll. Tool calls/results and
+    system/runtime records are deliberately excluded.
+    """
+    path = _find_chat_path(session_id)
+    if path is None:
+        return offset, []
+
+    messages: list[dict] = []
+    current = max(0, int(offset))
+    try:
+        size = path.stat().st_size
+        if current > size:
+            current = 0
+        with path.open("rb") as handle:
+            handle.seek(current)
+            while True:
+                line_start = handle.tell()
+                raw = handle.readline()
+                if not raw:
+                    current = handle.tell()
+                    break
+                if not raw.endswith(b"\n"):
+                    current = line_start
+                    break
+                current = handle.tell()
+                try:
+                    item = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    continue
+                if item.get("type") != "assistant":
+                    continue
+                timestamp = item.get("timestamp")
+                parts = item.get("message", {}).get("parts", [])
+                for part in parts:
+                    if not isinstance(part, dict):
+                        continue
+                    text = part.get("text")
+                    if not isinstance(text, str):
+                        continue
+                    text = text.strip()
+                    if not text:
+                        continue
+                    messages.append({"timestamp": timestamp, "text": text})
+    except OSError:
+        return offset, []
+    return current, messages
+
+
+def _stream_cursor_path(session_id: str, job_id: str) -> Path:
+    return CACHE_ROOT / f"{session_id}.{job_id}.progress.cursor"
+
+
+def _load_stream_offset(session_id: str, job_id: str, fallback: int) -> int:
+    path = _stream_cursor_path(session_id, job_id)
+    try:
+        value = int(path.read_text(encoding="utf-8").strip())
+        return max(0, value)
+    except (OSError, ValueError):
+        return max(0, int(fallback))
+
+
+def _save_stream_offset(session_id: str, job_id: str, offset: int) -> None:
+    path = _stream_cursor_path(session_id, job_id)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(str(max(0, int(offset))), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+
+
+def _is_worker_handoff_text(text: str) -> bool:
+    value = extract_json_object(text)
+    return isinstance(value, dict) and value.get("status") in {"DONE", "ESCALATE", "FAILED"}
+
+
+def _emit_progress(progress_token: object, progress: float, message: str) -> None:
+    if isinstance(progress_token, bool) or not isinstance(progress_token, (str, int)):
+        return
+    clean = message.strip()
+    if not clean:
+        return
+    if len(clean) > MAX_PROGRESS_MESSAGE_CHARS:
+        clean = clean[: MAX_PROGRESS_MESSAGE_CHARS - 1] + "…"
+    emit({
+        "jsonrpc": "2.0",
+        "method": "notifications/progress",
+        "params": {
+            "progressToken": progress_token,
+            "progress": progress,
+            "message": clean,
+        },
+    })
+
+
 def _assistant_messages(session_id: str) -> list[dict]:
     """Return only user-visible assistant prose from the recorded GigaCode chat.
 
@@ -641,7 +741,7 @@ def messages_tool(arguments: dict) -> dict:
     })
 
 
-def wait_tool(arguments: dict) -> dict:
+def wait_tool(arguments: dict, progress_token: object = None) -> dict:
     raw_sid = arguments.get("session_id")
     session_id = _validate_session_id(raw_sid)
     if session_id is None:
@@ -655,7 +755,35 @@ def wait_tool(arguments: dict) -> dict:
     deadline = time.monotonic() + wait_timeout_sec
     started = time.monotonic()
 
+    state = _load_state(session_id) or {}
+    job_id = state.get("job_id")
+    stream_enabled = (
+        not isinstance(progress_token, bool)
+        and isinstance(progress_token, (str, int))
+        and isinstance(job_id, str)
+        and bool(job_id)
+    )
+    stream_offset = 0
+    progress_seq = 0.0
+    if stream_enabled:
+        fallback = state.get("chat_start_offset")
+        if not isinstance(fallback, int) or fallback < 0:
+            fallback = _chat_size(session_id)
+        stream_offset = _load_stream_offset(session_id, job_id, fallback)
+
     while True:
+        if stream_enabled:
+            next_offset, streamed = _assistant_messages_after_offset(session_id, stream_offset)
+            for item in streamed:
+                text = item.get("text", "")
+                if not isinstance(text, str) or _is_worker_handoff_text(text):
+                    continue
+                progress_seq += 1.0
+                _emit_progress(progress_token, progress_seq, f"GigaCode: {text}")
+            if next_offset != stream_offset:
+                stream_offset = next_offset
+                _save_stream_offset(session_id, job_id, stream_offset)
+
         result = status_tool({"session_id": session_id})
         payload = json.loads(result["content"][0]["text"])
         if payload.get("status") != "RUNNING":
@@ -729,6 +857,7 @@ def run_gigacode(
     prompt: str,
     timeout_sec: int,
     job_id: str | None = None,
+    chat_start_offset: int = 0,
 ) -> tuple[int, str, str]:
     executable = shutil.which("gigacode")
     if not executable:
@@ -797,6 +926,7 @@ def run_gigacode(
                 "started_epoch": started_epoch,
                 "elapsed_sec": round(elapsed, 1),
                 "timeout_sec": timeout_sec,
+                "chat_start_offset": chat_start_offset,
                 "chat_path": str(chat_path) if chat_path else None,
                 "chat_size": chat_size,
                 "chat_age_sec": chat_age,
@@ -905,6 +1035,7 @@ def run_gigacode(
             "started_epoch": started_epoch,
             "elapsed_sec": round(elapsed, 1),
             "timeout_sec": timeout_sec,
+            "chat_start_offset": chat_start_offset,
             "exit_code": exit_code,
             "stdout_path": str(stdout_path),
             "stderr_path": str(stderr_path),
@@ -1052,6 +1183,7 @@ def launch_detached_job(
         "prompt": prompt,
         "timeout_sec": timeout_sec,
         "job_id": job_id,
+        "chat_start_offset": baseline_chat_size,
         "cwd": str(ROOT),
     }
     job_path = _job_path(session_id, job_id)
@@ -1070,6 +1202,7 @@ def launch_detached_job(
         "started_epoch": time.time(),
         "elapsed_sec": 0.0,
         "timeout_sec": timeout_sec,
+        "chat_start_offset": baseline_chat_size,
         "worker_log": str(worker_log),
     }
     _write_state(session_id, state)
@@ -1186,6 +1319,7 @@ def run_detached_job(job_path_arg: str) -> int:
         prompt = spec["prompt"]
         timeout_sec = int(spec["timeout_sec"])
         job_id = spec["job_id"]
+        chat_start_offset = int(spec.get("chat_start_offset", 0))
     except Exception as exc:
         sys.stderr.write(f"invalid detached job spec: {exc}\n")
         return 2
@@ -1211,6 +1345,7 @@ def run_detached_job(job_path_arg: str) -> int:
         prompt,
         timeout_sec,
         job_id=job_id,
+        chat_start_offset=chat_start_offset,
     )
     handoff, _ = parse_worker_handoff(output, exit_code, stderr)
     state = _load_state(session_id) or {}
@@ -1547,7 +1682,9 @@ def handle(request: dict) -> dict | None:
                         raise ValueError("wait_timeout_sec must be an integer")
                     if wait_timeout_value < 1 or wait_timeout_value > MAX_WAIT_TIMEOUT_SEC:
                         raise ValueError(f"wait_timeout_sec must be between 1 and {MAX_WAIT_TIMEOUT_SEC}")
-                result = wait_tool(arguments)
+                meta = params.get("_meta")
+                progress_token = meta.get("progressToken") if isinstance(meta, dict) else None
+                result = wait_tool(arguments, progress_token=progress_token)
             elif action == "cancel":
                 if not isinstance(arguments.get("session_id"), str):
                     raise ValueError("cancel requires session_id as a string")

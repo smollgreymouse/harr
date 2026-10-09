@@ -97,13 +97,13 @@ Until a terminal handoff:
 The parent chooses between two valid waiting modes:
 
 - **Do useful independent work:** if there is real planner/product work outside the delegated scope, keep doing it. When the result is later needed, use one nonblocking `status` snapshot or switch to `wait`.
-- **Wait for completion:** if there is no useful independent work and the current interaction needs the result, call `wait` once. The MCP bridge performs the polling internally and wakes the parent only on terminal state or bounded wait timeout.
+- **Wait for completion:** if there is no useful independent work and the current interaction needs the result, call `wait` once. The MCP bridge performs the polling internally and wakes the parent only on terminal state or bounded wait timeout. When the MCP client supplies a progress token, the bridge also streams new GigaCode assistant prose through MCP progress notifications for UI display; those progress messages are not part of the terminal tool result.
 
 Do not build a parent-model status loop when `wait` can do the waiting. A bounded `wait` timeout returns compact `RUNNING` and does **not** cancel GigaCode; the parent may wait again later.
 
 If the user interrupts while `wait` is pending, the detached GigaCode job remains the owner of the delegated scope. Resume with `status`/`wait`; do not restart implementation.
 
-If the user asks for progress while the worker is running, `messages` may be used explicitly to fetch GigaCode assistant prose. This is an opt-in transcript read, not part of normal supervision. Because `messages` is an ordinary MCP tool result, its returned prose enters the parent tool context; do not call it automatically during ordinary waiting, and never use it as a substitute for the terminal acceptance handoff. UI-only live streaming must use a separate progress/event channel rather than `messages`.
+If the user asks for progress while the worker is running and the client UI does not expose MCP progress, `messages` may be used explicitly as a fallback to fetch GigaCode assistant prose. This is an opt-in transcript read, not part of normal supervision. Because `messages` is an ordinary MCP tool result, its returned prose enters the parent tool context; do not call it automatically during ordinary waiting, and never use it as a substitute for the terminal acceptance handoff. Prefer the UI-only progress stream produced by `wait` whenever the client renders it.
 
 ## Terminal handoff
 

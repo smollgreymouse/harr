@@ -25,7 +25,7 @@ spec.loader.exec_module(server)
 # -------------------------------------------------------------------
 # 1. Version and constants
 # -------------------------------------------------------------------
-assert server.SERVER_VERSION == "1.10.0", f"got {server.SERVER_VERSION}"
+assert server.SERVER_VERSION == "1.11.0", f"got {server.SERVER_VERSION}"
 assert server.DEFAULT_HARD_TIMEOUT_SEC == 0, f"got {server.DEFAULT_HARD_TIMEOUT_SEC}"
 assert server.DEFAULT_STALL_TIMEOUT_SEC == 0, f"got {server.DEFAULT_STALL_TIMEOUT_SEC}"
 assert server.DEFAULT_WAIT_TIMEOUT_SEC == 1500
@@ -244,6 +244,112 @@ with patch.object(server, "_find_chat_path", return_value=chat_path):
     assert [m["revision"] for m in remainder_data["messages"]] == [3]
     assert remainder_data["revision"] == 3
     assert remainder_data["has_more"] is False
+
+# wait forwards only new assistant prose through MCP progress notifications.
+# Old transcript content before chat_start_offset is not replayed.
+old_prefix = (
+    json.dumps({
+        "timestamp": "old",
+        "type": "assistant",
+        "message": {"parts": [{"text": "Old message from a previous turn."}]},
+    }) + "\n"
+).encode("utf-8")
+live_rows = [
+    {"timestamp": "live1", "type": "assistant", "message": {"parts": [
+        {"text": "Working on the current turn."},
+        {"functionCall": {"name": "read_file", "args": {"path": "x"}}},
+    ]}},
+    {"timestamp": "live2", "type": "tool_result", "message": {"parts": [
+        {"functionResponse": {"name": "read_file", "response": {"output": "tool noise"}}},
+    ]}},
+    {"timestamp": "live3", "type": "assistant", "message": {"parts": [
+        {"text": "Current turn tests passed."},
+    ]}},
+    {"timestamp": "live4", "type": "assistant", "message": {"parts": [
+        {"text": "```json\n" + json.dumps({
+            "status": "DONE",
+            "summary": "final",
+            "changed": [],
+            "verified": [],
+            "escalation": None,
+            "blockers": [],
+        }) + "\n```"},
+    ]}},
+]
+live_chat = Path(_sandbox.name) / "live-chat.jsonl"
+with live_chat.open("wb") as handle:
+    handle.write(old_prefix)
+    for row in live_rows:
+        handle.write((json.dumps(row) + "\n").encode("utf-8"))
+
+server._write_state(fake_sid, {
+    "phase": "running",
+    "session_id": fake_sid,
+    "job_id": fake_jid,
+    "pid": os.getpid(),
+    "elapsed_sec": 7.0,
+    "timeout_sec": 0,
+    "chat_start_offset": len(old_prefix),
+})
+
+progress_notifications = []
+terminal_result = server.text_result({
+    "session_id": fake_sid,
+    "status": "DONE",
+    "summary": "terminal",
+})
+with patch.object(server, "_find_chat_path", return_value=live_chat),      patch.object(server, "emit", side_effect=lambda item: progress_notifications.append(item)),      patch.object(server, "status_tool", return_value=terminal_result):
+    streamed_wait = server.wait_tool(
+        {"session_id": fake_sid, "wait_timeout_sec": 10},
+        progress_token="ui-progress-1",
+    )
+
+streamed_data = json.loads(streamed_wait["content"][0]["text"])
+assert streamed_data["status"] == "DONE"
+assert [item["params"]["message"] for item in progress_notifications] == [
+    "GigaCode: Working on the current turn.",
+    "GigaCode: Current turn tests passed.",
+]
+assert [item["params"]["progress"] for item in progress_notifications] == [1.0, 2.0]
+assert all(item["params"]["progressToken"] == "ui-progress-1" for item in progress_notifications)
+assert "Old message" not in json.dumps(progress_notifications)
+assert "tool noise" not in json.dumps(progress_notifications)
+assert '"status": "DONE"' not in json.dumps(progress_notifications)
+
+# Cursor persists per job: a second wait emits nothing until more transcript is appended.
+progress_notifications.clear()
+with patch.object(server, "_find_chat_path", return_value=live_chat),      patch.object(server, "emit", side_effect=lambda item: progress_notifications.append(item)),      patch.object(server, "status_tool", return_value=terminal_result):
+    second_wait = server.wait_tool(
+        {"session_id": fake_sid, "wait_timeout_sec": 10},
+        progress_token="ui-progress-2",
+    )
+assert json.loads(second_wait["content"][0]["text"])["status"] == "DONE"
+assert progress_notifications == []
+
+# tools/call forwards the request-scoped MCP progress token into wait_tool.
+captured_progress_tokens = []
+original_wait_tool = server.wait_tool
+server.wait_tool = lambda arguments, progress_token=None: (
+    captured_progress_tokens.append(progress_token)
+    or server.text_result({"session_id": arguments["session_id"], "status": "DONE", "summary": "mock"})
+)
+wait_via_handle = server.handle({
+    "jsonrpc": "2.0",
+    "id": 19,
+    "method": "tools/call",
+    "params": {
+        "name": "gigacode",
+        "_meta": {"progressToken": "client-progress-token"},
+        "arguments": {
+            "action": "wait",
+            "session_id": fake_sid,
+            "wait_timeout_sec": 1,
+        },
+    },
+})
+server.wait_tool = original_wait_tool
+assert wait_via_handle is not None
+assert captured_progress_tokens == ["client-progress-token"]
 
 assert server._request_cancel(fake_sid, fake_jid) is True
 assert server._check_cancel_request(fake_sid, fake_jid) is True

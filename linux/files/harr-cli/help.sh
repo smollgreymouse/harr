@@ -42,7 +42,7 @@ CLI:
   harr uninstall
 
 Managed baseline:
-  LeanCTX 3.9.15 (required)
+  LeanCTX 3.11.0 Harr build (required)
   CodeGraph (required; spawned by LeanCTX over stdio)
   optional registry MCPs are installed only when selected
   compact MCP-aware global AGENTS policy

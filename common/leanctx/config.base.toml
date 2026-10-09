@@ -1,6 +1,6 @@
 # Managed by Harr.
 # LeanCTX profile pinned for Harr's MCP gateway stack.
-# Target: LeanCTX v3.9.15.
+# Target: Harr progress-aware LeanCTX v3.11.0.
 
 shadow_mode = true
 permission_inheritance = "off"
@@ -75,10 +75,6 @@ raw_commands = [
     "jq",
 ]
 threshold_chars = 800
-
-[addons]
-# Harr's managed stdio MCPs need network access (GigaCode authentication/model API).
-sandbox = "off"
 
 [gateway]
 enabled = true

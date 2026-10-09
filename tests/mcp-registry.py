@@ -126,7 +126,7 @@ assert gigacode["transport"] == "stdio"
 assert gigacode["lifecycle"] == "on-demand"
 assert gigacode["runtime"] == {
     "kind": "bundled-python",
-    "version": "1.10.0",
+    "version": "1.11.0",
     "script": "gigacode_server.py",
     "requires_command": "gigacode",
     "args": [],

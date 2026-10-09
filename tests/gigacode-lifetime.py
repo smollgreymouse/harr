@@ -100,6 +100,7 @@ def run_gigacode_with_mocks(
     fake_chat_path: Path | None = None,
     cancel_after_tick: int | None = None,
     job_id: str | None = "test-job-001",
+    chat_start_offset: int = 0,
 ) -> tuple[int, str, str]:
     """Execute run_gigacode with mocked Popen, time, chat, and optional cancel.
 
@@ -202,6 +203,7 @@ def run_gigacode_with_mocks(
             "test prompt",
             timeout_sec,
             job_id=job_id,
+            chat_start_offset=chat_start_offset,
         )
     finally:
         server.time.monotonic = original_server_monotonic
@@ -238,6 +240,7 @@ with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
         timeout_sec=0,
         fake_time=ft,
         process_ticks_before_exit=150,
+        chat_start_offset=123,
     )
     check("A1: default 0 timeout exits cleanly after >2000s simulated",
           exit_code == 0,
@@ -249,6 +252,9 @@ with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
           state is not None and state.get("job_id") == "test-job-001")
     check("A3: state elapsed_sec is tracked",
           state is not None and state.get("elapsed_sec", 0) > 0)
+    check("A4: completed state preserves chat_start_offset",
+          state is not None and state.get("chat_start_offset") == 123,
+          f"got chat_start_offset={state.get('chat_start_offset') if state else None}")
 
 # -----------------------------------------------------------------------
 # B: Explicit positive timeout_sec terminates at deadline

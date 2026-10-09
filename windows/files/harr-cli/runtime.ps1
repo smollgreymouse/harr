@@ -45,7 +45,7 @@ function Write-LeanWrapper {
 function Install-LeanCtx {
     $arch = $env:PROCESSOR_ARCHITECTURE
     if ($arch -notin @('AMD64','x86_64')) { throw "Harr Windows currently supports x86_64 LeanCTX only; architecture: $arch" }
-    $versionDir = Join-Path $VendorDir "lean-ctx\$LeanVersion"
+    $versionDir = Join-Path $VendorDir "lean-ctx\$LeanBuild"
     $real = Join-Path $versionDir 'lean-ctx.exe'
     if (Test-Path $real) {
         $versionOutput = & $real --version 2>$null
@@ -56,7 +56,7 @@ function Install-LeanCtx {
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
         $assetName = 'lean-ctx-x86_64-pc-windows-msvc.zip'
-        $base = "https://github.com/yvgude/lean-ctx/releases/download/v$LeanVersion"
+        $base = "https://github.com/$LeanRepo/releases/download/$LeanReleaseTag"
         $archive = Join-Path $tmp $assetName
         $sums = Join-Path $tmp 'SHA256SUMS'
         Invoke-WebRequest -Uri "$base/$assetName" -OutFile $archive
@@ -113,9 +113,9 @@ function Secret-Command([string]$Action, [string]$Name = '') {
 }
 
 function Components-Status {
-    $real = Join-Path $VendorDir "lean-ctx\$LeanVersion\lean-ctx.exe"
+    $real = Join-Path $VendorDir "lean-ctx\$LeanBuild\lean-ctx.exe"
     $leanState = if (Test-Path $real) { 'installed' } else { 'missing' }
-    Write-Host "leanctx $LeanVersion $leanState"
+    Write-Host "leanctx $LeanBuild $leanState (engine $LeanVersion)"
     foreach ($line in @(Manager-Lines @('components','--npm-prefix',$NpmPrefix))) { Write-Host $line }
 }
 

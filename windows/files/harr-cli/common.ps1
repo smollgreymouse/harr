@@ -2,7 +2,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:HarrVersion = '1.0.0'
-$script:LeanVersion = '3.9.15'
+$script:LeanVersion = '3.11.0'
+$script:LeanBuild = '3.11.0-harr-progress.1'
+$script:LeanReleaseTag = 'harr-v3.11.0-progress.1'
+$script:LeanRepo = 'smollgreymouse/lean-ctx'
 $script:UserHome = if ($env:HARR_HOME) { $env:HARR_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $script:LocalRoot = if ($env:HARR_LOCALAPPDATA) { $env:HARR_LOCALAPPDATA } elseif ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $UserHome 'AppData\Local' }
 $script:ConfigHome = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $UserHome '.config' }
