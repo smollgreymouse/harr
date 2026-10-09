@@ -23,6 +23,17 @@ class TestLivePoll(unittest.TestCase):
   self.stack.start();self.addCleanup(self.stack.stop)
   scope_patch=patch.object(srv,"SCOPES",pathlib.Path(self.t.name)/"scopes.json")
   scope_patch.start();self.addCleanup(scope_patch.stop)
+ def test_owner_identity_changes_on_process_exit(self):
+  import subprocess, sys
+  identity=srv.gc._owner_identity(__import__("os").getpid())
+  if identity is None:self.skipTest("Linux owner tracking only")
+  live={"pid":__import__("os").getpid(),"start_ticks":identity}
+  self.assertTrue(srv.gc._owner_alive(live))
+  self.assertFalse(srv.gc._owner_alive({**live,"start_ticks":"-1"}))
+  proc=subprocess.Popen([sys.executable,"-c","pass"])
+  pid=proc.pid
+  proc.wait(timeout=3)
+  self.assertFalse(srv.gc._owner_alive({"pid":pid,"start_ticks":"-1"}))
  def test_model_cannot_discover_poll(self):
   tools=srv.tools()
   self.assertEqual(next(t for t in tools if t["name"]=="panel_event_ui")["_meta"]["ui"]["visibility"],["app"])

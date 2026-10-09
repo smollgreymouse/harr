@@ -858,6 +858,7 @@ def run_gigacode(
     timeout_sec: int,
     job_id: str | None = None,
     chat_start_offset: int = 0,
+    owner: dict | None = None,
 ) -> tuple[int, str, str]:
     executable = shutil.which("gigacode")
     if not executable:
@@ -954,6 +955,14 @@ def run_gigacode(
                     session_id,
                     f"STALL turn={turn_key} no_progress={stall_elapsed:.1f}s (informational, not killed)",
                 )
+
+            # A detached worker must not outlive its owning MCP process.
+            if not _owner_alive(owner):
+                _append_runtime_log(session_id, f"OWNER_LOST job={job_id} pid={process.pid}")
+                _terminate_process_tree(process)
+                _write_state(session_id, {**state, "phase": "cancelled",
+                         "exit_code": -15, "cancel_reason": "owner_disconnected"})
+                return -15, "", "GigaCode cancelled: owning MCP process exited."
 
             # Check for external cancel request
             if job_id is not None and _check_cancel_request(session_id, job_id):
@@ -1164,6 +1173,24 @@ def _cleanup_control(session_id: str, job_id: str) -> None:
         pass
 
 
+def _owner_identity(pid: int) -> str | None:
+    """Linux process start time protects against PID reuse."""
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        return stat.rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _owner_alive(owner: dict | None) -> bool:
+    if not owner:
+        return True  # Legacy clients have no owner contract.
+    identity = _owner_identity(owner["pid"])
+    return identity is not None and identity == owner["start_ticks"]
+
+
 def launch_detached_job(
     session_id: str,
     session_args: list[str],
@@ -1186,6 +1213,11 @@ def launch_detached_job(
         "chat_start_offset": baseline_chat_size,
         "cwd": str(ROOT),
     }
+    if sys.platform.startswith("linux"):
+        identity = _owner_identity(os.getpid())
+        if identity is None:
+            raise RuntimeError("cannot establish GigaCode MCP owner identity")
+        spec["owner"] = {"pid": os.getpid(), "start_ticks": identity}
     job_path = _job_path(session_id, job_id)
     job_path.write_text(
         json.dumps(spec, ensure_ascii=False, separators=(",", ":")),
@@ -1320,6 +1352,7 @@ def run_detached_job(job_path_arg: str) -> int:
         timeout_sec = int(spec["timeout_sec"])
         job_id = spec["job_id"]
         chat_start_offset = int(spec.get("chat_start_offset", 0))
+        owner = spec.get("owner")
     except Exception as exc:
         sys.stderr.write(f"invalid detached job spec: {exc}\n")
         return 2
@@ -1346,6 +1379,7 @@ def run_detached_job(job_path_arg: str) -> int:
         timeout_sec,
         job_id=job_id,
         chat_start_offset=chat_start_offset,
+        owner=owner,
     )
     handoff, _ = parse_worker_handoff(output, exit_code, stderr)
     state = _load_state(session_id) or {}
