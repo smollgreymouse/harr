@@ -958,10 +958,28 @@ def run_gigacode(
 
             # A detached worker must not outlive its owning MCP process.
             if not _owner_alive(owner):
-                _append_runtime_log(session_id, f"OWNER_LOST job={job_id} pid={process.pid}")
+                observed_start = _owner_identity(owner["pid"]) if owner else None
+                evidence = {
+                    "event": "MCP_OWNER_LOST",
+                    "classification": "owner_disappeared_possible_bridge_restart",
+                    "timestamp_epoch": time.time(),
+                    "session_id": session_id,
+                    "job_id": job_id,
+                    "turn": turn_key,
+                    "owner_pid": owner["pid"] if owner else None,
+                    "owner_start_ticks": owner["start_ticks"] if owner else None,
+                    "observed_start_ticks": observed_start,
+                    "gigacode_pid": process.pid,
+                    "reason": "owner_pid_missing" if observed_start is None else "owner_pid_reused",
+                }
+                # Persist before termination: this record survives a worker crash.
+                _append_runtime_log(session_id, json.dumps(evidence, sort_keys=True))
+                _write_state(session_id, {**state, "phase": "cancelling",
+                              "cancel_reason": "owner_disconnected", "owner_loss": evidence})
                 _terminate_process_tree(process)
                 _write_state(session_id, {**state, "phase": "cancelled",
-                         "exit_code": -15, "cancel_reason": "owner_disconnected"})
+                              "exit_code": -15, "cancel_reason": "owner_disconnected",
+                              "owner_loss": evidence})
                 return -15, "", "GigaCode cancelled: owning MCP process exited."
 
             # Check for external cancel request

@@ -30,5 +30,10 @@ class OwnerTest(unittest.TestCase):
     self.assertFalse(th.is_alive(),"worker did not stop after owner loss")
     self.assertEqual(result[0][0],-15)
     self.assertEqual(state.get("cancel_reason"),"owner_disconnected")
+    evidence=state["owner_loss"]
+    self.assertEqual(evidence["event"],"MCP_OWNER_LOST")
+    self.assertEqual(evidence["owner_pid"],os.getpid())
+    self.assertEqual(evidence["reason"],"owner_pid_reused")
+    self.assertEqual(evidence["classification"],"owner_disappeared_possible_bridge_restart")
     with self.assertRaises(ProcessLookupError):os.kill(child,0)
 if __name__=="__main__":unittest.main()
