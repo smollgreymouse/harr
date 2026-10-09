@@ -98,7 +98,7 @@ def dispatch(req):
     args=p.get("arguments") or {}
     event=str(args.get("event",""))[:48]
     pid=str(args.get("panel_id",""))[:80]
-    record("panel_lifecycle",panel_id=pid,event=event,session_id=str(args.get("session_id",""))[:80])
+    record("panel_lifecycle",panel_id=pid,lifecycle_event=event,session_id=str(args.get("session_id",""))[:80])
     result(id,{"content":[{"type":"text","text":"ok"}],"structuredContent":{"ok":True}})
    elif name=="list_gigacode_ui":
     with REGISTRY_LOCK:

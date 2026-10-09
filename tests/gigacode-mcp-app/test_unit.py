@@ -121,6 +121,12 @@ class TestLivePoll(unittest.TestCase):
   srv.register(sid)
   self.assertEqual(json.loads(srv.ACTIVE.read_text()),[sid])
   self.assertTrue(srv.registered(sid))
+ def test_lifecycle_event_logged_without_error(self):
+  captured=[]
+  with patch.object(srv,'record',side_effect=lambda event,**kwargs:captured.append((event,kwargs))),patch.object(srv,'result') as out:
+   srv.dispatch({'id':99,'method':'tools/call','params':{'name':'panel_event_ui','arguments':{'panel_id':'p-1','event':'created','session_id':'sid-1'}}})
+  self.assertTrue(any(e=='panel_lifecycle' and d['lifecycle_event']=='created' for e,d in captured))
+  out.assert_called_once()
  def test_invalid_session_rejected(self):
   errors=[]
   with patch.object(srv,"err",side_effect=lambda i,e:errors.append(str(e))),patch.object(srv,"record"):
