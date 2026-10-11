@@ -30,6 +30,7 @@
 - `DONE` means contract acceptance from the structured self-verification handoff, not an independent full code review. Missing evidence goes back to the same GigaCode session via `resume`; parent source/artifact inspection requires a concrete exception defined by `$gigacode-executor`.
 <!-- harr-mcp:gigacode:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
+- For code, locate symbols/structure with CodeGraph, then `{{CTX_READ}}` only for needed line ranges (`lines=`); avoid whole-file reads when scope is known. If output says `truncated`, read missing relevant ranges before drawing conclusions. Keep the 4096-token LeanCTX budget.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
 - Use `{{CTX_CALL}}` only for a known, non-editing LeanCTX capability with no direct `ctx_*` route. Never use it to edit workspace files or discover edit/patch tools; use the native host editor directly. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
 <!-- harr-tool-policy:end -->
