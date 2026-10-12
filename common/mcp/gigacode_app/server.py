@@ -5,7 +5,6 @@ ROOT=pathlib.Path(__file__).resolve().parents[3]
 spec=importlib.util.spec_from_file_location("harr_gigacode_app_backend",str(ROOT/"common/mcp/gigacode_server.py"))
 gc=importlib.util.module_from_spec(spec);spec.loader.exec_module(gc)
 URI="ui://harr-gigacode/live.html"
-STATIC_URI="ui://harr-gigacode/static-ab.html"
 STATE=pathlib.Path.home()/".local/state/harr/gigacode-app"
 STATE.mkdir(exist_ok=True,parents=True)
 ACTIVE=STATE/"gigacode-ui-sessions.json"
@@ -17,7 +16,6 @@ MAX_RESTORED_ACTIVE=8
 MAX_RESTORED_FINISHED=3
 LOG=STATE/"gigacode-ui-server.jsonl"
 HTML=(pathlib.Path(__file__).with_name("panel.html")).read_text()
-STATIC_HTML=(pathlib.Path(__file__).with_name("static-ab.html")).read_text()
 def record(event,**data):
  with LOG.open("a") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
 def result(id,obj):
@@ -28,7 +26,6 @@ def unbox(r):
  return json.loads(r["content"][0]["text"])
 def tools():
  return [
- {"name":"show_static_ab","description":"Render a completely static MCP App for A/B layout diagnosis; no worker, scripts or polling.","inputSchema":{"type":"object","properties":{},"additionalProperties":False},"_meta":{"ui":{"resourceUri":STATIC_URI,"visibility":["model","app"]},"ui/resourceUri":STATIC_URI,"openai/outputTemplate":STATIC_URI}},
  {"name":"show_gigacode_live","description":"Show live GigaCode output in an HTML panel for an existing session. The transcript is app-only, not returned to the model.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Existing GigaCode session UUID to display."}},"required":["session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_gigacode_ui","description":"App-only list of displayed GigaCode sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
@@ -116,10 +113,7 @@ def dispatch(req):
   elif method=="tools/list":result(id,{"tools":tools()})
   elif method=="tools/call":
    name=p.get("name")
-   if name=="show_static_ab":
-    record("static_ab_opened")
-    result(id,{"content":[{"type":"text","text":"Static A/B panel opened; no GigaCode worker."}],"structuredContent":{"variant":"static","status":"READY"},"_meta":{"ui":{"resourceUri":STATIC_URI},"ui/resourceUri":STATIC_URI,"openai/outputTemplate":STATIC_URI}})
-   elif name=="show_gigacode_live":
+   if name=="show_gigacode_live":
     args=p.get("arguments") or {}
     requested=args.get("session_id")
     if not isinstance(requested,str) or not gc._validate_session_id(requested):
@@ -159,9 +153,9 @@ def dispatch(req):
   elif method=="resources/read":
    record("resource_read",uri=p.get("uri"))
    uri=p.get("uri")
-   if uri not in (URI,STATIC_URI):raise ValueError("unknown resource")
-   result(id,{"contents":[{"uri":uri,"mimeType":"text/html;profile=mcp-app","text":STATIC_HTML if uri==STATIC_URI else HTML}]})
-  elif method=="resources/list":result(id,{"resources":[{"uri":URI,"name":"GigaCode live","mimeType":"text/html;profile=mcp-app"},{"uri":STATIC_URI,"name":"Static A/B probe","mimeType":"text/html;profile=mcp-app"}]})
+   if uri != URI:raise ValueError("unknown resource")
+   result(id,{"contents":[{"uri":uri,"mimeType":"text/html;profile=mcp-app","text":HTML}]})
+  elif method=="resources/list":result(id,{"resources":[{"uri":URI,"name":"GigaCode live","mimeType":"text/html;profile=mcp-app"}]})
   elif method=="resources/templates/list":result(id,{"resourceTemplates":[]})
   elif method=="ping":result(id,{})
   else:err(id,"unsupported method")
