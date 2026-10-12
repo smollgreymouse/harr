@@ -313,9 +313,37 @@ def apply_with_fallback() -> None:
     print(f"Applied Harr Codex MCP registration using validated TOML fallback: {CONFIG}")
 
 
+APP_SERVER_NAME = "harr-gigacode-app"
+
+
+def apply_gigacode_app() -> None:
+    # Keep the existing LeanCTX gateway untouched: UI resources require a direct MCP.
+    app = Path(__file__).resolve().parents[1] / "mcp" / "gigacode_app" / "server.py"
+    if not app.is_file():
+        raise RuntimeError(f"GigaCode MCP App missing: {app}")
+    text = load_config_text()
+    parse_config(text)
+    text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME]).rstrip()
+    selection_path = Path.home() / ".config" / "harr" / "mcp-selection.json"
+    if selection_path.is_file():
+        import json
+        enabled = json.loads(selection_path.read_text(encoding="utf-8")).get("enabled", [])
+        if "gigacode" not in enabled:
+            write_config_text(text + "\n")
+            return
+    block = (f"[mcp_servers.{APP_SERVER_NAME}]\n"
+             f"command = {toml_basic_string(sys.executable)}\n"
+             f"args = [{toml_basic_string(str(app))}]\n"
+             "enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n")
+    text = f"{text}\n\n{block}" if text else block
+    parse_config(text)
+    write_config_text(text)
+
+
 def apply() -> None:
     binary = codex_cli()
     apply_with_codex_cli(binary) if binary else apply_with_fallback()
+    apply_gigacode_app()
 
 
 def status() -> int:
