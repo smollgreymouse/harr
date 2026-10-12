@@ -1,8 +1,9 @@
 # Harr component installation and version status.
 
 readonly HARR_LEANCTX_VERSION="3.11.0"
-readonly HARR_LEANCTX_BUILD="3.11.0-harr-progress.1"
-readonly HARR_LEANCTX_RELEASE_TAG="harr-v3.11.0-progress.1"
+readonly HARR_LEANCTX_BUILD="3.11.0-harr-progress.2"
+readonly HARR_LEANCTX_ID="harr-v3.11.0-progress.2@5f1cffb7b66c"
+readonly HARR_LEANCTX_RELEASE_TAG="harr-v3.11.0-progress.2"
 readonly HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"
 
 write_runtime_env() {
@@ -111,7 +112,7 @@ install_leanctx() {
   version_dir="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_BUILD}"
   real_bin="${version_dir}/lean-ctx"
 
-  if [[ -x "$real_bin" ]] && "$real_bin" --version 2>/dev/null | grep -q "${HARR_LEANCTX_VERSION}"; then
+  if [[ -x "$real_bin" ]] && "$real_bin" --version 2>/dev/null | grep -Fq "Harr build ${HARR_LEANCTX_ID},"; then
     printf 'LeanCTX %s already installed in Harr vendor dir.\n' "$HARR_LEANCTX_VERSION"
     install_leanctx_wrapper
     return
@@ -134,7 +135,7 @@ install_leanctx() {
   [[ -x "${tmpdir}/lean-ctx" ]] || die 'LeanCTX archive did not contain lean-ctx executable'
   install -d -m 0755 "$version_dir"
   install -m 0755 "${tmpdir}/lean-ctx" "$real_bin"
-  "$real_bin" --version | grep -q "${HARR_LEANCTX_VERSION}" || die 'installed LeanCTX version check failed'
+  "$real_bin" --version | grep -Fq "Harr build ${HARR_LEANCTX_ID}," || die 'installed LeanCTX build identity check failed'
 
   install_leanctx_wrapper
   rm -rf "$tmpdir"
@@ -153,11 +154,11 @@ cmd_install_components() {
 }
 
 cmd_components_status() {
-  local lean_actual='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_BUILD}/lean-ctx"
-  if [[ -x "$lean_real" ]]; then lean_actual="$("$lean_real" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"; fi
+  local lean_actual='' lean_identity='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_BUILD}/lean-ctx"
+  if [[ -x "$lean_real" ]]; then lean_identity="$("$lean_real" --version 2>/dev/null || true)"; lean_actual="$(printf '%s\n' "$lean_identity" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"; fi
 
   printf '%-16s %-18s %-16s %s\n' COMPONENT EXPECTED STATE INSTALLED
-  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" ok "$lean_actual";
+  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" && "$lean_identity" == *"Harr build ${HARR_LEANCTX_ID},"* ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" ok "$lean_actual";
   elif [[ -n "$lean_actual" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" version-mismatch "$lean_actual";
   else printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" missing '-'; fi
 
