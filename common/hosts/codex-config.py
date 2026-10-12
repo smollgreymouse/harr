@@ -323,6 +323,7 @@ def apply_gigacode_app() -> None:
         raise RuntimeError(f"GigaCode MCP App missing: {app}")
     text = load_config_text()
     parse_config(text)
+    text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME, "tools", "show_gigacode_live"])
     text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME]).rstrip()
     selection_path = Path.home() / ".config" / "harr" / "mcp-selection.json"
     if selection_path.is_file():
@@ -334,7 +335,10 @@ def apply_gigacode_app() -> None:
     block = (f"[mcp_servers.{APP_SERVER_NAME}]\n"
              f"command = {toml_basic_string(sys.executable)}\n"
              f"args = [{toml_basic_string(str(app))}]\n"
-             "enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n")
+             "enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n"
+             "default_tools_approval_mode = \"auto\"\n"
+             f"\n[mcp_servers.{APP_SERVER_NAME}.tools.show_gigacode_live]\n"
+             "approval_mode = \"auto\"\n")
     text = f"{text}\n\n{block}" if text else block
     parse_config(text)
     write_config_text(text)
