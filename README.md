@@ -84,7 +84,13 @@ cd harr
 ### Debian package or portable archive
 
 Linux releases include both `harr_<version>_<arch>.deb` and
-`harr-<version>-linux-<arch>.tar.gz`. The Debian package installs the Harr
+`harr-<version>-linux-<arch>.tar.gz`.
+The Harr GitHub Actions release workflow downloads the pinned LeanCTX build from
+`smollgreymouse/lean-ctx`, verifies its release SHA-256 and embedded Harr build ID,
+and bundles the verified Linux binary into both packages. Packaged setup uses this
+local binary without fetching LeanCTX again; source-checkout setup can still
+download the pinned release. Harr releases therefore wait for the corresponding
+LeanCTX release to be published first. The Debian package installs the Harr
 files and provides the `harr` CLI; it does not change global user configuration
 during `apt install`.
 

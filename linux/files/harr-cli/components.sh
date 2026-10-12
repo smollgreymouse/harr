@@ -118,6 +118,16 @@ install_leanctx() {
     return
   fi
 
+  # Packaged Harr releases ship the exact, workflow-verified LeanCTX binary.
+  local bundled="${HARR_BUNDLED_LEANCTX:-/usr/lib/harr/linux/vendor/lean-ctx/lean-ctx}"
+  if [[ -x "$bundled" ]]; then
+    "$bundled" --version | grep -Fq "Harr build ${HARR_LEANCTX_ID}," || die 'bundled LeanCTX identity mismatch'
+    install -d -m 0755 "$version_dir"
+    install -m 0755 "$bundled" "$real_bin"
+    install_leanctx_wrapper
+    return
+  fi
+
   tmpdir="$(mktemp -d)"
   archive="${tmpdir}/lean-ctx.tar.gz"
   sums="${tmpdir}/SHA256SUMS"

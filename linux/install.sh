@@ -4,6 +4,9 @@ set -Eeuo pipefail
 readonly SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly COMMON_DIR="$(cd -- "${SOURCE_DIR}/../common" && pwd)"
 readonly FILES_DIR="${SOURCE_DIR}/files"
+if [[ -x "${SOURCE_DIR}/vendor/lean-ctx/lean-ctx" ]]; then
+  export HARR_BUNDLED_LEANCTX="${SOURCE_DIR}/vendor/lean-ctx/lean-ctx"
+fi
 readonly SYSTEMD_SOURCE_DIR="${SOURCE_DIR}/systemd"
 readonly BIN_DIR="${HOME}/.local/bin"
 readonly LIBEXEC_DIR="${HOME}/.local/libexec/harr"

@@ -78,6 +78,15 @@ if(NOT EXISTS "${STAGE_ROOT}/install.sh" OR
     message(FATAL_ERROR "Harr source archive is incomplete")
 endif()
 
+if(DEFINED HARR_BUNDLED_LEANCTX AND NOT HARR_BUNDLED_LEANCTX STREQUAL "")
+    if(NOT EXISTS "${HARR_BUNDLED_LEANCTX}")
+        message(FATAL_ERROR "Pinned LeanCTX binary missing: ${HARR_BUNDLED_LEANCTX}")
+    endif()
+    file(MAKE_DIRECTORY "${STAGE_ROOT}/linux/vendor/lean-ctx")
+    file(COPY_FILE "${HARR_BUNDLED_LEANCTX}" "${STAGE_ROOT}/linux/vendor/lean-ctx/lean-ctx")
+    file(CHMOD "${STAGE_ROOT}/linux/vendor/lean-ctx/lean-ctx" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endif()
+
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E tar czf "${OUTPUT_TAR}" --format=gnutar "${NAME}"
     WORKING_DIRECTORY "${STAGE_PARENT}"
