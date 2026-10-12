@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version to build (artifact-only manual runs)'
         required: true
-        default: '0.2.0'
+        default: '0.2.1'
 
 permissions:
   contents: write
@@ -67,6 +67,7 @@ jobs:
           work=$(mktemp -d)
           gh release download "$tag" -R "$repo" -D "$work" \
             -p "lean-ctx-${target}.tar.gz" -p SHA256SUMS
+          grep -Eq "^[[:xdigit:]]{64} [ *]lean-ctx-${target}\.tar\.gz$" "$work/SHA256SUMS" || { echo "Missing pinned release checksum" >&2; exit 1; }
           ( cd "$work" && sha256sum -c SHA256SUMS --ignore-missing )
           tar -xzf "$work/lean-ctx-${target}.tar.gz" -C "$work"
           test "$("$work/lean-ctx" --version)" = \
