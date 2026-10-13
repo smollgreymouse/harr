@@ -167,11 +167,12 @@ TOOLS = [
             "Delegate a bounded implementation/verification contract to detached GigaCode. "
             "Parent decides architecture, scope, invariants and acceptance; worker owns code, "
             "build/test/fix iterations and reports compact DONE/FAILED/ESCALATE evidence. "
-            "After start/resume, do NOT poll status or messages and do NOT inspect worker work. "
-            "Use ONE wait with the default 1500s timeout; its internal polling does not wake "
-            "the parent. If RUNNING on timeout, wait again only when the result is needed; "
-            "never create a short (30-60s) model-side wait loop. status is a one-off snapshot "
-            "only; messages is opt-in for explicit user progress requests (enters model context). "
+            "After start/resume, return RUNNING/session_id to the user and remain available "
+            "for conversation and independent planning. Do not automatically wait or poll. "
+            "Use one-off status only when the user asks or a task depends on the result. "
+            "Optional wait (default 1500s) only when blocking is explicitly useful; "
+            "never create a short (30-60s) model-side wait loop. "
+            "messages is opt-in for explicit user progress requests (enters model context). "
             "The app-only live panel shows progress without model-context transcript. "
             "Keep resume for small corrections in a healthy phase; between major phases "
             "start a fresh session with a short verified-facts handoff, after the old job is "
@@ -184,7 +185,7 @@ TOOLS = [
                 "action": {
                     "type": "string",
                     "enum": ["start", "resume", "status", "messages", "wait", "cancel"],
-                    "description": "start/resume launch; wait (default 1500s) is preferred over model-side polling; status one-off; messages only on user request; cancel explicitly.",
+                    "description": "start/resume return RUNNING without blocking conversation. No automatic wait/poll. status only on demand; optional wait blocks up to 1500s; messages on request; cancel explicitly.",
                 },
                 "plan_path": {
                     "type": "string",
@@ -207,7 +208,7 @@ TOOLS = [
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 1500,
-                    "description": "Wait inside MCP, default/max 1500s (25min). Omit this parameter normally. Never set 30-60s for repeated polling. Timeout returns RUNNING, does not cancel.",
+                    "description": "Only for explicitly desired blocking wait: default/max 1500s (25min). Never short-loop polling. Timeout returns RUNNING, does not cancel.",
                 },
                 "after_revision": {
                     "type": "integer",
