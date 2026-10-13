@@ -164,18 +164,19 @@ TOOLS = [
     {
         "name": "gigacode",
         "description": (
-            "Delegate execution to persistent GigaCode as a detached job. action=start and "
-            "action=resume perform a short startup handshake and return RUNNING only after actual "
-            "GigaCode model/tool activity is observed; otherwise they return STARTING or FAILED. "
-            "action=status is a compact nonblocking public state read returning RUNNING or the final "
-            "DONE/FAILED/ESCALATE handoff without exposing executor event history. "
-            "action=messages returns only GigaCode assistant prose from the recorded session, never "
-            "tool calls/results or runtime/debug events. "
-            "action=wait blocks inside the MCP bridge until terminal state or a bounded wait timeout, "
-            "so the parent model does not wake for polling. "
-            "hard_timeout_sec=0 means unlimited and stall_elapsed_sec is informational. "
-            "action=cancel requests orderly termination of a running detached job. "
-            "plan_path avoids resending an existing plan."
+            "Delegate a bounded implementation/verification contract to detached GigaCode. "
+            "Parent decides architecture, scope, invariants and acceptance; worker owns code, "
+            "build/test/fix iterations and reports compact DONE/FAILED/ESCALATE evidence. "
+            "After start/resume, do NOT poll status or messages and do NOT inspect worker work. "
+            "Use ONE wait with the default 1500s timeout; its internal polling does not wake "
+            "the parent. If RUNNING on timeout, wait again only when the result is needed; "
+            "never create a short (30-60s) model-side wait loop. status is a one-off snapshot "
+            "only; messages is opt-in for explicit user progress requests (enters model context). "
+            "The app-only live panel shows progress without model-context transcript. "
+            "Keep resume for small corrections in a healthy phase; between major phases "
+            "start a fresh session with a short verified-facts handoff, after the old job is "
+            "terminal. Never start overlapping workers on the same scope. "
+            "Cancellation is explicit; wait timeout does not cancel the job."
         ),
         "inputSchema": {
             "type": "object",
@@ -183,7 +184,7 @@ TOOLS = [
                 "action": {
                     "type": "string",
                     "enum": ["start", "resume", "status", "messages", "wait", "cancel"],
-                    "description": "start/resume are nonblocking; status is an immediate snapshot; messages returns assistant prose; wait blocks for terminal state up to wait_timeout_sec; cancel requests orderly termination.",
+                    "description": "start/resume launch; wait (default 1500s) is preferred over model-side polling; status one-off; messages only on user request; cancel explicitly.",
                 },
                 "plan_path": {
                     "type": "string",
@@ -206,7 +207,7 @@ TOOLS = [
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 1500,
-                    "description": "For wait: maximum seconds to block inside the bridge. Default 1500. A timeout returns compact RUNNING; it does not cancel GigaCode.",
+                    "description": "Wait inside MCP, default/max 1500s (25min). Omit this parameter normally. Never set 30-60s for repeated polling. Timeout returns RUNNING, does not cancel.",
                 },
                 "after_revision": {
                     "type": "integer",
