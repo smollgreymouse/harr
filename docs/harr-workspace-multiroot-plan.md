@@ -105,14 +105,18 @@ cd /home/user/Projects/game
 harr workspace create                  # name=game, primary_root=$PWD
 harr workspace create game-dev         # name=game-dev, primary_root=$PWD
 harr workspace create game-dev --root /home/user/Projects/game
-harr workspace add-root game-dev /home/user/Projects/sprite-processing
-harr workspace remove-root game-dev /home/user/Projects/sprite-processing
+harr workspace add-root /home/user/Projects/sprite-processing      # workspace определяется по cwd
+harr workspace remove-root /home/user/Projects/sprite-processing   # аналогично
+harr workspace add-root game-dev /home/user/Projects/shared         # явное имя поддерживается
+harr workspace remove-root game-dev /home/user/Projects/shared      # явное имя поддерживается
 harr workspace show game-dev
 harr workspace use game-dev
 harr workspace diagnose game-dev
 ```
 
 **Семантика `create`:** без аргументов `primary_root` берётся из текущего рабочего каталога (`cwd`) процесса `harr`, а `name` — из имени последнего компонента канонического пути. При явном `--root` без имени имя выводится из этой папки, а при явном имени без `--root` корнем остаётся `cwd`. Путь должен существовать и пройти общую валидацию. Не создавать второй workspace молча при конфликте имени: возвращать понятную ошибку и требовать другое имя либо выбор существующего workspace. Не создавать workspace автоматически при запуске Codex или Harr — только после команды `create`.
+
+**Семантика `add-root` / `remove-root`:** если имя workspace опущено, определить его по **каноническому текущему каталогу (`cwd`)**: сначала точное совпадение с `primary_root`, затем однозначное нахождение внутри primary root (например, команда вызвана в `game/src`). Не выбирать workspace только потому, что `cwd` совпал с *additional root* другого workspace: каталог может совместно использоваться несколькими проектами. Если каталог принадлежит нескольким primary roots или определение неоднозначно — отказ с сообщением и подсказкой явного имени. Если workspace не найден — отказ с подсказкой `harr workspace create`. Не создавать workspace автоматически. Обе команды работают одинаково, отличие только в добавлении или удалении указанного root. `remove-root` не должен молча удалять primary root; для него отдельная операция смены primary root или удаления workspace. Сохраняется возможность явного синтаксиса `add-root NAME PATH` и `remove-root NAME PATH`; изменения подтверждаются и проверяются общим сервисом.
 
 Разобрать действительный режим `use`: глобальный default опасен при параллельных сессиях. В MVP предпочтительнее явно передавать workspace id в MCP операции либо запускать Codex через тонкий wrapper с session-scoped переменной/контекстом, если его жизненный цикл надёжен. `use` без корректного адресата сессии должен объяснять ограничение, а не тихо устанавливать глобальный default.
 
