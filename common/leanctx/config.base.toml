@@ -1,6 +1,6 @@
 # Managed by Harr.
 # LeanCTX profile pinned for Harr's MCP gateway stack.
-# Target: LeanCTX v3.9.15.
+# Target: Harr progress-aware LeanCTX v3.11.0.
 
 shadow_mode = true
 permission_inheritance = "off"
@@ -9,6 +9,12 @@ rules_injection = "off"
 rules_scope = "global"
 minimal_overhead = true
 bypass_hints = "off"
+
+# Harr-managed global skills live outside the active project root but must remain
+# readable through ctx_read while PathJail stays enabled.
+allow_paths = [
+{{HARR_ALLOW_PATHS}}
+]
 
 tool_profile = ""
 tools_enabled = [
@@ -73,7 +79,7 @@ threshold_chars = 800
 [gateway]
 enabled = true
 cache_ttl_secs = 300
-call_timeout_secs = 120
+call_timeout_secs = 1800
 top_n = 3
 
 # Downstream servers are rendered from common/mcp/registry.json.

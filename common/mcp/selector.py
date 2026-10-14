@@ -56,6 +56,44 @@ def parse_spec(spec: str, data: dict) -> list[str]:
     return normalize(data, [part.strip().lower() for part in value.split(",") if part.strip()])
 
 
+def optional_names(data: dict) -> list[str]:
+    return [str(item["name"]) for item in data["servers"] if item.get("required") is not True]
+
+
+def parse_mutation_targets(spec: str, data: dict) -> list[str]:
+    value = spec.strip().lower()
+    if not value:
+        raise SystemExit("MCP add/remove requires at least one name")
+    if value == "all":
+        return optional_names(data)
+    if value == "none":
+        raise SystemExit("use 'all' or explicit MCP names with add/remove")
+    parts = [part.strip().lower() for part in value.split(",") if part.strip()]
+    known = {str(item["name"]) for item in data["servers"]}
+    unknown = sorted(set(parts).difference(known))
+    if unknown:
+        raise SystemExit(f"unknown Harr MCP choice(s): {', '.join(unknown)}")
+    return parts
+
+
+def mutate_selection(data: dict, current: list[str], spec: str, operation: str) -> list[str]:
+    targets = parse_mutation_targets(spec, data)
+    required = set(required_names(data))
+    if operation == "remove":
+        forbidden = sorted(required.intersection(targets))
+        if forbidden:
+            raise SystemExit(f"cannot remove required Harr MCP(s): {', '.join(forbidden)}")
+
+    selected = set(current)
+    if operation == "add":
+        selected.update(targets)
+    elif operation == "remove":
+        selected.difference_update(targets)
+    else:
+        raise SystemExit(f"unsupported MCP mutation: {operation}")
+    return normalize(data, list(selected))
+
+
 def save_json(path: Path, payload: dict, private: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -173,8 +211,11 @@ def main() -> None:
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument("--selection", type=Path, required=True)
     parser.add_argument("--effective", type=Path, required=True)
-    parser.add_argument("--spec", help="none, all, or comma-separated MCP names")
-    parser.add_argument("--configure", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--spec", help="replace selection: none, all, or comma-separated MCP names")
+    mode.add_argument("--add", help="add optional MCP names to the current selection")
+    mode.add_argument("--remove", help="remove optional MCP names from the current selection")
+    mode.add_argument("--configure", action="store_true")
     parser.add_argument("--default", choices=["required", "all"], default="required")
     args = parser.parse_args()
 
@@ -182,13 +223,17 @@ def main() -> None:
     current = read_selection(args.selection, data, args.default)
     if args.spec is not None:
         selected = parse_spec(args.spec, data)
+    elif args.add is not None:
+        selected = mutate_selection(data, current, args.add, "add")
+    elif args.remove is not None:
+        selected = mutate_selection(data, current, args.remove, "remove")
     elif args.configure and is_interactive():
         selected = interactive_select(data, current)
     else:
         selected = current
         if args.configure and not is_interactive():
             print("Interactive MCP selection unavailable; keeping the default/current selection.", file=sys.stderr)
-            print("Use --all/-All, --mcp/-Mcp, or `harr mcp configure SPEC`.", file=sys.stderr)
+            print("Use --all/-All, --mcp/-Mcp, `harr mcp configure SPEC`, or `harr mcp add/remove NAME`.", file=sys.stderr)
     selected = normalize(data, selected)
     save_selection(args.selection, selected)
     write_effective(args.effective, data, selected)

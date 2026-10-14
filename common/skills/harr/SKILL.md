@@ -26,8 +26,6 @@ harr mcp configure
 harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
 <!-- harr-mcp:gitlab:end -->
 <!-- harr-mcp:grafana:start -->
 harr secret set grafana
@@ -35,6 +33,10 @@ harr secret set grafana
 ```
 
 LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
+
+<!-- harr-mcp:gigacode:start -->
+When the optional GigaCode executor is enabled, normal implementation delegation uses the separately installed `$gigacode-executor` skill. Load `references/gigacode.md` only for bridge setup, transport semantics, cancellation, or diagnostics.
+<!-- harr-mcp:gigacode:end -->
 
 Kubernetes is intentionally not an MCP component. `harr kube configure` captures the user's working kubectl configuration into Harr-owned private state, and `harr kubectl ...` executes the real kubectl with that managed config so isolated agent hosts do not need direct access to the original kubeconfig. Load `references/kubernetes.md` only for Kubernetes bridge setup/diagnostics.
 

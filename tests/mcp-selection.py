@@ -63,11 +63,19 @@ def check(spec: str, expected: list[str]) -> None:
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
-            run(MANAGER, "--registry", effective, "render-leanctx", "--base", BASE, "--output", lean, "--platform", platform, "--runner-command", "harr-mcp-run")
+            allow_a = tmp / "codex-skills" / "gigacode-executor"
+            allow_b = tmp / "opencode-skills" / "gigacode-executor"
+            run(
+                MANAGER, "--registry", effective, "render-leanctx",
+                "--base", BASE, "--output", lean,
+                "--platform", platform, "--runner-command", "harr-mcp-run",
+                "--allow-path", allow_a, "--allow-path", allow_b,
+            )
             parsed = tomllib.loads(lean.read_text(encoding="utf-8"))
             assert parsed["gateway"]["top_n"] == 3
             assert "harr" in parsed["shell_allowlist_extra"]
             assert "clang-format" in parsed["shell_allowlist_extra"]
+            assert parsed["allow_paths"] == [str(allow_a), str(allow_b)]
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
@@ -103,6 +111,10 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
+        assert ("use the installed `$gigacode-executor` skill" in policy) == ("gigacode" in expected)
+        assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
+        assert ("delegated scope is frozen for the parent" in policy) == ("gigacode" in expected)
+        assert ("contract acceptance from the structured self-verification handoff" in policy) == ("gigacode" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -143,6 +155,16 @@ def check(spec: str, expected: list[str]) -> None:
             assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
+        gigacode_ref = filtered_skill / "references" / "gigacode.md"
+        assert gigacode_ref.exists() == ("gigacode" in expected)
+        if gigacode_ref.exists():
+            gigacode_text = gigacode_ref.read_text(encoding="utf-8")
+            assert "gigacode::gigacode" in gigacode_text
+            assert "startup_confirmed=true" in gigacode_text
+            assert "Nonblocking status and blocking wait" in gigacode_text
+            assert "wait` polls only inside the MCP bridge" in gigacode_text
+            assert "do not return GigaCode event history" in gigacode_text
+            assert "second full parent code review" in gigacode_text
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -151,8 +173,70 @@ servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
+assert servers["gigacode"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
-check("all", ["codegraph", "gitlab", "grafana"])
+check("gigacode", ["codegraph", "gigacode"])
+check("all", ["codegraph", "gitlab", "grafana", "gigacode"])
+
+# Normal reinstall/update without an explicit selection must reuse the saved
+# optional set instead of resetting to required-only or all.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gigacode")
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--default", "required")
+    assert names(effective) == ["codegraph", "gigacode"]
+    assert json.loads(selection.read_text(encoding="utf-8")) == {
+        "schema": 1,
+        "enabled": ["codegraph", "gigacode"],
+    }
+
+# Incremental add/remove mutates only the requested optional MCPs.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gitlab")
+    assert names(effective) == ["codegraph", "gitlab"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "gigacode")
+    assert names(effective) == ["codegraph", "gitlab", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "grafana,gigacode")
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "gitlab")
+    assert names(effective) == ["codegraph", "grafana", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "all")
+    assert names(effective) == ["codegraph"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+
+    failed = subprocess.run(
+        [
+            sys.executable,
+            str(SELECTOR),
+            "--catalog",
+            str(CATALOG),
+            "--selection",
+            str(selection),
+            "--effective",
+            str(effective),
+            "--remove",
+            "codegraph",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    assert failed.returncode != 0
+    assert "cannot remove required Harr MCP(s): codegraph" in failed.stderr
+
 print("cross-platform MCP selection: PASS")

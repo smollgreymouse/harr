@@ -8,7 +8,7 @@ description: LeanCTX-specific troubleshooting/reference on a Harr-managed machin
 
 Use this skill only for LeanCTX-specific behavior or failures. Normal tool routing is already injected into the host's global `AGENTS.md` by Harr.
 
-Harr owns LeanCTX and currently pins `3.9.15`. Do not run upstream `lean-ctx setup`, `lean-ctx onboard`, or `lean-ctx update`.
+Harr owns LeanCTX and currently pins the Harr progress-aware LeanCTX 3.11.0 build. Do not run upstream `lean-ctx setup`, `lean-ctx onboard`, or `lean-ctx update`.
 
 Direct Harr profile:
 
@@ -32,7 +32,7 @@ Git routing through `ctx_shell`:
 Gateway facts:
 
 - CodeGraph: stdio child `codegraph serve --mcp`; inherits LeanCTX cwd, so wrong project binding means diagnose cwd/root rather than creating per-project Harr config.
-- GitLab: Streamable HTTP at `http://127.0.0.1:3334/mcp`; PAT is restored by Harr's LeanCTX wrapper via secret-memento handling and must never be printed.
+- GitLab: on-demand stdio child; PAT is restored by Harr's LeanCTX wrapper via secret-memento env and must never be printed.
 
 Repair/diagnostics:
 

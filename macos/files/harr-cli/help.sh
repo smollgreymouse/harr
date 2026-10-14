@@ -25,6 +25,8 @@ CLI:
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
+  harr mcp add NAME[,NAME...]|all
+  harr mcp remove NAME[,NAME...]|all
   harr mcp start|stop|restart|enable|disable NAME|all
   harr mcp status [NAME]
   harr mcp logs NAME [-f|--follow]
@@ -50,6 +52,8 @@ mcp_usage() {
     '  harr mcp list' \
     '  harr mcp available' \
     '  harr mcp configure [none|all|name1,name2]' \
+    '  harr mcp add NAME[,NAME...]|all' \
+    '  harr mcp remove NAME[,NAME...]|all' \
     '  harr mcp start|stop|restart|enable|disable NAME|all' \
     '  harr mcp status [NAME]' \
     '  harr mcp logs NAME [-f|--follow]'
