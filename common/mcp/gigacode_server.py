@@ -177,7 +177,8 @@ TOOLS = [
             "Keep resume for small corrections in a healthy phase; between major phases "
             "start a fresh session with a short verified-facts handoff, after the old job is "
             "terminal. Never start overlapping workers on the same scope. "
-            "Cancellation is explicit; wait timeout does not cancel the job."
+            "Cancellation is explicit; wait timeout does not cancel the job. "
+            "hard_timeout_sec=0 means unlimited; stall_elapsed_sec is informational."
         ),
         "inputSchema": {
             "type": "object",
