@@ -78,7 +78,7 @@ bindings:
 ```text
 list_workspaces() -> [{id, name, primary_root, count, revision}]
 get_workspace(id) -> full configuration + validation diagnostics
-create_workspace(name, primary_root, expected_context?) -> workspace
+create_workspace(name?, primary_root?, expected_context?) -> workspace
 rename_workspace(id, name, expected_revision)
 add_root(id, path, expected_revision) -> revised workspace
 remove_root(id, path, expected_revision) -> revised workspace
@@ -101,6 +101,9 @@ resolve_effective_roots(session_identity, operation) -> immutable snapshot
 
 ```bash
 harr workspace list
+cd /home/user/Projects/game
+harr workspace create                  # name=game, primary_root=$PWD
+harr workspace create game-dev         # name=game-dev, primary_root=$PWD
 harr workspace create game-dev --root /home/user/Projects/game
 harr workspace add-root game-dev /home/user/Projects/sprite-processing
 harr workspace remove-root game-dev /home/user/Projects/sprite-processing
@@ -108,6 +111,8 @@ harr workspace show game-dev
 harr workspace use game-dev
 harr workspace diagnose game-dev
 ```
+
+**Семантика `create`:** без аргументов `primary_root` берётся из текущего рабочего каталога (`cwd`) процесса `harr`, а `name` — из имени последнего компонента канонического пути. При явном `--root` без имени имя выводится из этой папки, а при явном имени без `--root` корнем остаётся `cwd`. Путь должен существовать и пройти общую валидацию. Не создавать второй workspace молча при конфликте имени: возвращать понятную ошибку и требовать другое имя либо выбор существующего workspace. Не создавать workspace автоматически при запуске Codex или Harr — только после команды `create`.
 
 Разобрать действительный режим `use`: глобальный default опасен при параллельных сессиях. В MVP предпочтительнее явно передавать workspace id в MCP операции либо запускать Codex через тонкий wrapper с session-scoped переменной/контекстом, если его жизненный цикл надёжен. `use` без корректного адресата сессии должен объяснять ограничение, а не тихо устанавливать глобальный default.
 
