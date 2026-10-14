@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Contract: only one active MCP App may initiate a completion message."""
+import contextlib
+import importlib.util
+import io
+import json
+import pathlib
+import tempfile
+import uuid
+
+root = pathlib.Path(__file__).resolve().parents[2]
+spec = importlib.util.spec_from_file_location('gigacode_done_test', root/'common/mcp/gigacode_app/server.py')
+app = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(app)
+
+with tempfile.TemporaryDirectory() as td:
+    app.STATE = pathlib.Path(td)
+    sid = str(uuid.uuid4())
+    scope = str(uuid.uuid4())
+    other = str(uuid.uuid4())
+    app.lookup_scope = lambda given, session: {'session_id': sid} if session == sid and given in (scope, other) else None
+    current = 'RUNNING'
+    app.gc.status_tool = lambda arguments: {'content':[{'type':'text','text':json.dumps({'status':current})}]}
+
+    def call(action, scope_id):
+        capture = io.StringIO()
+        with contextlib.redirect_stdout(capture):
+            app.dispatch({'jsonrpc':'2.0','id':1,'method':'tools/call',
+                          'params':{'name':action,'arguments':{'session_id':sid,'scope_id':scope_id}}})
+        payload = json.loads(capture.getvalue())
+        assert 'error' not in payload, payload
+        return payload['result']['structuredContent']
+
+    assert call('claim_done_notification_ui', scope)['claimed'] is False
+    current = 'DONE'
+    assert call('claim_done_notification_ui', scope)['claimed'] is True
+    assert call('claim_done_notification_ui', other)['claimed'] is False
+    call('release_done_notification_ui', other)
+    assert call('claim_done_notification_ui', other)['claimed'] is False
+    call('release_done_notification_ui', scope)
+    assert call('claim_done_notification_ui', other)['claimed'] is True
+    assert call('claim_done_notification_ui', scope)['claimed'] is False
+
+names = {tool['name']:tool for tool in app.tools()}
+for name in ('claim_done_notification_ui', 'release_done_notification_ui'):
+    assert names[name]['_meta']['ui']['visibility'] == ['app']
+html = (root/'common/mcp/gigacode_app/panel.html').read_text()
+assert "request('ui/message',{role:'user'" in html
+assert 'notifyEligible' in html
+print('MCP App DONE notification contract: PASS')

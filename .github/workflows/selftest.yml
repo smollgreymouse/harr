@@ -33,7 +33,9 @@ jobs:
       - name: MCP selection and policy contract
         run: python3 tests/mcp-selection.py
       - name: GigaCode black-box bridge contract
-        run: python3 tests/gigacode-bridge.py
+        run: |
+          python3 tests/gigacode-bridge.py
+          python3 tests/gigacode-mcp-app/test_done_message.py
       - name: Windows compatibility HTTPS Git transport contract
         run: python3 tests/gitlab-git-https.py
       - name: Host Git and MR workflow contracts
@@ -68,7 +70,9 @@ jobs:
       - name: MCP selection and policy contract
         run: python3 tests/mcp-selection.py
       - name: GigaCode black-box bridge contract
-        run: python3 tests/gigacode-bridge.py
+        run: |
+          python3 tests/gigacode-bridge.py
+          python3 tests/gigacode-mcp-app/test_done_message.py
       - name: Windows compatibility HTTPS Git transport contract
         run: python3 tests/gitlab-git-https.py
       - name: Host Git and MR workflow contracts
