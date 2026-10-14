@@ -163,8 +163,8 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]
-grep -q 'Delegated scope freeze and waiting' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
-grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-progress.1"' "${ROOT}/linux/files/harr-cli/components.sh"
+grep -q 'Session boundaries' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
+grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-progress.2"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"
