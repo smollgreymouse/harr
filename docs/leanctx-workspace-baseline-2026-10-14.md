@@ -35,3 +35,16 @@ LEANCTX_TEST_BIN=/absolute/path/to/real/lean-ctx python3 tests/workspace-baselin
 2. Complete `read_only_roots`, `linkedProjects`, `roots/list`, session persist/reload, concurrent sessions, symlink/traversal and live-config-reload tests.
 3. Add machine-enforced guard assertions for isolation and verify reproducibility over repeated runs.
 4. Record baseline expectations and actual outputs; **only after the Phase 0 gate** design/implement the LeanCTX live-session workspace API.
+
+## Root cause confirmed in LeanCTX source (2026-10-14)
+
+**This is not a single PathJail failure. There are TWO independent authorization boundaries.**
+
+1. `rust/src/core/path_resolve.rs::resolve_tool_path_with_roots` calls `pathjail::jail_path_with_roots` using `project_root` plus trusted `extra_roots`; global `LEAN_CTX_ALLOW_PATH` is also accepted by PathJail. Consequently, the actual MCP `ctx_tree` succeeded on `repo-b` under both env overrides.
+2. `rust/src/server/call_tool/guarded.rs` starts a request-local `REQUEST_PROJECT` scope from `session.project_root` and binds it after `resolve_roots_once()`.
+3. `rust/src/tools/ctx_semantic_search/scope.rs::resolve_search_root` canonicalizes the requested search directory and rejects it unless it `starts_with(REQUEST_PROJECT)`, returning **`source path is outside the request authority`**. It does not consult authorized `extra_roots` here.
+4. Existing test `rust/src/tools/ctx_semantic_search/tests.rs::request_authority_still_rejects_another_projects_path` asserts this behavior. Thus it is deliberate defense-in-depth, not a transient cache error. Our multi-root design must extend this policy *explicitly*, preserving rejection of all unapproved sibling projects.
+
+**Design consequence:** Do not remove the `REQUEST_PROJECT` scope or fall back to unbound search authority. Introduce a per-request, immutable `SourceAuthority { primary, authorized_search_roots }` (or equivalent), derived from the **trusted, session-scoped** effective workspace snapshot. In `resolve_search_root` select the specific canonical authorized root containing the target path and maintain subdirectory filtering; `allow_paths` alone should *not* become search authority just because PathJail allows reading it. Treat `read_only_roots` according to explicit indexing policy, never as writable. Any search/index/cache scope must be keyed or filtered to the authorized root set. The current single-project authority should remain intact for non-workspace calls.
+
+**Required pre-change tests:** actual MCP `ctx_tree`, `ctx_read`, `ctx_search` and semantic search over A/B; `allow_paths` alone vs `extra_roots`; unauthorized C; nested directory and symlink escape; intentionally conflicting read-only; two sessions with different roots on the same server; removing B while index is warm. Add focused Rust tests around authority selection and the existing `request_authority_still_rejects_another_projects_path` to prove rejected foreign roots remain rejected. No production server modification while establishing this test matrix.

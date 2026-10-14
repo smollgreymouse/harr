@@ -296,6 +296,8 @@ harr workspace use --workspace game-dev               # explicit session binding
 
 **Baseline deliverables:** сохранить в `docs/` отчёт с версией/commit LeanCTX, OS, безопасным test runner, матрицей `expected/actual`, выходными кодами, находками и открытыми архитектурными вопросами. Реальные тестовые журналы размещать только вне пользовательских data-root и не включать auth data в Git. Обнаруженные отклонения классифицировать как: существующее поведение, дефект PathJail, особенность конфигурации или необходимость нового live API. **Gate:** все сценарии воспроизводимы, изоляция доказана, живые проекты/сервисы не изменились; только затем разрешать Phase 1.
 
+**Обнаружение Phase 0 / обязательный security gate:** реальный LeanCTX `ctx_tree` допускает соседний root с `allow_paths` или `extra_roots`, однако `ctx_search` отвергает его отдельной проверкой `REQUEST_PROJECT` в `ctx_semantic_search/scope.rs`. Нельзя решать проблему удалением request authority. Для multi-root требуется добавить в request-scoped source authority **список одобренных поисковых корней**, отдельно от просто разрешённых PathJail путей, и сохранить запрет соседних незарегистрированных репозиториев. См. `docs/leanctx-workspace-baseline-2026-10-14.md` и существующий тест `request_authority_still_rejects_another_projects_path`.
+
 ## 11.2. Регрессии и новые тесты в форке LeanCTX
 
 - Rust unit tests: чтение `.harr/workspace.json`, отсутствие файла, повреждённый JSON, неверная версия схемы, относительные пути, повторяющиеся/nested roots, symlink, HOME/`/`, missing folder, read-only, атомарная запись, восстановление после ошибки, CAS/revision conflict и перенос проекта с относительными путями.
