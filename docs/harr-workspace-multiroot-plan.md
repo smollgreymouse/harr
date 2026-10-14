@@ -207,8 +207,9 @@ harr workspace use --workspace game-dev               # explicit session binding
 
 ## 10. Этапы реализации и gates
 
-### Phase 0 — протокольный spike и архитектурный gate
+### Phase 0 — изолированный baseline LeanCTX + протокольный spike и архитектурный gate
 
+- Сначала выполнить обязательную матрицу реального baseline в полностью изолированной test-base (§11.1), доказать отсутствие воздействия на работающие процессы, PathJail и пользовательские проекты.
 - Исследовать процессную модель MCP в CLI и Desktop: сколько сессий на один сервер, CWD MCP vs CWD проекта, доверенность `threadId`, срок жизни binding.
 - Изолированный тест с двумя одновременными чатами и тремя корнями, без чтения внутренней базы Codex.
 - Проверить работающий двусторонний app-only MCP UI из Desktop на уже имеющемся GigaCode-примере.
@@ -262,6 +263,58 @@ harr workspace use --workspace game-dev               # explicit session binding
 | Standalone LeanCTX legacy | `--root`, config roots, IDE/MCP roots работают как раньше |
 | Linux/macOS/Windows paths | Canonicalization и регрессия разделителей/case |
 | UI отключен/не поддерживается | CLI и модельные MCP инструменты остаются доступны |
+
+## 11.1. Обязательная изолированная baseline-проверка ДО разработки (LeanCTX)
+
+**Жёсткое условие: все тесты запускаются на настоящем бинарнике LeanCTX и настоящем MCP-протоколе, но ТОЛЬКО на искусственно созданных тестовых проектах в изолированном окружении.** Работающие пользовательские проекты, текущий `~/.lean-ctx`, рабочий `~/.codex`, конфигурация Harr/CTUN и живые MCP-сессии неприкосновенны. Никаких команд `config set`, `index`, `doctor --fix`, установки или рестарта для текущего рабочего сервера. Не использовать ни один настоящий репозиторий как test root и не читать его исходники.
+
+**Подготовка test fixture / isolation gate (пока не выполнено — дальше не идти):**
+
+1. Создать временную test-base (предпочтительно `mktemp -d`, права `0700`) с `repo-a`, `repo-b`, `repo-c`, `repo-outside`, в каждом искусственная `.git` и уникальный marker-файл. Не создавать/изменять ничего в реальных проектах.
+2. Отдельные конфиги и домашние директории теста: `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `CODEX_HOME`, `TMPDIR`; отдельные каталоги для всех данных, логов, индексов, sessions и lock-файлов LeanCTX. Сначала проверить фактически поддерживаемые переменные data-root LeanCTX, явные аргументы и пути записи; использовать изоляцию системного уровня (контейнер / bubblewrap / namespace или VM) там, где одних env недостаточно. Не считать подмену HOME достаточной без проверки открываемых путей.
+3. Запускать отдельный foreground/test-instance MCP сервер с новым портом/stdio и уникальными session IDs. Не обращаться к существующему daemon/gateway/CTUN endpoint, не переиспользовать пользовательские креденшелы/токены. Для Codex экспериментов — отдельный `CODEX_HOME` и тестовый MCP registration, без модификации рабочего `~/.codex`; если нужен login, выполнить интерактивно в тестовой среде, секреты не копировать.
+4. Перед тестами зафиксировать production baseline: hash/mtime известных конфигов и список PID/слушающих сокетов **без чтения/изменения содержимого проектов**. Проверить, что тестовые процессы не указывают на live project paths, а бинарник собран с включённым PathJail (без `no-jail` bypass). После тестов проверить неизменность контрольных файлов и существующих сервисов.
+5. Сделать test runner fail-fast при неустановленной изоляции, неожиданных абсолютных путях, обнаруженном живом data-root либо попытке обратиться к нему. Очистка только внутри test-base, лучше оставить артефакты в выделенной test-base до анализа. Привилегированный доступ и `danger-full-access` не использовать.
+
+**Реальный baseline, прежде чем менять хоть строку LeanCTX:**
+
+| Сценарий | Операции на реальном тестовом MCP | Ожидаемый вопрос |
+| --- | --- | --- |
+| Только primary A | tree/search/read в A и явный read B | Где PathJail отказывает доступ вне A? |
+| `allow_paths=[B]` | Явный read B и поиск без указания B | Даёт ли allow только доступ, но не участие в индексации? |
+| `extra_roots=[B]` | read B, tree/search/semantic search без явного B | Какие инструменты действительно расширяют scope и PathJail? |
+| `read_only_roots=[B]` | read/search B, проба write в B на искусственном файле | Работает ли запрет записи и не уступает ли `allow_paths`? |
+| Сочетание `allow_paths`, `extra_roots`, `read_only_roots` | Матрица допустимых и недопустимых read/write | Приоритет правил и явные конфликты |
+| `.lean-ctx.json` с `linkedProjects=[B]` | Semantic search, read B при deny/allow | Что legacy-механизм реально добавляет в поиск и права? |
+| MCP `roots/list` или `WORKSPACE_FOLDER_PATHS=A:B` | Запуск отдельного MCP-клиента | Когда roots попадают в `SessionState`; нужны ли перезапуск/новое соединение? |
+| Session persistence | Открыть сессию с B, сохранить, изменить test config, перечитать | Какие старые extra roots возвращаются после reload? |
+| Два клиента, один test server | Сессия A и сессия C с разными roots | Нет ли утечки состояния/индексов/PathJail между сессиями? |
+| Path canonicalization | `..`, symlink B→outside, абсолютные/относительные пути, broad roots | Возможен ли обход jail и как выглядит отказ? |
+| Runtime конфиг меняется на диске | Не перезапуская тестовый LeanCTX, изменить `extra_roots` только в test config | Видит ли уже открытая сессия изменения? Если нет, это доказательство необходимости live API |
+
+Каждый кейс проверять и на уровне результата tool, и на уровне **реальных** файлов/индексов в тестовой песочнице. Для PathJail проверять конкретный error code/message, факт отсутствия чтения/записи запрещённого marker-файла, а не только пустой поиск. Для write-тестов создавать заранее одноразовые файлы исключительно внутри test fixture. Отдельно тестировать, что `ctx_search`, `ctx_tree`, `ctx_semantic_search` и file resource различаются по поведению. Проверить и отрицательные тесты: запрещённый sibling, symlink escape, stale cached index after exclusion, TOCTOU там, где есть соответствующие механизмы.
+
+**Baseline deliverables:** сохранить в `docs/` отчёт с версией/commit LeanCTX, OS, безопасным test runner, матрицей `expected/actual`, выходными кодами, находками и открытыми архитектурными вопросами. Реальные тестовые журналы размещать только вне пользовательских data-root и не включать auth data в Git. Обнаруженные отклонения классифицировать как: существующее поведение, дефект PathJail, особенность конфигурации или необходимость нового live API. **Gate:** все сценарии воспроизводимы, изоляция доказана, живые проекты/сервисы не изменились; только затем разрешать Phase 1.
+
+## 11.2. Регрессии и новые тесты в форке LeanCTX
+
+- Rust unit tests: чтение `.harr/workspace.json`, отсутствие файла, повреждённый JSON, неверная версия схемы, относительные пути, повторяющиеся/nested roots, symlink, HOME/`/`, missing folder, read-only, атомарная запись, восстановление после ошибки, CAS/revision conflict и перенос проекта с относительными путями.
+- Unit/component tests: snapshot действующей SessionState, сохранение provenance (`session`, `global`, `legacy`, `harr`, MCP/IDE), дедупликация без потери источников, precedence `extra_roots`/`allow_paths`/`read_only_roots`, сохранение старых `linkedProjects` без их переписывания.
+- Настоящий MCP tool-call: `workspace.current/add/remove/select` изменяют именно runtime roots **уже открытой** тестовой сессии. Следующий `ctx_tree`, `ctx_search`, `ctx_semantic_search`, explicit file read видят только эффективные roots; перезапуск LeanCTX не выполняется.
+- Изоляция: два одновременных Codex thread / MCP clients на одном test server, разные проекты; изменение одного workspace не расширяет другой. Одновременные вызовы search/индексации и remove root не приводят к выдаче устаревших результатов или обходу PathJail.
+- Persist/reload: старый SessionState не перезатирает свежую revision `.harr/`; две сессии одного workspace получают актуальное изменение без перезапуска. Ошибка записи/config conflict возвращается внятно, без частичного применения или silent drift.
+- Security: запреты на чтение чужих файлов, запись в read-only roots, symlink escape, traversal, spoofed metadata и недостоверный `threadId`; консервативное поведение при потере session identity; отсутствие новых прав ОС при добавлении root.
+- Regression для standalone LeanCTX: старые `--root`, `extra_roots`, `allow_paths`, IDE env, MCP `roots/list`, single-root работают как до изменений; сравнить с сохранённым baseline, а не только с новыми ожиданиями.
+
+## 11.3. Тесты Harr CLI и Desktop MCP App
+
+- CLI table-driven: `create` из CWD с именем каталога; `--name`, `--root`, конфликты имён; `add PATH`/`remove PATH` из primary root и из вложенной папки; `-w NAME`/`--workspace NAME`; positional `NAME PATH` должен отвергаться. `show`, `list`, `diagnose`, session-safe `use` и понятные сообщения при неоднозначности.
+- CLI integration против **изолированного тестового LeanCTX API**: результат совпадает с live session, не с сохранённой копией файла; exit status/structured errors для inaccessible root, missing workspace, stale revision, missing server; не изменять primary root командой `remove`.
+- HTML MCP App unit: app-only инструменты, правильная resource URI, валидация/экранирование путей и имён (включая Unicode/HTML special chars), отображение primary/additional и происхождения roots, запрета write, индексации, ошибок и конфликтов revision. Mocked UI не считается реальным E2E.
+- Desktop integration: открыть панель в **уже открытом** тестовом Codex чате и подключить к уже работающему изолированному LeanCTX; `add`/`remove` отражаются в следующем вызове настоящего `ctx_search` без restart/reinitialize, даже если панель открыта в другом окне. Проверить параллельный чат другого workspace, reconnect, retry, двойной клик и отказ операции.
+- Общий контракт: CLI и App читают один LeanCTX live snapshot и видят одну revision после мутации; никаких отдельных local JSON-реестров или расширения sandbox через инструменты Harr.
+
+**CI gates:** отдельные jobs `leanctx-unit`, `leanctx-mcp-integration`, `harr-cli`, `harr-mcp-app`, `workspace-cross-component` с детерминированными fixtures. В PR форка обязательны его Rust и MCP проверки; в PR Harr — CLI/App + contract tests; общий end-to-end smoke на test runtime запускается перед merge интеграционного PR. Проверка живого Desktop отдельно отмечается как manual/host-dependent, не подменяется synthetic test.
 
 ## 12. Разделение PR и зона ответственности
 
