@@ -1,4 +1,4 @@
-# Harr Workspace Registry: multi-root для Codex CLI и Desktop
+# Harr Workspace Service (LeanCTX fork): multi-root для Codex CLI и Desktop
 
 > Статус: **план, реализация не начата**. Дата: 2026-10-14.
 > Область: Harr + поставляемая интеграция LeanCTX; без патчей Codex.
@@ -6,7 +6,7 @@
 
 ## 1. Цель и принятые решения
 
-Codex Desktop позволяет открыть проект с несколькими независимыми каталогами/репозиториями. LeanCTX должен искать, индексировать и читать файлы всех **явно включённых пользователем** каталогов в контексте выбранного Harr workspace, а не только текущего CWD. Для Codex CLI нужен ручной конфигуратор, для Desktop — HTML MCP App. Они должны обращаться к **одному** Workspace Registry/API и давать идентичный результат.
+Codex Desktop позволяет открыть проект с несколькими независимыми каталогами/репозиториями. LeanCTX должен искать, индексировать и читать файлы всех **явно включённых пользователем** каталогов в контексте выбранного Harr workspace, а не только текущего CWD. Для Codex CLI нужен ручной конфигуратор, для Desktop — HTML MCP App. Они должны обращаться к **одному Workspace Service в форке LeanCTX** и давать идентичный результат.
 
 Зафиксированные решения:
 
@@ -17,6 +17,49 @@ Codex Desktop позволяет открыть проект с нескольк
 5. `cwd` допустим лишь как кандидат на автоматический выбор проекта; при неоднозначности требуется явный выбор. `threadId` — ключ привязки сессии, **не** источник путей.
 6. Добавление корня разрешает операции только внутри фактически доступного ОС/MCP sandbox; Registry **не выдаёт** прав Codex на запись или обход sandbox.
 7. Изменения применяются к следующим вызовам без рестарта LeanCTX; индексы меняют scope согласованно.
+
+## 1.1. Уточнение принятой архитектуры: live session + `.harr/`
+
+**Решение:** единственный источник истины для **текущих effective roots** — состояние живой сессии LeanCTX (а не отдельный реестр Harr). Устойчивое локальное пользовательское дополнение хранится в **`<primary_root>/.harr/workspace.json`**, а не в `.lean-ctx.json` и не в `~/.lean-ctx` по умолчанию. В нашем **форке LeanCTX** требуется добавить API чтения/модификации этого состояния; CLI Harr и Desktop MCP App — тонкие клиенты одного API. Legacy project config `.lean-ctx.json` и `linkedProjects` продолжают учитываться как read-compatible источник, но новый Harr UI туда не пишет.
+
+**Жёсткое runtime требование:** пользователь уже открыл чат в Codex, LeanCTX MCP уже запущен, сессия и индексы прогреты; открытие панели, `show`, `add`, `remove` должны **без переоткрытия чата, рестарта MCP/LeanCTX или обновления конфигурации Codex** показать текущие roots этой сессии и применить изменения для её следующего вызова. Запись JSON на диск сама по себе недостаточна. UI всегда запрашивает фактический snapshot у работающего LeanCTX, а не рисует сохранённый JSON в качестве текущего состояния.
+
+Пример файла (примерные поля):
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "game",
+  "additionalRoots": ["../sprite-processing", "../shared"]
+}
+```
+
+`primary_root` = директория-родитель `.harr`. Пути интерпретируются относительно неё, канонизируются и валидируются. Запись атомарная с revision/CAS, без потери других полей существующего файла; сохранять ли папку `.harr/` в Git решает пользователь. Создать файл при первом явном изменении, не при простом `show`.
+
+**Разделить источники и состояние:**
+
+- Live `SessionState.project_root` и `SessionState.extra_roots`: текущее рабочее состояние; также помнить источник каждого root (`session`, `mcp`, `ide`, `global`, `legacy-project`, `harr-project`) для UX и корректной мутации.
+- `<root>/.harr/workspace.json`: постоянные пользовательские additions/removals. `remove` для корня, полученного из чужого источника, нельзя обещать постоянным без определения override/tombstone semantics; отображать конфликт и предложить явную операцию override, не удалять silently legacy/global настройки.
+- LeanCTX global `extra_roots`, `allow_paths`, `read_only_roots`, `.lean-ctx.json` `linkedProjects` и client roots: совместимые источники входных данных, **не** отдельные источники истины для UI. Workspace Service возвращает один computed effective snapshot с provenance.
+- Индекс: производное/кешированное состояние; не использовать index manifest как каталог проектов.
+
+**Live API нашего форка LeanCTX (проект контракта):**
+
+```text
+workspace.current(session_context) -> {primary, roots:[{path,source,status,access}], revision}
+workspace.discover_live(session_context) -> snapshot | selection_required
+workspace.add(session_context, path, expected_revision) -> applied snapshot
+workspace.remove(session_context, path, expected_revision) -> applied snapshot
+workspace.select(session_context, workspace_id|primary_path) -> applied snapshot
+workspace.list_known() -> [{primary,name,live?,sources}]  # best-effort persisted+live discovery
+workspace.subscribe(session_context, since_revision) -> revision/events  # optional polling fallback
+```
+
+**Самое важное — связь с уже открытой сессией:** не путать MCP transport/session identity с глобальным процессом LeanCTX. Надо доказать в Phase 0, что каждый вызов от действующего Codex thread можно привязать к правильному `SessionState`, и что панель обращается к **той же** runtime session. `threadId`/`windowId`, реально присутствующие в `_meta`, могут служить идентификаторами маршрутизации только после проверки границы доверия и фактической реализации; они **не** служат источником каталогов. Если серверу неизвестно, к какой live-сессии относится вызов, запрещён silent fallback к случайной сессии: explicit select / явная привязка.
+
+Обновление выполняется **в запущенном LeanCTX**: validate -> CAS revision -> atomic persistent config -> replace session effective roots (или transactional rollback при ошибке) -> invalidate scope/search caches -> enqueue index warm for added root -> вернуть applied snapshot. Все ветки чтения, поиска и PathJail должны использовать новый snapshot со следующего tool call. При частичном сбое возвращать честный статус и обеспечить recovery/reconcile на следующем запросе. Несколько параллельных сессий, подписанных на один `.harr/workspace.json`, должны увидеть новую revision без перезапуска; сессии других проектов сохраняют свою политику. Для уже запущенных вызовов отдельно описать семантику отзыва права.
+
+**Phase 0 blocking gate:** real Codex Desktop -> live MCP App -> actual LeanCTX session snapshot -> change root -> real ctx_search within same open Codex thread -> concurrent unrelated thread unchanged. Без успешной проверки этого цикла нельзя называть функцию seamless. Если приложение использует другой MCP процесс или session state, предусмотреть RPC внутри LeanCTX (bounded local IPC) и идентификатор active session; не заводить зеркальную базу в Harr.
 
 ## 2. Проверенная отправная точка
 
@@ -222,9 +265,9 @@ harr workspace use --workspace game-dev               # explicit session binding
 
 ## 12. Разделение PR и зона ответственности
 
-1. **Harr: Workspace Registry + CLI/API + tests** (без изменения LeanCTX).
+1. **LeanCTX fork: Live Workspace Service + `.harr/workspace.json` persistence + tests** (наследование legacy roots и сессионной информации).
 2. **LeanCTX fork: session-scoped dynamic roots / index integration + security tests** (отдельный PR в форке с публичным контрактом адаптера).
-3. **Harr: Desktop MCP App + tests** (повторное использование существующей инфраструктуры MCP Apps).
+3. **Harr: CLI facade + Desktop MCP App + tests** (повторное использование существующей инфраструктуры MCP Apps).
 4. **Harr: packaging + docs + E2E** (версия LeanCTX зафиксирована, rollback инструкция).
 
 До начала каждого PR проверить актуальное состояние рабочих веток и не включать случайные локальные untracked файлы/временные тесты. В текущей ветке Harr `feature/gigacode-worker-mcp` имеются многочисленные неотслеживаемые артефакты; новый код вести в отдельной ветке/PR, не менять несвязанные компоненты.
