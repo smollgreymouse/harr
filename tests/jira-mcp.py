@@ -4,9 +4,6 @@ import importlib.util
 import json
 import tempfile
 import tomllib
-import ssl
-import urllib.error
-import urllib.request
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +14,6 @@ spec.loader.exec_module(manager)
 registry = manager.load_registry(ROOT / "common/mcp/registry.json")
 jira = manager.server_by_name(registry, "jira")
 assert jira["transport"] == "stdio" and jira["lifecycle"] == "on-demand"
-assert jira["trust_store"] == "system"
 assert jira["runtime"]["args"] == ["mcp-atlassian"]
 assert jira["secrets"][0]["target"] == {"kind": "env", "name": "JIRA_PERSONAL_TOKEN"}
 with tempfile.TemporaryDirectory() as temp:
@@ -43,12 +39,3 @@ with tempfile.TemporaryDirectory() as temp:
 with patch.object(manager.shutil, "which", return_value="/usr/bin/uvx"):
     assert manager.runtime_command(jira) == ["/usr/bin/uvx", "mcp-atlassian"]
 print("Jira MCP registry and secrets: PASS")
-
-# Verify that a locally generated trust bundle uses system CAs and NSS TLS anchors.
-# No authentication tokens or confidential endpoints are stored in the test.
-if manager.sys.platform == "linux":
-    bundle = manager.system_trust_bundle()
-    assert bundle is not None and bundle.is_file()
-    context = ssl.create_default_context(cafile=str(bundle))
-    assert context.cert_store_stats()["x509_ca"] > 0
-print("system trust bundle: PASS")

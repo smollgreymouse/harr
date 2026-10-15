@@ -28,7 +28,3 @@ Store the PAT only with `harr secret set jira`. Harr injects it as `JIRA_PERSONA
 For Jira Cloud, use a separate `JIRA_USERNAME` + `JIRA_API_TOKEN` configuration (not provided by this Server/DC preset). If your Jira does not support PATs, do not try to use a Cloud API token as a substitute; select a compatible authentication provider after investigating the installed Jira version.
 
 Look up tool names through LeanCTX `ctx_tools` discovery; prefer narrowly-scoped JQL and read-only operations before mutations.
-
-## TLS trust
-
-On Linux, Harr builds an on-demand CA bundle from the OS OpenSSL CA bundle and TLS-trusted certificates in the user's NSS database (~/.pki/nssdb). It supplies this bundle through SSL_CERT_FILE and REQUESTS_CA_BUNDLE to the Jira MCP runtime, without disabling certificate validation. The bundle is regenerated when the MCP starts, so changed OS/NSS trust takes effect on restart. Non-Linux installations retain their normal runtime trust behavior.
