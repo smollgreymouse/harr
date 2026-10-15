@@ -13,7 +13,10 @@
         "package": "@colbymchenry/codegraph",
         "version": "1.5.0",
         "command": "codegraph",
-        "args": ["serve", "--mcp"]
+        "args": [
+          "serve",
+          "--mcp"
+        ]
       }
     },
     {
@@ -43,7 +46,10 @@
           "file": "gitlab-pat",
           "prompt": "GitLab PAT",
           "memento_id": "mcp/gitlab/default",
-          "target": {"kind": "env", "name": "GITLAB_PERSONAL_ACCESS_TOKEN"}
+          "target": {
+            "kind": "env",
+            "name": "GITLAB_PERSONAL_ACCESS_TOKEN"
+          }
         }
       ]
     },
@@ -58,9 +64,21 @@
         "kind": "uvx",
         "package": "mcp-grafana",
         "command": "uvx",
-        "args": ["--offline", "mcp-grafana", "--transport", "stdio"],
-        "prefetch_args": ["mcp-grafana", "--version"],
-        "probe_args": ["--offline", "mcp-grafana", "--version"],
+        "args": [
+          "--offline",
+          "mcp-grafana",
+          "--transport",
+          "stdio"
+        ],
+        "prefetch_args": [
+          "mcp-grafana",
+          "--version"
+        ],
+        "probe_args": [
+          "--offline",
+          "mcp-grafana",
+          "--version"
+        ],
         "install_hint": "uvx is required for Grafana MCP; install uv/uvx and run `harr install mcp`"
       },
       "env_template": "grafana.env.example",
@@ -71,7 +89,59 @@
           "file": "grafana-service-account-token",
           "prompt": "Grafana service account token",
           "memento_id": "mcp/grafana/default",
-          "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"}
+          "target": {
+            "kind": "env",
+            "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"
+          }
+        }
+      ]
+    },
+    {
+      "name": "kibana",
+      "label": "Kibana",
+      "description": "read-only Kibana/Elasticsearch logs, mappings and search",
+      "required": false,
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "uvx",
+        "package": "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+        "version": "0.7.5 fork 7d36423",
+        "command": "uvx",
+        "args": [
+          "--offline",
+          "--from",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "kibana-agent",
+          "mcp"
+        ],
+        "prefetch_args": [
+          "--from",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "kibana-agent",
+          "--version"
+        ],
+        "probe_args": [
+          "--offline",
+          "--from",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "kibana-agent",
+          "--version"
+        ],
+        "install_hint": "uvx is required for Kibana MCP; install uv/uvx and run harr install mcp"
+      },
+      "env_template": "kibana.env.example",
+      "skill_reference": "kibana.md",
+      "secrets": [
+        {
+          "name": "kibana",
+          "file": "kibana-api-key",
+          "prompt": "Kibana API key",
+          "memento_id": "mcp/kibana/default",
+          "target": {
+            "kind": "env",
+            "name": "KIBANA_API_KEY"
+          }
         }
       ]
     },

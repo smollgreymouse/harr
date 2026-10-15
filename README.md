@@ -30,6 +30,9 @@ LeanCTX 3.11.0 Harr progress build        required
       +-- stdio -----------> Grafana MCP           optional
       |                     on-demand uvx mcp-grafana
       |
+      +-- stdio -----------> Kibana MCP            optional
+      |                     read-only kibana-agent via Console proxy
+      |
       +-- stdio -----------> GigaCode Executor     optional
       |                     bundled Harr bridge -> external gigacode CLI
       |
@@ -102,7 +105,7 @@ harr setup --clean
 
 The first interactive setup offers the optional MCP checklist. For automation,
 use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
-`harr setup --clean --mcp gitlab,grafana,gigacode`. The selection is saved and can be
+`harr setup --clean --mcp gitlab,grafana,kibana,gigacode`. The selection is saved and can be
 changed later with `harr mcp configure`.
 
 After a later Debian package upgrade, run `harr setup` to apply the new Harr
@@ -122,6 +125,7 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
+  [ ] Kibana       optional  read-only logs/search through Kibana
   [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
@@ -157,12 +161,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana,gigacode
+./install.sh --clean --mcp gitlab,grafana,kibana,gigacode
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana,gigacode
+.\install.ps1 -Clean -Mcp gitlab,grafana,kibana,gigacode
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -176,9 +180,12 @@ Configure secrets only for MCPs you enabled:
 ```text
 harr secret set gitlab
 harr secret set grafana
+harr secret set kibana
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
+
+Kibana also uses uvx; Harr pins the smollgreymouse/kibana-agent fork to a commit that supports API-key auth and the MCP v1 SDK.
 
 GigaCode is an executor bridge, not a bundled model/runtime. Enabling it installs Harr's MCP bridge and routing policy; the external `gigacode` CLI must already be installed, authenticated and available in `PATH`. Harr keeps the bridge behind LeanCTX and loads its single-tool schema only when delegation is needed. The bridge treats GigaCode as a black box: Harr does not configure, inspect or depend on GigaCode's own tools or MCP servers. The saved MCP selection is reused by later source/package upgrades, so a selected GigaCode executor remains selected across reinstall/update runs; change the set with `harr mcp configure`.
 
@@ -483,7 +490,7 @@ harr mcp list
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp configure gitlab,grafana,gigacode   # replace the whole optional set
+harr mcp configure gitlab,grafana,kibana,gigacode   # replace the whole optional set
 harr mcp add gigacode                        # preserve other selected MCPs
 harr mcp add gitlab,grafana
 harr mcp remove grafana
@@ -492,8 +499,10 @@ harr mcp remove all                          # keep required MCPs only
 harr secret status
 harr secret set gitlab
 harr secret set grafana
+harr secret set kibana
 harr secret unset gitlab
 harr secret unset grafana
+harr secret unset kibana
 
 harr git <git-arguments>
 harr git -C /absolute/repository/path <git-arguments>
@@ -650,6 +659,36 @@ Fetch a complete dashboard definition only when the targeted tools are insuffici
 
 
 
+### Kibana
+
+Kibana is optional and provides read-only Elasticsearch investigation through an already reachable Kibana instance.
+
+Route: LeanCTX -> harr-mcp-run kibana -> pinned smollgreymouse/kibana-agent fork -> Kibana /api/console/proxy -> Elasticsearch.
+
+This is intended for environments where Kibana is reachable but Elasticsearch itself is private. Harr pins smollgreymouse/kibana-agent at commit 7d36423cd67b30521dfdef0dbfc6ea980aee51f6. The fork adds KIBANA_API_KEY authentication and constrains the Python MCP SDK to the v1 API used by kibana-agent.
+
+Enable it with:
+
+    harr mcp add kibana
+    harr install mcp
+
+Configure ~/.config/harr/mcp/kibana.env:
+
+    KIBANA_URL=https://kibana.example.com
+
+Store the API key separately:
+
+    harr secret set kibana
+    harr secret status
+
+Harr injects the key as KIBANA_API_KEY only into the MCP process. The fork sends it to Kibana as Authorization: ApiKey and does not persist it in a kibana-agent profile.
+
+The MCP exposes targeted read-only tools including search_logs, count_documents, get_histogram, get_context, get_mapping, list_fields, list_aliases, tail_logs, raw_es_query, and get_discover_url. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow. raw_es_query remains constrained by kibana-agent's read-only request guard.
+
+See common/skills/harr/references/kibana.md for pinned-runtime and routing details.
+
+
+
 ### GigaCode executor
 
 GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
@@ -716,7 +755,7 @@ The permanent policy always keeps the core token-saving rules:
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, Kibana investigation guidance does not exist when Kibana is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 

@@ -55,11 +55,13 @@ def check(spec: str, expected: list[str]) -> None:
         secret_names = [row["name"] for row in secret_rows]
         assert ("gitlab" in secret_names) == ("gitlab" in expected)
         assert ("grafana" in secret_names) == ("grafana" in expected)
+        assert ("kibana" in secret_names) == ("kibana" in expected)
 
         config_dir = tmp / "mcp-config"
         run(MANAGER, "--registry", effective, "install-configs", "--config-dir", config_dir)
         assert (config_dir / "gitlab.env").exists() == ("gitlab" in expected)
         assert (config_dir / "grafana.env").exists() == ("grafana" in expected)
+        assert (config_dir / "kibana.env").exists() == ("kibana" in expected)
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
@@ -111,6 +113,8 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
+        assert ("Kibana/Elasticsearch log and document investigation" in policy) == ("kibana" in expected)
+        assert ("This Harr route is intentionally read-only" in policy) == ("kibana" in expected)
         assert ("use the installed `$gigacode-executor` skill" in policy) == ("gigacode" in expected)
         assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
         assert ("delegated scope is frozen for the parent" in policy) == ("gigacode" in expected)
@@ -139,6 +143,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert "user.exec" in kube_text
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
+        assert ("harr secret set kibana" in skill) == ("kibana" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
         assert gitlab_ref.exists() == ("gitlab" in expected)
         if gitlab_ref.exists():
@@ -155,6 +160,14 @@ def check(spec: str, expected: list[str]) -> None:
             assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
+        kibana_ref = filtered_skill / "references" / "kibana.md"
+        assert kibana_ref.exists() == ("kibana" in expected)
+        if kibana_ref.exists():
+            kibana_text = kibana_ref.read_text(encoding="utf-8")
+            assert "smollgreymouse/kibana-agent" in kibana_text
+            assert "7d36423cd67b30521dfdef0dbfc6ea980aee51f6" in kibana_text
+            assert "KIBANA_API_KEY" in kibana_text
+            assert "/api/console/proxy" in kibana_text
         gigacode_ref = filtered_skill / "references" / "gigacode.md"
         assert gigacode_ref.exists() == ("gigacode" in expected)
         if gigacode_ref.exists():
@@ -173,12 +186,14 @@ servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
+assert servers["kibana"]["required"] is False
 assert servers["gigacode"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
 check("gigacode", ["codegraph", "gigacode"])
-check("all", ["codegraph", "gitlab", "grafana", "gigacode"])
+check("kibana", ["codegraph", "kibana"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode"])
 
 # Normal reinstall/update without an explicit selection must reuse the saved
 # optional set instead of resetting to required-only or all.
@@ -216,7 +231,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     assert names(effective) == ["codegraph"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode"]
 
     failed = subprocess.run(
         [
