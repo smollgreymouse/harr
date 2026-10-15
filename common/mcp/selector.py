@@ -41,7 +41,15 @@ def read_selection(path: Path, data: dict, default: str) -> list[str]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if payload.get("schema") != 1 or not isinstance(payload.get("enabled"), list):
             raise SystemExit(f"unsupported Harr MCP selection: {path}")
-        return normalize(data, [str(item) for item in payload["enabled"]])
+        saved = [str(item) for item in payload["enabled"]]
+        known = {str(item["name"]) for item in data["servers"]}
+        retired = sorted(set(saved).difference(known))
+        if retired:
+            print(
+                f"Ignoring retired Harr MCP choice(s) from saved selection: {', '.join(retired)}",
+                file=sys.stderr,
+            )
+        return normalize(data, [name for name in saved if name in known])
     if default == "all":
         return [str(item["name"]) for item in data["servers"]]
     return required_names(data)

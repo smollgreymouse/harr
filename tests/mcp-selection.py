@@ -209,6 +209,31 @@ with tempfile.TemporaryDirectory() as tmp_raw:
         "enabled": ["codegraph", "gigacode"],
     }
 
+# An upgrade must discard saved choices whose MCPs were removed from the
+# catalog (e.g. Jira) while preserving the remaining enabled components.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+    selection.write_text(json.dumps({"schema": 1, "enabled": ["codegraph", "kibana", "jira"]}))
+    upgraded = subprocess.run(
+        [sys.executable, str(SELECTOR), "--catalog", str(CATALOG),
+         "--selection", str(selection), "--effective", str(effective)],
+        capture_output=True, text=True, check=True,
+    )
+    assert "retired Harr MCP choice(s)" in upgraded.stderr
+    assert "jira" in upgraded.stderr
+    assert names(effective) == ["codegraph", "kibana"]
+    assert json.loads(selection.read_text()) == {"schema": 1, "enabled": ["codegraph", "kibana"]}
+
+    invalid = subprocess.run(
+        [sys.executable, str(SELECTOR), "--catalog", str(CATALOG),
+         "--selection", str(selection), "--effective", str(effective), "--spec", "jira"],
+        capture_output=True, text=True, check=False,
+    )
+    assert invalid.returncode != 0
+    assert "unknown Harr MCP choice(s): jira" in invalid.stderr
+
 # Incremental add/remove mutates only the requested optional MCPs.
 with tempfile.TemporaryDirectory() as tmp_raw:
     tmp = Path(tmp_raw)
