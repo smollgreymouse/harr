@@ -394,13 +394,13 @@ def prepare_jira_env(env: dict[str, str]) -> dict[str, str]:
         user = result.pop("JIRA_USER_NAME", "")
         password = result.pop("JIRA_USER_PASS", "")
         if not user or not password:
-            raise SystemExit("Jira basic auth requires JIRA_USER_NAME and the Harr jira-password secret")
+            raise SystemExit("Jira basic auth requires JIRA_USER_NAME and the Harr jira secret")
         result["JIRA_USERNAME"] = user
         result["JIRA_API_TOKEN"] = password
         result.pop("JIRA_PERSONAL_TOKEN", None)
     elif mode == "pat":
         if not result.get("JIRA_PERSONAL_TOKEN"):
-            raise SystemExit("Jira PAT auth requires harr secret set jira")
+            raise SystemExit("Jira PAT auth requires harr secret set jira-pat")
         result.pop("JIRA_USER_PASS", None)
         result.pop("JIRA_USER_NAME", None)
     else:

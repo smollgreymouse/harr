@@ -18,6 +18,7 @@ registry = manager.load_registry(ROOT / "common/mcp/registry.json")
 jira = manager.server_by_name(registry, "jira")
 assert jira["transport"] == "stdio" and jira["lifecycle"] == "on-demand"
 assert jira["trust_store"] == "system"
+assert [s["name"] for s in jira["secrets"]] == ["jira-pat", "jira"]
 assert jira["runtime"]["args"] == ["mcp-atlassian"]
 assert jira["secrets"][0]["target"] == {"kind": "env", "name": "JIRA_PERSONAL_TOKEN"}
 with tempfile.TemporaryDirectory() as temp:

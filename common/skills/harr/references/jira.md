@@ -6,7 +6,7 @@ Jira is an optional **on-demand stdio** MCP behind LeanCTX:
 Codex/OpenCode -> LeanCTX -> harr-mcp-run jira -> uvx mcp-atlassian -> Jira REST API
 ```
 
-No Atlassian-hosted MCP endpoint, Jira plugin, Docker daemon or MCP installation on the Jira server is required. This integration targets Jira Server/Data Center with Personal Access Token support; older versions and alternative enterprise authentication methods need separate compatibility testing.
+No Atlassian-hosted MCP endpoint, Jira plugin, Docker daemon or MCP installation on the Jira server is required. This integration targets Jira Server/Data Center with PAT and Basic authentication; enterprise gateways still need compatibility testing.
 
 Enable it through the shared Harr component selector (preserve other optional choices):
 
@@ -23,7 +23,7 @@ Edit the non-secret `mcp/jira.env` under the Harr config root:
 JIRA_URL=https://jira.company.example
 ```
 
-Store the PAT only with `harr secret set jira`. Harr injects it as `JIRA_PERSONAL_TOKEN` when launching the local MCP, not into the gateway config, registry, or local env file. Use `harr secret unset jira` to remove the saved token. `uvx` must be installed and the MCP package cached during `harr install mcp`.
+Store the PAT only with `harr secret set jira-pat`. Harr injects it as `JIRA_PERSONAL_TOKEN` when launching the local MCP, not into the gateway config, registry, or local env file. Use `harr secret unset jira-pat` to remove the saved token. `uvx` must be installed and the MCP package cached during `harr install mcp`.
 
 For Jira Cloud, use a separate `JIRA_USERNAME` + `JIRA_API_TOKEN` configuration (not provided by this Server/DC preset). If your Jira does not support PATs, do not try to use a Cloud API token as a substitute; select a compatible authentication provider after investigating the installed Jira version.
 
@@ -35,6 +35,6 @@ On Linux, Harr builds an on-demand CA bundle from the OS OpenSSL CA bundle and T
 
 ## Authentication modes and preflight
 
-Choose `JIRA_AUTH_MODE=pat` (default) or `JIRA_AUTH_MODE=basic` in `mcp/jira.env`. For Basic, supply the non-secret `JIRA_USER_NAME` and store the password via `harr secret set jira-password`; Harr translates these into upstream `JIRA_USERNAME` and `JIRA_API_TOKEN` in process memory. For PAT use `harr secret set jira`. Harr checks `/rest/api/2/myself` with verified TLS before launching Jira MCP and fails closed on a non-200 response.
+Choose `JIRA_AUTH_MODE=pat` (default) or `JIRA_AUTH_MODE=basic` in `mcp/jira.env`. For Basic, supply the non-secret `JIRA_USER_NAME` and store the password via `harr secret set jira`; Harr translates these into upstream `JIRA_USERNAME` and `JIRA_API_TOKEN` in process memory. For PAT use `harr secret set jira-pat`. Harr checks `/rest/api/2/myself` with verified TLS before launching Jira MCP and fails closed on a non-200 response.
 
 `JIRA_HOST` is accepted only if it equals the URL hostname. Upstream `mcp-atlassian` does not support a separate Host header; other values fail closed rather than silently ignoring an authentication-critical proxy setting. A dedicated transport adapter would be required for a distinct HTTP Host.

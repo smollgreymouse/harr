@@ -191,9 +191,9 @@
       "skill_reference": "jira.md",
       "secrets": [
         {
-          "name": "jira",
+          "name": "jira-pat",
           "file": "jira-personal-token",
-          "prompt": "Jira Server/Data Center personal access token",
+          "prompt": "Jira personal access token",
           "memento_id": "mcp/jira/default",
           "target": {
             "kind": "env",
@@ -201,7 +201,7 @@
           }
         },
         {
-          "name": "jira-password",
+          "name": "jira",
           "file": "jira-user-password",
           "prompt": "Jira Basic password (corporate gateway)",
           "memento_id": "mcp/jira/basic-password",
