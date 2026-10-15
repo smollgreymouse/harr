@@ -38,3 +38,9 @@ On Linux, Harr builds an on-demand CA bundle from the OS OpenSSL CA bundle and T
 Choose `JIRA_AUTH_MODE=pat` (default) or `JIRA_AUTH_MODE=basic` in `mcp/jira.env`. For Basic, supply the non-secret `JIRA_USER_NAME` and store the password via `harr secret set jira`; Harr translates these into upstream `JIRA_USERNAME` and `JIRA_API_TOKEN` in process memory. For PAT use `harr secret set jira-pat`. Harr checks `/rest/api/2/myself` with verified TLS before launching Jira MCP and fails closed on a non-200 response.
 
 `JIRA_HOST` is accepted only if it equals the URL hostname. Upstream `mcp-atlassian` does not support a separate Host header; other values fail closed rather than silently ignoring an authentication-critical proxy setting. A dedicated transport adapter would be required for a distinct HTTP Host.
+
+## Client certificate (mTLS)
+
+Basic/PAT authentication can be combined with a TLS client identity. On Linux, set the non-secret local option `JIRA_CLIENT_CERT_NSS=<nickname>` to select a certificate from the user's NSS database (default `~/.pki/nssdb`). Harr exports that identity only into a private runtime directory, passes temporary PEM paths to `mcp-atlassian` as `JIRA_CLIENT_CERT` and `JIRA_CLIENT_KEY`, and removes the runtime files when the MCP exits. The private key is never stored in the repository or persistent Harr configuration.
+
+Direct PEM paths supported by upstream `mcp-atlassian` may also be supplied locally with `JIRA_CLIENT_CERT` and `JIRA_CLIENT_KEY`; do not commit those paths or key material.

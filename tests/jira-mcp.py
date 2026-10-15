@@ -98,3 +98,33 @@ with patch("urllib.request.urlopen", side_effect=HTTPError(
 )):
     assert manager.jira_preflight(pat) == 401
 print("Jira preflight: PASS")
+
+# NSS client identity is materialized only into a private runtime directory.
+with tempfile.TemporaryDirectory() as temp:
+    root = Path(temp)
+    nss = root / "nssdb"
+    nss.mkdir()
+    (nss / "cert9.db").touch()
+
+    def fake_run(cmd, **kwargs):
+        if Path(cmd[0]).name == "pk12util":
+            Path(cmd[cmd.index("-o") + 1]).write_bytes(b"pkcs12")
+        elif Path(cmd[0]).name == "openssl":
+            Path(cmd[cmd.index("-out") + 1]).write_text("pem")
+        return manager.subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    with patch.dict(manager.os.environ, {"XDG_RUNTIME_DIR": str(root)}), \
+         patch.object(manager.shutil, "which", side_effect=lambda name: f"/usr/bin/{name}"), \
+         patch.object(manager.subprocess, "run", side_effect=fake_run):
+        mtls, runtime_dir = manager.materialize_jira_nss_client_cert({
+            **basic,
+            "JIRA_CLIENT_CERT_NSS": "example-client-cert",
+            "JIRA_CLIENT_CERT_NSS_DB": str(nss),
+        })
+        assert runtime_dir is not None and runtime_dir.is_dir()
+        assert Path(mtls["JIRA_CLIENT_CERT"]).is_file()
+        assert Path(mtls["JIRA_CLIENT_KEY"]).is_file()
+        assert "JIRA_CLIENT_CERT_NSS" not in mtls
+        assert oct(Path(mtls["JIRA_CLIENT_KEY"]).stat().st_mode & 0o777) == "0o600"
+        manager.shutil.rmtree(runtime_dir)
+print("Jira NSS mTLS materialization: PASS")
