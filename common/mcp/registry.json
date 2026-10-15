@@ -200,7 +200,8 @@
             "name": "JIRA_PERSONAL_TOKEN"
           }
         }
-      ]
+      ],
+      "trust_store": "system"
     }
   ]
 }
