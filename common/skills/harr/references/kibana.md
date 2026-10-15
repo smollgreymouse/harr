@@ -5,7 +5,7 @@ Kibana is an optional read-only on-demand MCP.
 Route:
 agent -> LeanCTX -> harr-mcp-run kibana -> kibana-agent mcp -> Kibana /api/console/proxy -> Elasticsearch
 
-Harr pins the smollgreymouse/kibana-agent fork at commit 7d36423cd67b30521dfdef0dbfc6ea980aee51f6.
+Harr pins the smollgreymouse/kibana-agent fork at commit 2998352c4c360d10d8d1dfc114dc7d26217d537c.
 The fork adds KIBANA_API_KEY authentication and pins the Python MCP SDK to the v1 API used by kibana-agent.
 Runtime installation and execution use uvx; no Docker container and no direct Elasticsearch endpoint are required.
 
@@ -22,3 +22,5 @@ The MCP is intentionally read-only. Useful tools include search_logs, count_docu
 raw_es_query still passes through kibana-agent's read-only guard. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow.
 
 This route is suitable when Kibana is reachable but Elasticsearch is private: kibana-agent forwards allowed Elasticsearch reads through Kibana's /api/console/proxy.
+
+Kibana Data View names/IDs are accepted by the normal query tools and resolved to their Elasticsearch title patterns. Use list_data_views when you need to discover the available Data Views explicitly.

@@ -670,7 +670,7 @@ Kibana is optional and provides read-only Elasticsearch investigation through an
 
 Route: LeanCTX -> harr-mcp-run kibana -> pinned smollgreymouse/kibana-agent fork -> Kibana /api/console/proxy -> Elasticsearch.
 
-This is intended for environments where Kibana is reachable but Elasticsearch itself is private. Harr pins smollgreymouse/kibana-agent at commit 7d36423cd67b30521dfdef0dbfc6ea980aee51f6. The fork adds KIBANA_API_KEY authentication and constrains the Python MCP SDK to the v1 API used by kibana-agent.
+This is intended for environments where Kibana is reachable but Elasticsearch itself is private. Harr pins smollgreymouse/kibana-agent at commit 2998352c4c360d10d8d1dfc114dc7d26217d537c. The fork adds KIBANA_API_KEY authentication and constrains the Python MCP SDK to the v1 API used by kibana-agent.
 
 Enable it with:
 
@@ -689,7 +689,7 @@ harr secret set jira
 
 Harr injects the key as KIBANA_API_KEY only into the MCP process. The fork sends it to Kibana as Authorization: ApiKey and does not persist it in a kibana-agent profile.
 
-The MCP exposes targeted read-only tools including search_logs, count_documents, get_histogram, get_context, get_mapping, list_fields, list_aliases, tail_logs, raw_es_query, and get_discover_url. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow. raw_es_query remains constrained by kibana-agent's read-only request guard.
+The MCP exposes targeted read-only tools including search_logs, count_documents, get_histogram, get_context, get_mapping, list_fields, list_aliases, list_data_views, tail_logs, raw_es_query, and get_discover_url. Exact Kibana Data View names/IDs are resolved to their underlying Elasticsearch title patterns before querying. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow. raw_es_query remains constrained by kibana-agent's read-only request guard.
 
 See common/skills/harr/references/kibana.md for pinned-runtime and routing details.
 
