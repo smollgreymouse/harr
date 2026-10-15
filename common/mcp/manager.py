@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -318,6 +319,63 @@ def runtime_env(server: dict) -> dict[str, str]:
     return dict(env)
 
 
+def system_trust_bundle() -> Path | None:
+    """Combine system OpenSSL CAs with explicitly TLS-trusted user NSS CAs.
+
+    Never use arbitrary certificates from a directory or server handshake as roots.
+    """
+    if sys.platform != "linux":
+        return None
+    system = Path("/etc/ssl/certs/ca-certificates.crt")
+    nss = Path.home() / ".pki" / "nssdb"
+    certutil = shutil.which("certutil")
+    if not system.is_file() or not (nss / "cert9.db").is_file():
+        return system if system.is_file() else None
+    if not certutil:
+        return system
+
+    listing = subprocess.run(
+        [certutil, "-L", "-d", f"sql:{nss}"],
+        capture_output=True, text=True, check=False, timeout=12,
+    )
+    if listing.returncode != 0:
+        return system
+
+    anchors = []
+    for line in listing.stdout.splitlines():
+        parts = line.rsplit(None, 1)
+        if len(parts) != 2:
+            continue
+        nickname, flags = parts
+        # NSS certutil marks trust for TLS in the first comma-separated column.
+        tls_trust = flags.split(",", 1)[0]
+        if "C" not in tls_trust:
+            continue
+        cert = subprocess.run(
+            [certutil, "-L", "-d", f"sql:{nss}", "-n", nickname, "-a"],
+            capture_output=True, check=False, timeout=12,
+        )
+        if cert.returncode == 0 and b"-----BEGIN CERTIFICATE-----" in cert.stdout:
+            anchors.append(cert.stdout)
+    if not anchors:
+        return system
+
+    destination = harr_config_dir() / "ca" / "system-nss-bundle.pem"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".ca-", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(system.read_bytes())
+            for anchor in anchors:
+                output.write(b"\n" + anchor)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return destination
+
+
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
     env = os.environ.copy()
@@ -333,6 +391,11 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
     env.update(load_env_file(env_path, forbidden))
     env.update(runtime_env(server))
     env.update(service_secret_env(server))
+    if server.get("trust_store") == "system":
+        bundle = system_trust_bundle()
+        if bundle:
+            env["SSL_CERT_FILE"] = str(bundle)
+            env["REQUESTS_CA_BUNDLE"] = str(bundle)
     cmd = runtime_command(server)
     if os.name == "nt":
         raise SystemExit(subprocess.call(cmd, env=env))
