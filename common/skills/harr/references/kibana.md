@@ -24,3 +24,5 @@ For distinct values, counts, or distributions within large unstructured log stri
 raw_es_query still passes through kibana-agent's read-only guard. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow.
 
 This route is suitable when Kibana is reachable but Elasticsearch is private: kibana-agent forwards allowed Elasticsearch reads through Kibana's /api/console/proxy.
+
+Kibana Data View names/IDs are accepted by the normal query tools and resolved to their Elasticsearch title patterns. Use list_data_views when you need to discover the available Data Views explicitly.

@@ -35,7 +35,7 @@ assert mod.remote_host_and_rewrite("https://gitlab.example.test/group/proj.git",
 assert mod.first_remote_arg(["-u", "origin", "topic"]) == "origin"
 assert mod.first_remote_arg(["--force-with-lease", "origin", "topic"]) == "origin"
 assert mod.first_remote_arg(["--depth", "1", "origin", "master"], fetch=True) == "origin"
-assert mod.publish_refspec("ADSDSP-7737-final-prerank-cleanup") == "HEAD:refs/heads/ADSDSP-7737-final-prerank-cleanup"
+assert mod.publish_refspec("TEST-7737-final-prerank-cleanup") == "HEAD:refs/heads/TEST-7737-final-prerank-cleanup"
 
 old_resolve_remote = mod.resolve_remote
 mod.resolve_remote = lambda _args, **_kwargs: "origin"
@@ -66,15 +66,15 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     repo = Path(tmp_raw) / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/ADSDSP-7737-final-prerank-cleanup"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "branch.ADSDSP-7737-final-prerank-cleanup.remote", "origin"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "branch.ADSDSP-7737-final-prerank-cleanup.merge", "refs/heads/master"], cwd=repo, check=True)
+    subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/TEST-7737-final-prerank-cleanup"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "branch.TEST-7737-final-prerank-cleanup.remote", "origin"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "branch.TEST-7737-final-prerank-cleanup.merge", "refs/heads/master"], cwd=repo, check=True)
     old_cwd = Path.cwd()
     os.chdir(repo)
     try:
         branch = mod.current_branch()
-        assert branch == "ADSDSP-7737-final-prerank-cleanup"
-        assert mod.publish_refspec(branch) == "HEAD:refs/heads/ADSDSP-7737-final-prerank-cleanup"
+        assert branch == "TEST-7737-final-prerank-cleanup"
+        assert mod.publish_refspec(branch) == "HEAD:refs/heads/TEST-7737-final-prerank-cleanup"
         assert subprocess.run(
             ["git", "config", "--get", f"branch.{branch}.merge"],
             text=True,

@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -318,6 +319,194 @@ def runtime_env(server: dict) -> dict[str, str]:
     return dict(env)
 
 
+def system_trust_bundle() -> Path | None:
+    """Combine system OpenSSL CAs with explicitly TLS-trusted user NSS CAs.
+
+    Never use arbitrary certificates from a directory or server handshake as roots.
+    """
+    if sys.platform != "linux":
+        return None
+    system = Path("/etc/ssl/certs/ca-certificates.crt")
+    nss = Path.home() / ".pki" / "nssdb"
+    certutil = shutil.which("certutil")
+    if not system.is_file() or not (nss / "cert9.db").is_file():
+        return system if system.is_file() else None
+    if not certutil:
+        return system
+
+    listing = subprocess.run(
+        [certutil, "-L", "-d", f"sql:{nss}"],
+        capture_output=True, text=True, check=False, timeout=12,
+    )
+    if listing.returncode != 0:
+        return system
+
+    anchors = []
+    for line in listing.stdout.splitlines():
+        parts = line.rsplit(None, 1)
+        if len(parts) != 2:
+            continue
+        nickname, flags = parts
+        # NSS certutil marks trust for TLS in the first comma-separated column.
+        tls_trust = flags.split(",", 1)[0]
+        if "C" not in tls_trust:
+            continue
+        cert = subprocess.run(
+            [certutil, "-L", "-d", f"sql:{nss}", "-n", nickname, "-a"],
+            capture_output=True, check=False, timeout=12,
+        )
+        if cert.returncode == 0 and b"-----BEGIN CERTIFICATE-----" in cert.stdout:
+            anchors.append(cert.stdout)
+    if not anchors:
+        return system
+
+    destination = harr_config_dir() / "ca" / "system-nss-bundle.pem"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".ca-", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(system.read_bytes())
+            for anchor in anchors:
+                output.write(b"\n" + anchor)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    return destination
+
+
+def prepare_jira_env(env: dict[str, str]) -> dict[str, str]:
+    """Validate Jira authentication settings without logging secrets."""
+    from urllib.parse import urlsplit
+
+    result = dict(env)
+    endpoint = result.get("JIRA_URL", "")
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise SystemExit("Jira URL must be an HTTPS endpoint without embedded credentials")
+    host = result.get("JIRA_HOST", "").strip()
+    if host:
+        if any(ch in host for ch in "/:@ \t\r\n") or host.lower() != parsed.hostname.lower():
+            raise SystemExit("JIRA_HOST differs from Jira URL host; upstream MCP cannot safely override Host (requires separate reverse-proxy adapter)")
+    mode = result.get("JIRA_AUTH_MODE", "pat").strip().lower()
+    if mode == "basic":
+        user = result.pop("JIRA_USER_NAME", "")
+        password = result.pop("JIRA_USER_PASS", "")
+        if not user or not password:
+            raise SystemExit("Jira basic auth requires JIRA_USER_NAME and the Harr jira secret")
+        result["JIRA_USERNAME"] = user
+        result["JIRA_API_TOKEN"] = password
+        result.pop("JIRA_PERSONAL_TOKEN", None)
+    elif mode == "pat":
+        if not result.get("JIRA_PERSONAL_TOKEN"):
+            raise SystemExit("Jira PAT auth requires harr secret set jira-pat")
+        result.pop("JIRA_USER_PASS", None)
+        result.pop("JIRA_USER_NAME", None)
+    else:
+        raise SystemExit("JIRA_AUTH_MODE must be basic or pat")
+    return result
+
+
+def materialize_jira_nss_client_cert(env: dict[str, str]) -> tuple[dict[str, str], Path | None]:
+    """Export a selected NSS client identity into a private runtime directory.
+
+    The private key is never written to repository/config files and is removed
+    when the Jira MCP child exits.
+    """
+    nickname = env.get("JIRA_CLIENT_CERT_NSS", "").strip()
+    if not nickname:
+        return env, None
+    if env.get("JIRA_CLIENT_CERT") or env.get("JIRA_CLIENT_KEY"):
+        raise SystemExit("Configure either JIRA_CLIENT_CERT_NSS or PEM client certificate paths, not both")
+    if sys.platform != "linux":
+        raise SystemExit("JIRA_CLIENT_CERT_NSS is currently supported only on Linux")
+
+    nss_dir = Path(env.get("JIRA_CLIENT_CERT_NSS_DB", str(Path.home() / ".pki" / "nssdb"))).expanduser()
+    if not (nss_dir / "cert9.db").is_file():
+        raise SystemExit(f"Jira NSS certificate database is missing: {nss_dir}")
+
+    pk12util = shutil.which("pk12util")
+    openssl = shutil.which("openssl")
+    if not pk12util or not openssl:
+        raise SystemExit("Jira NSS client certificate support requires pk12util and openssl")
+
+    runtime_base = Path(os.environ.get("XDG_RUNTIME_DIR", tempfile.gettempdir())) / "harr"
+    runtime_base.mkdir(parents=True, exist_ok=True)
+    os.chmod(runtime_base, 0o700)
+    runtime_dir = Path(tempfile.mkdtemp(prefix="jira-client-", dir=runtime_base))
+    os.chmod(runtime_dir, 0o700)
+
+    password_file = runtime_dir / ".p12-password"
+    p12_file = runtime_dir / "client.p12"
+    cert_file = runtime_dir / "client-cert.pem"
+    key_file = runtime_dir / "client-key.pem"
+    password_file.write_text(os.urandom(24).hex(), encoding="ascii")
+    os.chmod(password_file, 0o600)
+
+    try:
+        exported = subprocess.run(
+            [pk12util, "-o", str(p12_file), "-n", nickname, "-d", f"sql:{nss_dir}", "-w", str(password_file)],
+            stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=15,
+        )
+        if exported.returncode != 0:
+            raise SystemExit(f"Failed to export Jira client certificate {nickname!r} from NSS")
+
+        for output, args in (
+            (cert_file, ["-clcerts", "-nokeys"]),
+            (key_file, ["-nocerts", "-nodes"]),
+        ):
+            converted = subprocess.run(
+                [openssl, "pkcs12", "-in", str(p12_file), "-passin", f"file:{password_file}", *args, "-out", str(output)],
+                stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=15,
+            )
+            if converted.returncode != 0:
+                raise SystemExit(f"Failed to prepare Jira client certificate {nickname!r} for TLS")
+            os.chmod(output, 0o600)
+    except BaseException:
+        shutil.rmtree(runtime_dir, ignore_errors=True)
+        raise
+    finally:
+        p12_file.unlink(missing_ok=True)
+        password_file.unlink(missing_ok=True)
+
+    result = dict(env)
+    result.pop("JIRA_CLIENT_CERT_NSS", None)
+    result.pop("JIRA_CLIENT_CERT_NSS_DB", None)
+    result["JIRA_CLIENT_CERT"] = str(cert_file)
+    result["JIRA_CLIENT_KEY"] = str(key_file)
+    return result, runtime_dir
+
+
+def jira_preflight(env: dict[str, str]) -> int:
+    """Probe Jira identity with verified TLS; return status without credential disclosure."""
+    import base64
+    import ssl
+    import urllib.error
+    import urllib.request
+
+    url = env["JIRA_URL"].rstrip("/") + "/rest/api/2/myself"
+    if env.get("JIRA_AUTH_MODE", "pat").lower() == "basic":
+        raw = (env["JIRA_USERNAME"] + ":" + env["JIRA_API_TOKEN"]).encode()
+        authorization = "Basic " + base64.b64encode(raw).decode("ascii")
+    else:
+        authorization = "Bearer " + env["JIRA_PERSONAL_TOKEN"]
+    context = ssl.create_default_context(cafile=env.get("SSL_CERT_FILE") or None)
+    client_cert = env.get("JIRA_CLIENT_CERT")
+    if client_cert:
+        context.load_cert_chain(
+            certfile=client_cert,
+            keyfile=env.get("JIRA_CLIENT_KEY") or None,
+            password=env.get("JIRA_CLIENT_KEY_PASSWORD") or None,
+        )
+    request = urllib.request.Request(url, headers={"Authorization": authorization, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, context=context, timeout=12) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
+
+
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
     env = os.environ.copy()
@@ -333,9 +522,30 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
     env.update(load_env_file(env_path, forbidden))
     env.update(runtime_env(server))
     env.update(service_secret_env(server))
+    if server.get("trust_store") == "system":
+        bundle = system_trust_bundle()
+        if bundle:
+            env["SSL_CERT_FILE"] = str(bundle)
+            env["REQUESTS_CA_BUNDLE"] = str(bundle)
+    jira_runtime_dir: Path | None = None
+    if server["name"] == "jira":
+        env = prepare_jira_env(env)
+        env, jira_runtime_dir = materialize_jira_nss_client_cert(env)
+        try:
+            status = jira_preflight(env)
+            if status != 200:
+                raise SystemExit(f"Jira credential preflight failed (HTTP {status}); MCP was not started")
+        except BaseException:
+            if jira_runtime_dir:
+                shutil.rmtree(jira_runtime_dir, ignore_errors=True)
+            raise
     cmd = runtime_command(server)
-    if os.name == "nt":
-        raise SystemExit(subprocess.call(cmd, env=env))
+    if os.name == "nt" or jira_runtime_dir is not None:
+        try:
+            raise SystemExit(subprocess.call(cmd, env=env))
+        finally:
+            if jira_runtime_dir:
+                shutil.rmtree(jira_runtime_dir, ignore_errors=True)
     os.execvpe(cmd[0], cmd, env)
 
 
