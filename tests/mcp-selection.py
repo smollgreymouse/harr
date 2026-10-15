@@ -56,14 +56,12 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("gitlab" in secret_names) == ("gitlab" in expected)
         assert ("grafana" in secret_names) == ("grafana" in expected)
         assert ("kibana" in secret_names) == ("kibana" in expected)
-        assert ("jira" in secret_names) == ("jira" in expected)
 
         config_dir = tmp / "mcp-config"
         run(MANAGER, "--registry", effective, "install-configs", "--config-dir", config_dir)
         assert (config_dir / "gitlab.env").exists() == ("gitlab" in expected)
         assert (config_dir / "grafana.env").exists() == ("grafana" in expected)
         assert (config_dir / "kibana.env").exists() == ("kibana" in expected)
-        assert (config_dir / "jira.env").exists() == ("jira" in expected)
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
@@ -146,7 +144,6 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
         assert ("harr secret set kibana" in skill) == ("kibana" in expected)
-        assert ("harr secret set jira" in skill) == ("jira" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
         assert gitlab_ref.exists() == ("gitlab" in expected)
         if gitlab_ref.exists():
@@ -163,7 +160,6 @@ def check(spec: str, expected: list[str]) -> None:
             assert "PAT authenticates GitLab API calls only" in gitlab_text
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
-        assert (filtered_skill / "references" / "jira.md").exists() == ("jira" in expected)
         kibana_ref = filtered_skill / "references" / "kibana.md"
         assert kibana_ref.exists() == ("kibana" in expected)
         if kibana_ref.exists():
@@ -190,7 +186,6 @@ servers = {item["name"]: item for item in catalog["servers"]}
 assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
-assert servers["jira"]["required"] is False
 assert servers["kibana"]["required"] is False
 assert servers["gigacode"]["required"] is False
 
@@ -198,7 +193,7 @@ check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
 check("gigacode", ["codegraph", "gigacode"])
 check("kibana", ["codegraph", "kibana"])
-check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "jira"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode"])
 
 # Normal reinstall/update without an explicit selection must reuse the saved
 # optional set instead of resetting to required-only or all.
@@ -236,7 +231,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     assert names(effective) == ["codegraph"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "jira"]
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode"]
 
     failed = subprocess.run(
         [
