@@ -23,10 +23,10 @@ The installed MCP exposes `create_branch`, `create_or_update_file`, and `push_fi
 ## Normal route
 
 ```text
-agent -> LeanCTX gateway -> GitLab MCP HTTP service -> GitLab API
+agent -> LeanCTX gateway -> GitLab MCP on-demand stdio -> GitLab API
 ```
 
-The long-lived MCP service is managed by Harr at `http://127.0.0.1:3334/mcp`.
+GitLab is an on-demand stdio MCP managed by Harr, spawned by LeanCTX through the generic runner. It is not a long-lived HTTP service.
 
 Use `ctx_tools` to discover and call `gitlab::*` tools. Gateway discovery is ranked and returns only a short top-N list, not the full GitLab catalog. Never conclude that a capability is unavailable merely because it was absent from a previous broad result.
 
@@ -86,7 +86,7 @@ Harr may expose the GitLab MCP service directly for diagnostics. A direct regist
 
 ## Authentication and permissions
 
-Harr stores the GitLab PAT privately and LeanCTX supplies it as `Private-Token` through secret-memento handling. The PAT authenticates GitLab API calls only; host Git does not read or inject it.
+Harr stores the GitLab PAT privately and LeanCTX supplies it as `GITLAB_PERSONAL_ACCESS_TOKEN` through secret-memento env handling. The PAT authenticates GitLab API calls only; host Git does not read or inject it.
 
 Harr configures the service with:
 

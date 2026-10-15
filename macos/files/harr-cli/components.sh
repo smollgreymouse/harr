@@ -1,6 +1,9 @@
 # macOS component installation and version status.
 
-readonly HARR_LEANCTX_VERSION="3.9.15"
+readonly HARR_LEANCTX_VERSION="3.11.0"
+readonly HARR_LEANCTX_BUILD="3.11.0-harr-progress.1"
+readonly HARR_LEANCTX_RELEASE_TAG="harr-v3.11.0-progress.1"
+readonly HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"
 
 write_runtime_env() {
   local node_bin="${1:-}" python_bin node_bin_dir=''
@@ -75,13 +78,13 @@ install_leanctx_wrapper() {
 install_leanctx() {
   require_command curl; require_command tar; require_command python3
   local target version_dir real_bin tmpdir archive sums expected asset sums_url
-  target="$(leanctx_target)"; version_dir="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}"; real_bin="${version_dir}/lean-ctx"
+  target="$(leanctx_target)"; version_dir="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_BUILD}"; real_bin="${version_dir}/lean-ctx"
   if [[ -x "$real_bin" ]] && "$real_bin" --version 2>/dev/null | grep -q "${HARR_LEANCTX_VERSION}"; then
     printf 'LeanCTX %s already installed in Harr vendor dir.\n' "$HARR_LEANCTX_VERSION"; install_leanctx_wrapper; return
   fi
   tmpdir="$(mktemp -d)"; archive="${tmpdir}/lean-ctx.tar.gz"; sums="${tmpdir}/SHA256SUMS"
-  asset="https://github.com/yvgude/lean-ctx/releases/download/v${HARR_LEANCTX_VERSION}/lean-ctx-${target}.tar.gz"
-  sums_url="https://github.com/yvgude/lean-ctx/releases/download/v${HARR_LEANCTX_VERSION}/SHA256SUMS"
+  asset="https://github.com/${HARR_LEANCTX_REPO}/releases/download/${HARR_LEANCTX_RELEASE_TAG}/lean-ctx-${target}.tar.gz"
+  sums_url="https://github.com/${HARR_LEANCTX_REPO}/releases/download/${HARR_LEANCTX_RELEASE_TAG}/SHA256SUMS"
   printf 'Installing LeanCTX %s (%s)...\n' "$HARR_LEANCTX_VERSION" "$target"
   curl -fsSL "$asset" -o "$archive"; curl -fsSL "$sums_url" -o "$sums"
   expected="$(awk -v f="lean-ctx-${target}.tar.gz" '$2 == f || $2 == "*" f {print $1; exit}' "$sums")"
@@ -106,12 +109,12 @@ cmd_install_components() {
 }
 
 cmd_components_status() {
-  local lean_actual='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_VERSION}/lean-ctx"
+  local lean_actual='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_BUILD}/lean-ctx"
   if [[ -x "$lean_real" ]]; then lean_actual="$("$lean_real" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"; fi
   printf '%-16s %-18s %-16s %s\n' COMPONENT EXPECTED STATE INSTALLED
-  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" ok "$lean_actual";
-  elif [[ -n "$lean_actual" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" version-mismatch "$lean_actual";
-  else printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_VERSION" missing '-'; fi
+  if [[ "$lean_actual" == "$HARR_LEANCTX_VERSION" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" ok "$lean_actual";
+  elif [[ -n "$lean_actual" ]]; then printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" version-mismatch "$lean_actual";
+  else printf '%-16s %-18s %-16s %s\n' leanctx "$HARR_LEANCTX_BUILD" missing '-'; fi
   while IFS=$'\t' read -r name expected state installed; do
     printf '%-16s %-18s %-16s %s\n' "$name" "$expected" "$state" "$installed"
   done < <(mcp_manager components --npm-prefix "$HARR_NPM_PREFIX")

@@ -20,11 +20,6 @@ harr mcp configure
 harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
-harr mcp start gitlab
-harr mcp stop gitlab
-harr mcp restart gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
 <!-- harr-mcp:gitlab:end -->
 <!-- harr-mcp:grafana:start -->
 harr secret set grafana
@@ -35,7 +30,7 @@ harr secret status
 
 LeanCTX and CodeGraph are always enabled. Optional MCPs are selected globally with `harr mcp configure`; the same saved selection drives LeanCTX gateway generation, runtime packages, secrets/status, service lifecycle, global routing policy and the installed Harr skill/reference set.
 
-Only enabled registry entries with `lifecycle = service` belong under start/stop/restart/log commands. CodeGraph is an on-demand stdio server; Grafana and GitLab run as loopback HTTP services.
+Only enabled registry entries with `lifecycle = service` belong under start/stop/restart/log commands. CodeGraph, GitLab and Grafana are all on-demand stdio servers behind LeanCTX and have no standalone services to manage.
 
 Do not independently run upstream installers/upgraders for Harr-managed npm components; restore the selected pinned stack with `harr install all`. PATH runtimes declared by enabled registry entries (for example `uvx`) remain external prerequisites and are reported by `harr status` when unavailable.
 

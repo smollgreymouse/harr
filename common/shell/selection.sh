@@ -43,6 +43,8 @@ mcp_select() {
   case "$mode" in
     configure) args+=(--configure) ;;
     spec) args+=(--spec "$value") ;;
+    add) args+=(--add "$value") ;;
+    remove) args+=(--remove "$value") ;;
     keep) ;;
     *) die "unknown MCP selection mode: $mode" ;;
   esac

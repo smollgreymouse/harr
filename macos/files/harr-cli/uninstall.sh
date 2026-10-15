@@ -7,7 +7,7 @@ cmd_uninstall() {
   [[ $# -eq 0 ]] || die 'usage: harr uninstall'
   [[ -x "$HARR_STATE_HELPER" ]] || die "rollback helper missing: $HARR_STATE_HELPER"
   [[ -f "${HARR_STATE_ROOT}/pre-harr/complete" ]] || die 'no clean pre-Harr snapshot exists; refusing destructive uninstall'
-  local safety='' name
+  local safety='' name label
   safety="$($HARR_STATE_HELPER safety-snapshot)"
   [[ -n "$safety" ]] && printf 'Saved current Harr state before rollback: %s\n' "$safety"
   launchctl bootout "$(git_host_target)" >/dev/null 2>&1 || true
@@ -15,6 +15,11 @@ cmd_uninstall() {
     [[ -n "$name" ]] || continue
     launchctl bootout "$(launch_target "$name")" >/dev/null 2>&1 || true
   done < <(managed_mcp_names 2>/dev/null || true)
+  for name in gitlab grafana; do
+    label="com.harr.mcp.${name}"
+    launchctl bootout "gui/$(id -u)/${label}" >/dev/null 2>&1 || true
+    rm -f -- "${HOME}/Library/LaunchAgents/${label}.plist"
+  done
   "$HARR_STATE_HELPER" restore
   rm -rf -- "$HARR_STATE_ROOT"
   printf '\nHarr uninstalled and the exact pre-Harr global harness state was restored.\n'

@@ -2,7 +2,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:HarrVersion = '1.0.0'
-$script:LeanVersion = '3.9.15'
+$script:LeanVersion = '3.11.0'
+$script:LeanBuild = '3.11.0-harr-progress.1'
+$script:LeanReleaseTag = 'harr-v3.11.0-progress.1'
+$script:LeanRepo = 'smollgreymouse/lean-ctx'
 $script:UserHome = if ($env:HARR_HOME) { $env:HARR_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $script:LocalRoot = if ($env:HARR_LOCALAPPDATA) { $env:HARR_LOCALAPPDATA } elseif ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $UserHome 'AppData\Local' }
 $script:ConfigHome = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $UserHome '.config' }
@@ -160,11 +163,19 @@ function Install-HarrSkill([string]$Target) {
 function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
+    [bool]$gigacodeEnabled = @(Active-McpNames) -contains 'gigacode'
     foreach ($agent in $agents) {
         $policy = Agent-PolicyPath $agent
+        $skillRoot = Agent-SkillRoot $agent
         Write-Utf8 $policy (Render-Policy $agent)
-        Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path (Agent-SkillRoot $agent) 'lean-ctx')
-        Install-HarrSkill (Join-Path (Agent-SkillRoot $agent) 'harr')
+        Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path $skillRoot 'lean-ctx')
+        Install-HarrSkill (Join-Path $skillRoot 'harr')
+        $gigaSkill = Join-Path $skillRoot 'gigacode-executor'
+        if ($gigacodeEnabled) {
+            Copy-TreeFresh (Join-Path $CommonDir 'skills\gigacode-executor') $gigaSkill
+        } elseif (Test-Path -LiteralPath $gigaSkill) {
+            Remove-Item -LiteralPath $gigaSkill -Recurse -Force
+        }
         Write-Host "Applied Harr-owned global policy for ${agent}: $policy"
     }
 }

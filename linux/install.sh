@@ -4,6 +4,9 @@ set -Eeuo pipefail
 readonly SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly COMMON_DIR="$(cd -- "${SOURCE_DIR}/../common" && pwd)"
 readonly FILES_DIR="${SOURCE_DIR}/files"
+if [[ -x "${SOURCE_DIR}/vendor/lean-ctx/lean-ctx" ]]; then
+  export HARR_BUNDLED_LEANCTX="${SOURCE_DIR}/vendor/lean-ctx/lean-ctx"
+fi
 readonly SYSTEMD_SOURCE_DIR="${SOURCE_DIR}/systemd"
 readonly BIN_DIR="${HOME}/.local/bin"
 readonly LIBEXEC_DIR="${HOME}/.local/libexec/harr"
@@ -26,6 +29,7 @@ readonly MCP_UNIT_TEMPLATE="harr-mcp@.service"
 readonly GIT_HOST_UNIT="harr-git-host.service"
 readonly LEGACY_GITLAB_UNIT="harr-mcp-gitlab.service"
 readonly LEGACY_CODEGRAPH_UNIT="harr-mcp-codegraph.service"
+readonly RETIRED_MCP_UNITS="gitlab grafana"
 readonly CLEAN_STATE_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
 
 start_now=0
@@ -45,7 +49,7 @@ Harr Linux setup
 Usage after package installation:
   harr setup --clean [--start]
   harr setup --clean --all [--start]
-  harr setup --clean --mcp gitlab,grafana [--start]
+  harr setup --clean --mcp gitlab,grafana,gigacode [--start]
   harr setup [--start] [--harr-only] [--configure-mcp]
 
 From a source checkout, ./install.sh accepts the same options.
@@ -143,10 +147,17 @@ EOF_HARR_PACKAGE_SHIM
 install_mcp_configs() { python3 "$MCP_MANAGER" --registry "$MCP_EFFECTIVE" install-configs --config-dir "$MCP_CONFIG_DIR"; }
 
 remove_legacy_services() {
-  local unit path
+  local unit path name
   for unit in "$LEGACY_GITLAB_UNIT" "$LEGACY_CODEGRAPH_UNIT"; do
     path="${SYSTEMD_USER_DIR}/${unit}"
     if [[ -e "$path" ]]; then systemctl --user disable --now "$unit" >/dev/null 2>&1 || true; rm -f -- "$path"; fi
+  done
+  for name in $RETIRED_MCP_UNITS; do
+    unit="harr-mcp@${name}.service"
+    path="${SYSTEMD_USER_DIR}/${unit}"
+    if systemctl --user is-enabled "$unit" >/dev/null 2>&1; then systemctl --user disable --now "$unit" >/dev/null 2>&1 || true; fi
+    systemctl --user is-active "$unit" >/dev/null 2>&1 && systemctl --user stop "$unit" >/dev/null 2>&1 || true
+    rm -f -- "$path"
   done
   rm -f -- "${MCP_CONFIG_DIR}/codegraph.env"
 }
@@ -194,7 +205,7 @@ main() {
 
   printf '\nHarr setup complete in clean global-harness mode for Linux.\n'
   printf 'LeanCTX + CodeGraph are required; optional MCPs follow %s.\n' "$MCP_SELECTION"
-  printf 'Change them later with: harr mcp configure\n'
+  printf 'Change optional MCPs later with: harr mcp add/remove NAME; use harr mcp configure for a full replacement/checklist.\n'
   printf 'Project-level configs/files were not touched.\n'
   if (( ! start_now )); then printf 'Enabled service MCPs were not started/restarted. Start with: harr mcp start all\n'; fi
   printf 'Check with: harr status\nRollback with: harr uninstall\n'

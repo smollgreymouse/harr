@@ -55,21 +55,31 @@ def check(spec: str, expected: list[str]) -> None:
         secret_names = [row["name"] for row in secret_rows]
         assert ("gitlab" in secret_names) == ("gitlab" in expected)
         assert ("grafana" in secret_names) == ("grafana" in expected)
+        assert ("kibana" in secret_names) == ("kibana" in expected)
         assert ("jira" in secret_names) == ("jira" in expected)
 
         config_dir = tmp / "mcp-config"
         run(MANAGER, "--registry", effective, "install-configs", "--config-dir", config_dir)
         assert (config_dir / "gitlab.env").exists() == ("gitlab" in expected)
         assert (config_dir / "grafana.env").exists() == ("grafana" in expected)
+        assert (config_dir / "kibana.env").exists() == ("kibana" in expected)
         assert (config_dir / "jira.env").exists() == ("jira" in expected)
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
-            run(MANAGER, "--registry", effective, "render-leanctx", "--base", BASE, "--output", lean, "--platform", platform, "--runner-command", "harr-mcp-run")
+            allow_a = tmp / "codex-skills" / "gigacode-executor"
+            allow_b = tmp / "opencode-skills" / "gigacode-executor"
+            run(
+                MANAGER, "--registry", effective, "render-leanctx",
+                "--base", BASE, "--output", lean,
+                "--platform", platform, "--runner-command", "harr-mcp-run",
+                "--allow-path", allow_a, "--allow-path", allow_b,
+            )
             parsed = tomllib.loads(lean.read_text(encoding="utf-8"))
             assert parsed["gateway"]["top_n"] == 3
             assert "harr" in parsed["shell_allowlist_extra"]
             assert "clang-format" in parsed["shell_allowlist_extra"]
+            assert parsed["allow_paths"] == [str(allow_a), str(allow_b)]
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
@@ -101,11 +111,16 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("gitlab::get_merge_request" in policy) == ("gitlab" in expected)
         assert ("source_branch=<current-local-branch>" in policy) == ("gitlab" in expected)
         assert ("MR author is the authenticated GitLab identity" in policy) == ("gitlab" in expected)
-        assert ("Jira issues, JQL searches" in policy) == ("jira" in expected)
         assert ("Grafana dashboard work" in policy) == ("grafana" in expected)
         assert ("Grafana dashboard URL or `/goto/` short link" in policy) == ("grafana" in expected)
         assert ("Do not open the dashboard in a browser as the first action" in policy) == ("grafana" in expected)
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
+        assert ("Kibana/Elasticsearch log and document investigation" in policy) == ("kibana" in expected)
+        assert ("This Harr route is intentionally read-only" in policy) == ("kibana" in expected)
+        assert ("use the installed `$gigacode-executor` skill" in policy) == ("gigacode" in expected)
+        assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
+        assert ("delegated scope is frozen for the parent" in policy) == ("gigacode" in expected)
+        assert ("contract acceptance from the structured self-verification handoff" in policy) == ("gigacode" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -130,6 +145,7 @@ def check(spec: str, expected: list[str]) -> None:
         assert "user.exec" in kube_text
         assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
         assert ("harr secret set grafana" in skill) == ("grafana" in expected)
+        assert ("harr secret set kibana" in skill) == ("kibana" in expected)
         assert ("harr secret set jira" in skill) == ("jira" in expected)
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
         assert gitlab_ref.exists() == ("gitlab" in expected)
@@ -148,6 +164,24 @@ def check(spec: str, expected: list[str]) -> None:
             assert "GITLAB_PERMISSION_MODE=full" in gitlab_text
         assert (filtered_skill / "references" / "grafana.md").exists() == ("grafana" in expected)
         assert (filtered_skill / "references" / "jira.md").exists() == ("jira" in expected)
+        kibana_ref = filtered_skill / "references" / "kibana.md"
+        assert kibana_ref.exists() == ("kibana" in expected)
+        if kibana_ref.exists():
+            kibana_text = kibana_ref.read_text(encoding="utf-8")
+            assert "smollgreymouse/kibana-agent" in kibana_text
+            assert "7d36423cd67b30521dfdef0dbfc6ea980aee51f6" in kibana_text
+            assert "KIBANA_API_KEY" in kibana_text
+            assert "/api/console/proxy" in kibana_text
+        gigacode_ref = filtered_skill / "references" / "gigacode.md"
+        assert gigacode_ref.exists() == ("gigacode" in expected)
+        if gigacode_ref.exists():
+            gigacode_text = gigacode_ref.read_text(encoding="utf-8")
+            assert "gigacode::gigacode" in gigacode_text
+            assert "startup_confirmed=true" in gigacode_text
+            assert "Nonblocking status and blocking wait" in gigacode_text
+            assert "wait` polls only inside the MCP bridge" in gigacode_text
+            assert "do not return GigaCode event history" in gigacode_text
+            assert "second full parent code review" in gigacode_text
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -157,9 +191,72 @@ assert servers["codegraph"]["required"] is True
 assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
 assert servers["jira"]["required"] is False
+assert servers["kibana"]["required"] is False
+assert servers["gigacode"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
-check("jira", ["codegraph", "jira"])
-check("all", ["codegraph", "gitlab", "grafana", "jira"])
+check("gigacode", ["codegraph", "gigacode"])
+check("kibana", ["codegraph", "kibana"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "jira"])
+
+# Normal reinstall/update without an explicit selection must reuse the saved
+# optional set instead of resetting to required-only or all.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gigacode")
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--default", "required")
+    assert names(effective) == ["codegraph", "gigacode"]
+    assert json.loads(selection.read_text(encoding="utf-8")) == {
+        "schema": 1,
+        "enabled": ["codegraph", "gigacode"],
+    }
+
+# Incremental add/remove mutates only the requested optional MCPs.
+with tempfile.TemporaryDirectory() as tmp_raw:
+    tmp = Path(tmp_raw)
+    selection = tmp / "selection.json"
+    effective = tmp / "effective.json"
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gitlab")
+    assert names(effective) == ["codegraph", "gitlab"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "gigacode")
+    assert names(effective) == ["codegraph", "gitlab", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "grafana,gigacode")
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "gitlab")
+    assert names(effective) == ["codegraph", "grafana", "gigacode"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "all")
+    assert names(effective) == ["codegraph"]
+
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "jira"]
+
+    failed = subprocess.run(
+        [
+            sys.executable,
+            str(SELECTOR),
+            "--catalog",
+            str(CATALOG),
+            "--selection",
+            str(selection),
+            "--effective",
+            str(effective),
+            "--remove",
+            "codegraph",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    assert failed.returncode != 0
+    assert "cannot remove required Harr MCP(s): codegraph" in failed.stderr
+
 print("cross-platform MCP selection: PASS")
