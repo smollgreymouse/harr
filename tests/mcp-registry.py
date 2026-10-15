@@ -76,11 +76,11 @@ kibana = servers["kibana"]
 assert kibana["transport"] == "stdio"
 assert kibana["lifecycle"] == "on-demand"
 assert kibana["runtime"]["kind"] == "uvx"
-assert kibana["runtime"]["package"] == "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6"
-assert kibana["runtime"]["version"] == "0.7.5 fork 7d36423"
-assert kibana["runtime"]["args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "mcp"]
-assert kibana["runtime"]["prefetch_args"] == ["--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
-assert kibana["runtime"]["probe_args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
+assert kibana["runtime"]["package"] == "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f"
+assert kibana["runtime"]["version"] == "0.7.7 fork 73cb2aa"
+assert kibana["runtime"]["args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "mcp"]
+assert kibana["runtime"]["prefetch_args"] == ["--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "--version"]
+assert kibana["runtime"]["probe_args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "--version"]
 assert kibana["secrets"] == [{"name":"kibana","file":"kibana-api-key","prompt":"Kibana API key","memento_id":"mcp/kibana/default","target":{"kind":"env","name":"KIBANA_API_KEY"}}]
 
 for platform in ("linux", "windows"):
@@ -142,9 +142,9 @@ with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
 with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
-    assert manager.runtime_command(kibana) == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "mcp"]
-    assert manager.runtime_maintenance_command(kibana, "prefetch_args") == ["/tmp/uvx", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
-    assert manager.runtime_maintenance_command(kibana, "probe_args") == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
+    assert manager.runtime_command(kibana) == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "mcp"]
+    assert manager.runtime_maintenance_command(kibana, "prefetch_args") == ["/tmp/uvx", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "--version"]
+    assert manager.runtime_maintenance_command(kibana, "probe_args") == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "--version"]
 
 gigacode = servers["gigacode"]
 assert gigacode["required"] is False

@@ -105,26 +105,26 @@
       "lifecycle": "on-demand",
       "runtime": {
         "kind": "uvx",
-        "package": "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
-        "version": "0.7.5 fork 7d36423",
+        "package": "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f",
+        "version": "0.7.7 fork 73cb2aa",
         "command": "uvx",
         "args": [
           "--offline",
           "--from",
-          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f",
           "kibana-agent",
           "mcp"
         ],
         "prefetch_args": [
           "--from",
-          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f",
           "kibana-agent",
           "--version"
         ],
         "probe_args": [
           "--offline",
           "--from",
-          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f",
           "kibana-agent",
           "--version"
         ],
