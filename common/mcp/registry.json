@@ -199,6 +199,16 @@
             "kind": "env",
             "name": "JIRA_PERSONAL_TOKEN"
           }
+        },
+        {
+          "name": "jira-password",
+          "file": "jira-user-password",
+          "prompt": "Jira Basic password (corporate gateway)",
+          "memento_id": "mcp/jira/basic-password",
+          "target": {
+            "kind": "env",
+            "name": "JIRA_USER_PASS"
+          }
         }
       ],
       "trust_store": "system"

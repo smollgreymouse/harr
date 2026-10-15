@@ -376,6 +376,60 @@ def system_trust_bundle() -> Path | None:
     return destination
 
 
+def prepare_jira_env(env: dict[str, str]) -> dict[str, str]:
+    """Validate Jira authentication settings without logging secrets."""
+    from urllib.parse import urlsplit
+
+    result = dict(env)
+    endpoint = result.get("JIRA_URL", "")
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise SystemExit("Jira URL must be an HTTPS endpoint without embedded credentials")
+    host = result.get("JIRA_HOST", "").strip()
+    if host:
+        if any(ch in host for ch in "/:@ \t\r\n") or host.lower() != parsed.hostname.lower():
+            raise SystemExit("JIRA_HOST differs from Jira URL host; upstream MCP cannot safely override Host (requires separate reverse-proxy adapter)")
+    mode = result.get("JIRA_AUTH_MODE", "pat").strip().lower()
+    if mode == "basic":
+        user = result.pop("JIRA_USER_NAME", "")
+        password = result.pop("JIRA_USER_PASS", "")
+        if not user or not password:
+            raise SystemExit("Jira basic auth requires JIRA_USER_NAME and the Harr jira-password secret")
+        result["JIRA_USERNAME"] = user
+        result["JIRA_API_TOKEN"] = password
+        result.pop("JIRA_PERSONAL_TOKEN", None)
+    elif mode == "pat":
+        if not result.get("JIRA_PERSONAL_TOKEN"):
+            raise SystemExit("Jira PAT auth requires harr secret set jira")
+        result.pop("JIRA_USER_PASS", None)
+        result.pop("JIRA_USER_NAME", None)
+    else:
+        raise SystemExit("JIRA_AUTH_MODE must be basic or pat")
+    return result
+
+
+def jira_preflight(env: dict[str, str]) -> int:
+    """Probe Jira identity with verified TLS; return status without credential disclosure."""
+    import base64
+    import ssl
+    import urllib.error
+    import urllib.request
+
+    url = env["JIRA_URL"].rstrip("/") + "/rest/api/2/myself"
+    if env.get("JIRA_AUTH_MODE", "pat").lower() == "basic":
+        raw = (env["JIRA_USERNAME"] + ":" + env["JIRA_API_TOKEN"]).encode()
+        authorization = "Basic " + base64.b64encode(raw).decode("ascii")
+    else:
+        authorization = "Bearer " + env["JIRA_PERSONAL_TOKEN"]
+    context = ssl.create_default_context(cafile=env.get("SSL_CERT_FILE") or None)
+    request = urllib.request.Request(url, headers={"Authorization": authorization, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, context=context, timeout=12) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
+
+
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
     env = os.environ.copy()
@@ -396,6 +450,11 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
         if bundle:
             env["SSL_CERT_FILE"] = str(bundle)
             env["REQUESTS_CA_BUNDLE"] = str(bundle)
+    if server["name"] == "jira":
+        env = prepare_jira_env(env)
+        status = jira_preflight(env)
+        if status != 200:
+            raise SystemExit(f"Jira credential preflight failed (HTTP {status}); MCP was not started")
     cmd = runtime_command(server)
     if os.name == "nt":
         raise SystemExit(subprocess.call(cmd, env=env))

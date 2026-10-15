@@ -32,3 +32,9 @@ Look up tool names through LeanCTX `ctx_tools` discovery; prefer narrowly-scoped
 ## TLS trust
 
 On Linux, Harr builds an on-demand CA bundle from the OS OpenSSL CA bundle and TLS-trusted certificates in the user's NSS database (~/.pki/nssdb). It supplies this bundle through SSL_CERT_FILE and REQUESTS_CA_BUNDLE to the Jira MCP runtime, without disabling certificate validation. The bundle is regenerated when the MCP starts, so changed OS/NSS trust takes effect on restart. Non-Linux installations retain their normal runtime trust behavior.
+
+## Authentication modes and preflight
+
+Choose `JIRA_AUTH_MODE=pat` (default) or `JIRA_AUTH_MODE=basic` in `mcp/jira.env`. For Basic, supply the non-secret `JIRA_USER_NAME` and store the password via `harr secret set jira-password`; Harr translates these into upstream `JIRA_USERNAME` and `JIRA_API_TOKEN` in process memory. For PAT use `harr secret set jira`. Harr checks `/rest/api/2/myself` with verified TLS before launching Jira MCP and fails closed on a non-200 response.
+
+`JIRA_HOST` is accepted only if it equals the URL hostname. Upstream `mcp-atlassian` does not support a separate Host header; other values fail closed rather than silently ignoring an authentication-critical proxy setting. A dedicated transport adapter would be required for a distinct HTTP Host.
