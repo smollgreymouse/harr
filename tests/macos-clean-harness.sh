@@ -74,10 +74,10 @@ grep -q 'brew' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "gitlab"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -q 'name = "grafana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
-! grep -q 'name = "elasticsearch"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+! grep -q 'name = "kibana"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/gitlab.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/grafana.md" ]]
-[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/elasticsearch.md" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/kibana.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor" ]]
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
 ! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"

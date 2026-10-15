@@ -20,7 +20,7 @@ spec.loader.exec_module(manager)
 
 registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 servers = {item["name"]: item for item in registry["servers"]}
-assert set(("codegraph", "gitlab", "grafana", "elasticsearch", "gigacode")) <= set(servers)
+assert set(("codegraph", "gitlab", "grafana", "kibana", "gigacode")) <= set(servers)
 
 grafana = servers["grafana"]
 assert grafana["transport"] == "stdio"
@@ -72,25 +72,16 @@ assert gitlab["secrets"] == [
 ]
 assert "windows_task" not in gitlab
 
-elasticsearch = servers["elasticsearch"]
-assert elasticsearch["transport"] == "stdio"
-assert elasticsearch["lifecycle"] == "on-demand"
-assert elasticsearch["runtime"] == {
-    "kind": "npm",
-    "package": "@elastic/mcp-server-elasticsearch",
-    "version": "0.3.1",
-    "command": "mcp-server-elasticsearch",
-    "args": [],
-}
-assert elasticsearch["secrets"] == [
-    {
-        "name": "elasticsearch",
-        "file": "elasticsearch-api-key",
-        "prompt": "Elasticsearch API key",
-        "memento_id": "mcp/elasticsearch/default",
-        "target": {"kind": "env", "name": "ES_API_KEY"},
-    }
-]
+kibana = servers["kibana"]
+assert kibana["transport"] == "stdio"
+assert kibana["lifecycle"] == "on-demand"
+assert kibana["runtime"]["kind"] == "uvx"
+assert kibana["runtime"]["package"] == "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6"
+assert kibana["runtime"]["version"] == "0.7.5 fork 7d36423"
+assert kibana["runtime"]["args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "mcp"]
+assert kibana["runtime"]["prefetch_args"] == ["--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
+assert kibana["runtime"]["probe_args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
+assert kibana["secrets"] == [{"name":"kibana","file":"kibana-api-key","prompt":"Kibana API key","memento_id":"mcp/kibana/default","target":{"kind":"env","name":"KIBANA_API_KEY"}}]
 
 for platform in ("linux", "windows"):
     with tempfile.TemporaryDirectory() as tmp:
@@ -118,11 +109,11 @@ for platform in ("linux", "windows"):
         assert "secret_env" in gitlab_rendered
         assert gitlab_rendered["secret_env"]["GITLAB_PERSONAL_ACCESS_TOKEN"] == {"id": "mcp/gitlab/default"}
 
-        elasticsearch_rendered = rendered["elasticsearch"]
-        assert elasticsearch_rendered["transport"] == "stdio"
-        assert elasticsearch_rendered["command"] == "harr-mcp-run"
-        assert elasticsearch_rendered["args"] == ["elasticsearch"]
-        assert elasticsearch_rendered["secret_env"]["ES_API_KEY"] == {"id": "mcp/elasticsearch/default"}
+        kibana_rendered = rendered["kibana"]
+        assert kibana_rendered["transport"] == "stdio"
+        assert kibana_rendered["command"] == "harr-mcp-run"
+        assert kibana_rendered["args"] == ["kibana"]
+        assert kibana_rendered["secret_env"]["KIBANA_API_KEY"] == {"id": "mcp/kibana/default"}
 
         gigacode_rendered = rendered["gigacode"]
         assert gigacode_rendered["transport"] == "stdio"
@@ -139,25 +130,21 @@ with tempfile.TemporaryDirectory() as tmp:
     gitlab_env = (target / "gitlab.env").read_text(encoding="utf-8")
     assert "GITLAB_API_URL" in gitlab_env
     assert "GITLAB_PERSONAL_ACCESS_TOKEN=" not in gitlab_env
-    elasticsearch_env = (target / "elasticsearch.env").read_text(encoding="utf-8")
-    assert "ES_URL=https://elasticsearch.example.com:9200" in elasticsearch_env
-    assert "ES_VERSION=8" in elasticsearch_env
-    assert "OTEL_LOG_LEVEL=none" in elasticsearch_env
-    assert "ES_API_KEY=" not in elasticsearch_env
+    kibana_env = (target / "kibana.env").read_text(encoding="utf-8")
+    assert "KIBANA_URL=https://kibana.example.com" in kibana_env
+    assert "KIBANA_API_KEY=" not in kibana_env
 
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
-assert manager.memento_var("mcp/elasticsearch/default") == "LEAN_CTX_SECRET_6D63702F656C61737469637365617263682F64656661756C74"
+assert manager.memento_var("mcp/kibana/default") == "LEAN_CTX_SECRET_6D63702F6B6962616E612F64656661756C74"
 with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     grafana_command = manager.runtime_command(grafana)
     assert grafana_command == ["/tmp/uvx", "--offline", "mcp-grafana", "--transport", "stdio"]
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
-with tempfile.TemporaryDirectory() as tmp:
-    npm_bin = Path(tmp)
-    executable = npm_bin / ("mcp-server-elasticsearch.cmd" if manager.os.name == "nt" else "mcp-server-elasticsearch")
-    executable.write_text("", encoding="utf-8")
-    with patch.dict(manager.os.environ, {"HARR_NPM_BIN_DIR": str(npm_bin)}):
-        assert manager.runtime_command(elasticsearch) == [str(executable)]
+with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
+    assert manager.runtime_command(kibana) == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "mcp"]
+    assert manager.runtime_maintenance_command(kibana, "prefetch_args") == ["/tmp/uvx", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
+    assert manager.runtime_maintenance_command(kibana, "probe_args") == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6", "kibana-agent", "--version"]
 
 gigacode = servers["gigacode"]
 assert gigacode["required"] is False
@@ -183,11 +170,11 @@ with tempfile.TemporaryDirectory() as tmp:
     secret_dir.mkdir()
     (secret_dir / "grafana-service-account-token").write_text("token-value\n", encoding="utf-8")
     (secret_dir / "gitlab-pat").write_text("pat-value\n", encoding="utf-8")
-    (secret_dir / "elasticsearch-api-key").write_text("elastic-value\n", encoding="utf-8")
+    (secret_dir / "kibana-api-key").write_text("kibana-value\n", encoding="utf-8")
     with patch.dict(manager.os.environ, {"HARR_CONFIG_DIR": tmp}):
         assert manager.service_secret_env(grafana) == {"GRAFANA_SERVICE_ACCOUNT_TOKEN": "token-value"}
         assert manager.service_secret_env(gitlab) == {"GITLAB_PERSONAL_ACCESS_TOKEN": "pat-value"}
-        assert manager.service_secret_env(elasticsearch) == {"ES_API_KEY": "elastic-value"}
+        assert manager.service_secret_env(kibana) == {"KIBANA_API_KEY": "kibana-value"}
         assert manager.runtime_env(gitlab) == {"STREAMABLE_HTTP": "false", "SSE": "false", "REMOTE_AUTHORIZATION": "false"}
         assert manager.runtime_env(grafana) == {}
 

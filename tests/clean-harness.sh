@@ -160,7 +160,7 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md" ]]
-[[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/references/elasticsearch.md" ]]
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/references/kibana.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]

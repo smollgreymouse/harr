@@ -97,30 +97,50 @@
       ]
     },
     {
-      "name": "elasticsearch",
-      "label": "Elasticsearch",
-      "description": "read-only Elasticsearch data, mappings and search",
+      "name": "kibana",
+      "label": "Kibana",
+      "description": "read-only Kibana/Elasticsearch logs, mappings and search",
       "required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
-        "kind": "npm",
-        "package": "@elastic/mcp-server-elasticsearch",
-        "version": "0.3.1",
-        "command": "mcp-server-elasticsearch",
-        "args": []
+        "kind": "uvx",
+        "package": "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+        "version": "0.7.5 fork 7d36423",
+        "command": "uvx",
+        "args": [
+          "--offline",
+          "--from",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "kibana-agent",
+          "mcp"
+        ],
+        "prefetch_args": [
+          "--from",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "kibana-agent",
+          "--version"
+        ],
+        "probe_args": [
+          "--offline",
+          "--from",
+          "git+https://github.com/smollgreymouse/kibana-agent.git@7d36423cd67b30521dfdef0dbfc6ea980aee51f6",
+          "kibana-agent",
+          "--version"
+        ],
+        "install_hint": "uvx is required for Kibana MCP; install uv/uvx and run harr install mcp"
       },
-      "env_template": "elasticsearch.env.example",
-      "skill_reference": "elasticsearch.md",
+      "env_template": "kibana.env.example",
+      "skill_reference": "kibana.md",
       "secrets": [
         {
-          "name": "elasticsearch",
-          "file": "elasticsearch-api-key",
-          "prompt": "Elasticsearch API key",
-          "memento_id": "mcp/elasticsearch/default",
+          "name": "kibana",
+          "file": "kibana-api-key",
+          "prompt": "Kibana API key",
+          "memento_id": "mcp/kibana/default",
           "target": {
             "kind": "env",
-            "name": "ES_API_KEY"
+            "name": "KIBANA_API_KEY"
           }
         }
       ]

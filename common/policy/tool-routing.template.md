@@ -24,10 +24,10 @@
 - Grafana dashboard work, including a Grafana dashboard URL or `/goto/` short link: FIRST discover and use the relevant `grafana::*` operation through `{{CTX_TOOLS}}`; prefer `search_dashboards` -> `get_dashboard_summary` -> targeted property/panel-query reads -> patch `update_dashboard`, avoiding complete dashboard JSON unless necessary. Do not open the dashboard in a browser as the first action.
 - A browser is a Grafana fallback only after the Harr Grafana route cannot resolve the short link or does not expose the required operation; state that limitation before using it.
 <!-- harr-mcp:grafana:end -->
-<!-- harr-mcp:elasticsearch:start -->
-- Elasticsearch logs, metrics and document investigation: FIRST discover and use the relevant `elasticsearch::*` operation through `{{CTX_TOOLS}}`. Use `search` with Query DSL for bounded retrieval and aggregations; use `list_indices` and `get_mappings` only when index/schema discovery is actually needed.
-- Keep Elasticsearch reads narrow: constrain index patterns, time ranges, returned fields and `size`. Treat this route as read-only investigation.
-<!-- harr-mcp:elasticsearch:end -->
+<!-- harr-mcp:kibana:start -->
+- Kibana/Elasticsearch log and document investigation: FIRST discover and use the relevant kibana::* operation through {{CTX_TOOLS}}; prefer search_logs, count_documents, get_histogram, get_mapping, or list_fields over raw_es_query when a targeted tool fits.
+- Keep Kibana reads narrow: constrain index patterns, time ranges, fields and result sizes. This Harr route is intentionally read-only and reaches private Elasticsearch through Kibana's Console proxy.
+<!-- harr-mcp:kibana:end -->
 <!-- harr-mcp:gigacode:start -->
 - For substantial implementation after architecture, scope, invariants and acceptance criteria are fixed, use the installed `$gigacode-executor` skill and delegate through `{{CTX_TOOLS}}` -> `gigacode::gigacode`.
 - After confirmed `RUNNING`, the delegated scope is frozen for the parent: do not read/search/edit it, inspect intermediate diffs/artifacts, rerun validation, or inspect GigaCode internals. The parent may do genuinely independent planner work. If no useful independent work remains and completion is needed, prefer one blocking `wait`; `status` remains the nonblocking snapshot path.
