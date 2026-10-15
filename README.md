@@ -36,8 +36,6 @@ LeanCTX 3.11.0 Harr progress build        required
       +-- stdio -----------> GigaCode Executor     optional
       |                     bundled Harr bridge -> external gigacode CLI
       |
-      +-- stdio on demand --> Jira MCP -> Jira REST API
-      |
       +-- future MCPs -----> common registry       required/optional metadata
 
 Unrelated third-party MCPs/skills may coexist beside this stack.
@@ -127,7 +125,6 @@ Harr components
   [x] CodeGraph    required  cross-file code structure and impact analysis
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
-  [ ] Jira         optional  Jira Server/Data Center issues and JQL via local REST MCP
   [ ] Kibana       optional  read-only logs/search through Kibana
   [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
 
@@ -184,7 +181,6 @@ Configure secrets only for MCPs you enabled:
 harr secret set gitlab
 harr secret set grafana
 harr secret set kibana
-harr secret set jira
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
@@ -504,7 +500,6 @@ harr secret status
 harr secret set gitlab
 harr secret set grafana
 harr secret set kibana
-harr secret set jira
 harr secret unset gitlab
 harr secret unset grafana
 harr secret unset kibana
@@ -684,7 +679,6 @@ Configure ~/.config/harr/mcp/kibana.env:
 Store the API key separately:
 
     harr secret set kibana
-harr secret set jira
     harr secret status
 
 Harr injects the key as KIBANA_API_KEY only into the MCP process. The fork sends it to Kibana as Authorization: ApiKey and does not persist it in a kibana-agent profile.
@@ -721,18 +715,6 @@ Normal RUNNING status is intentionally compact and does not expose GigaCode even
 The bridge keeps a persistent GigaCode session, performs a bounded startup handshake, and runs execution detached. Hard timeout defaults to unlimited; cancellation is explicit unless the caller supplies a positive `timeout_sec`. One `wait` call is bounded to 1500 seconds; Harr configures the LeanCTX downstream timeout to 1800 seconds and Codex/OpenCode host-side LeanCTX timeouts to 1900 seconds so the blocking wait completes without forcing model-level polling.
 
 The saved Harr MCP selection controls whether the GigaCode route, routing policy, reference material, and `$gigacode-executor` skill exist. Normal later setup/update runs reuse that selection; use `harr mcp add/remove` for incremental changes or `harr mcp configure` for full replacement.
-
-### Jira (Server/Data Center, local MCP)
-
-Jira is optional. Harr launches [sooperset/mcp-atlassian](https://github.com/sooperset/mcp-atlassian) as a local stdio MCP behind LeanCTX and connects to the configured Jira REST API. The Jira server does **not** need its own MCP plugin or Atlassian Cloud support; Docker is not required.
-
-1. Enable Jira through `harr mcp configure` (preserving other selected MCPs).
-2. Run `harr install mcp` to prepare the `uvx` runtime.
-3. Set `JIRA_URL=https://jira.company.example` in the Harr config root's `mcp/jira.env`.
-4. Run `harr secret set jira` to securely store a Jira Server/Data Center Personal Access Token.
-5. Restart the agent session to discover the `jira::*` tools via LeanCTX.
-
-This default preset uses `JIRA_PERSONAL_TOKEN`; it requires a Jira version supporting personal access tokens. Older installations without PAT support require a separately tested authentication integration. For Jira Cloud, use the Cloud username/API-token method rather than this Server/DC preset. See `common/skills/harr/references/jira.md`.
 
 ### Git
 

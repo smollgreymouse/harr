@@ -27,9 +27,6 @@ harr mcp list
 <!-- harr-mcp:gitlab:start -->
 harr secret set gitlab
 <!-- harr-mcp:gitlab:end -->
-<!-- harr-mcp:jira:start -->
-harr secret set jira
-<!-- harr-mcp:jira:end -->
 <!-- harr-mcp:grafana:start -->
 harr secret set grafana
 <!-- harr-mcp:grafana:end -->

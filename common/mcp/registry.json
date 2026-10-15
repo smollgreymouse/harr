@@ -161,46 +161,6 @@
         "install_hint": "GigaCode CLI is required for the optional GigaCode executor MCP; install/configure `gigacode` and ensure it is in PATH"
       },
       "skill_reference": "gigacode.md"
-    },
-    {
-      "name": "jira",
-      "label": "Jira",
-      "description": "Jira Server/Data Center issues and JQL via local REST MCP",
-      "required": false,
-      "transport": "stdio",
-      "lifecycle": "on-demand",
-      "runtime": {
-        "kind": "uvx",
-        "package": "mcp-atlassian",
-        "command": "uvx",
-        "args": [
-          "mcp-atlassian"
-        ],
-        "prefetch_args": [
-          "mcp-atlassian",
-          "--help"
-        ],
-        "probe_args": [
-          "--offline",
-          "mcp-atlassian",
-          "--help"
-        ],
-        "install_hint": "uvx is required for Jira MCP; install uv/uvx and run harr install mcp"
-      },
-      "env_template": "jira.env.example",
-      "skill_reference": "jira.md",
-      "secrets": [
-        {
-          "name": "jira",
-          "file": "jira-personal-token",
-          "prompt": "Jira Server/Data Center personal access token",
-          "memento_id": "mcp/jira/default",
-          "target": {
-            "kind": "env",
-            "name": "JIRA_PERSONAL_TOKEN"
-          }
-        }
-      ]
     }
   ]
 }
