@@ -169,7 +169,7 @@ def check(spec: str, expected: list[str]) -> None:
         if kibana_ref.exists():
             kibana_text = kibana_ref.read_text(encoding="utf-8")
             assert "smollgreymouse/kibana-agent" in kibana_text
-            assert "2998352c4c360d10d8d1dfc114dc7d26217d537c" in kibana_text
+            assert "73cb2aa03462c44616601d5299515ff45ed36d7f" in kibana_text
             assert "KIBANA_API_KEY" in kibana_text
             assert "/api/console/proxy" in kibana_text
         gigacode_ref = filtered_skill / "references" / "gigacode.md"
