@@ -41,7 +41,7 @@ Harr macOS installer
 Usage:
   ./install.sh --clean [--start]
   ./install.sh --clean --all [--start]
-  ./install.sh --clean --mcp gitlab,grafana [--start]
+  ./install.sh --clean --mcp gitlab,grafana,gigacode [--start]
   ./install.sh [--start] [--harr-only] [--configure-mcp]
 
 LeanCTX and CodeGraph are always installed. On the first interactive install,
@@ -197,8 +197,14 @@ configure_git_host() {
 }
 
 configure_launchd() {
-  ((harr_only)) && return
   local name active label
+  # Retired-service cleanup must run even during --harr-only updates.
+  for name in gitlab grafana; do
+    label="com.harr.mcp.${name}"
+    launchctl bootout "gui/$(id -u)/${label}" >/dev/null 2>&1 || true
+    rm -f -- "${LAUNCH_AGENTS_DIR}/${label}.plist"
+  done
+  ((harr_only)) && return
   active="$(python3 "$MCP_MANAGER" --registry "$MCP_EFFECTIVE" names --lifecycle service)"
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
@@ -237,7 +243,7 @@ main() {
 
   printf '\nHarr installed in clean global-harness mode for macOS.\n'
   printf 'LeanCTX + CodeGraph are required; optional MCPs follow %s.\n' "$MCP_SELECTION"
-  printf 'Change them later with: harr mcp configure\n'
+  printf 'Change optional MCPs later with: harr mcp add/remove NAME; use harr mcp configure for a full replacement/checklist.\n'
   printf 'Project-level configs/files were not touched.\n'
   if (( ! start_now )); then printf 'Enabled LaunchAgents were not loaded now. Start with: harr mcp start all\n'; fi
   printf 'Check with: harr status\nRollback with: harr uninstall\n'

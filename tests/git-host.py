@@ -56,7 +56,7 @@ def check_git_execution() -> None:
         fake_git = binary_dir / "git"
         fake_git.write_text(
             "#!/bin/sh\n"
-            "printf 'cwd=%s\\n' \"$PWD\"\n"
+            "printf 'cwd=%s\\n' \"$(pwd)\"\n"
             "printf 'agent=%s\\n' \"${SSH_AUTH_SOCK:-}\"\n"
             "printf 'args=%s\\n' \"$*\"\n",
             encoding="utf-8",
@@ -70,7 +70,8 @@ def check_git_execution() -> None:
         finally:
             os.environ["PATH"] = old_path
         assert result["exit_code"] == 0
-        assert f"cwd={work}" in result["stdout"]
+        cwd_line = next(line for line in result["stdout"].splitlines() if line.startswith("cwd="))
+        assert Path(cwd_line.removeprefix("cwd=")).resolve() == work.resolve()
         assert "agent=/agent.sock" in result["stdout"]
         assert "args=push origin HEAD" in result["stdout"]
 

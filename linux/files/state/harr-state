@@ -17,8 +17,10 @@ item_target() {
     opencode-json) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/opencode.json" ;;
     codex-skill-harr) printf '%s\n' "${CODEX_HOME_REAL}/skills/harr" ;;
     codex-skill-leanctx) printf '%s\n' "${CODEX_HOME_REAL}/skills/lean-ctx" ;;
+    codex-skill-gigacode) printf '%s\n' "${CODEX_HOME_REAL}/skills/gigacode-executor" ;;
     opencode-skill-harr) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/harr" ;;
     opencode-skill-leanctx) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/lean-ctx" ;;
+    opencode-skill-gigacode) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/gigacode-executor" ;;
     leanctx-config) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/lean-ctx/config.toml" ;;
     leanctx-launcher) printf '%s\n' "${HOME}/.local/bin/lean-ctx" ;;
     codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
@@ -45,7 +47,8 @@ item_target() {
 all_items() {
   printf '%s\n' \
     codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
-    codex-skill-harr codex-skill-leanctx opencode-skill-harr opencode-skill-leanctx \
+    codex-skill-harr codex-skill-leanctx codex-skill-gigacode \
+    opencode-skill-harr opencode-skill-leanctx opencode-skill-gigacode \
     leanctx-config leanctx-launcher codegraph-launcher mcp-runner harr-launcher \
     mcp-unit-template git-host-unit git-host-enable-link gitlab-unit gitlab-enable-link \
     harr-config-root harr-libexec-root harr-share-root \
@@ -75,7 +78,7 @@ write_runtime_marker() {
 
 extend_snapshot() {
   local key
-  for key in codex-config mcp-runner mcp-unit-template git-host-unit git-host-enable-link; do
+  for key in codex-config mcp-runner mcp-unit-template git-host-unit git-host-enable-link codex-skill-gigacode opencode-skill-gigacode; do
     if [[ ! -d "${PRE_HARR}/items/${key}" ]]; then
       snapshot_item "$PRE_HARR" "$key"
       printf 'Extended existing pre-Harr snapshot with %s.\n' "$key"

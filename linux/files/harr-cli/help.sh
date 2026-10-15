@@ -2,12 +2,15 @@ usage() {
   cat <<'EOF_HELP'
 Harr — global harness for token-efficient MCP infrastructure
 
-First install / takeover:
-  ./install.sh --clean
-  ./install.sh --clean --all        # full install, no prompts
-  ./install.sh --clean --mcp none   # LeanCTX + CodeGraph only
+Initial user setup after package installation:
+  harr setup --clean
+  harr setup --clean --all        # full setup, no prompts
+  harr setup --clean --mcp none   # LeanCTX + CodeGraph only
+
+From a source checkout, ./install.sh is an equivalent installer entrypoint.
 
 CLI:
+  harr setup [--clean] [--start] [--all|--mcp SPEC] [--configure-mcp] [--harr-only]
   harr install [all|leanctx|mcp]
   harr status
   harr hosts apply
@@ -27,6 +30,8 @@ CLI:
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
+  harr mcp add NAME[,NAME...]|all
+  harr mcp remove NAME[,NAME...]|all
   harr mcp start NAME|all
   harr mcp stop NAME|all
   harr mcp restart NAME|all
@@ -37,7 +42,7 @@ CLI:
   harr uninstall
 
 Managed baseline:
-  LeanCTX 3.9.15 (required)
+  LeanCTX 3.11.0 Harr build (required)
   CodeGraph (required; spawned by LeanCTX over stdio)
   optional registry MCPs are installed only when selected
   compact MCP-aware global AGENTS policy
@@ -73,6 +78,8 @@ Usage:
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
+  harr mcp add NAME[,NAME...]|all
+  harr mcp remove NAME[,NAME...]|all
   harr mcp start NAME|all
   harr mcp stop NAME|all
   harr mcp restart NAME|all

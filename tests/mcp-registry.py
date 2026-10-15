@@ -20,17 +20,17 @@ spec.loader.exec_module(manager)
 
 registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 servers = {item["name"]: item for item in registry["servers"]}
-assert set(("codegraph", "gitlab", "grafana", "elasticsearch")) <= set(servers)
+assert set(("codegraph", "gitlab", "grafana", "elasticsearch", "gigacode")) <= set(servers)
 
 grafana = servers["grafana"]
-assert grafana["transport"] == "http"
-assert grafana["lifecycle"] == "service"
-assert grafana["url"] == "http://127.0.0.1:3335/mcp"
+assert grafana["transport"] == "stdio"
+assert grafana["lifecycle"] == "on-demand"
+assert "url" not in grafana
 assert grafana["runtime"] == {
     "kind": "uvx",
     "package": "mcp-grafana",
     "command": "uvx",
-    "args": ["mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"],
+    "args": ["--offline", "mcp-grafana", "--transport", "stdio"],
     "prefetch_args": ["mcp-grafana", "--version"],
     "probe_args": ["--offline", "mcp-grafana", "--version"],
     "install_hint": "uvx is required for Grafana MCP; install uv/uvx and run `harr install mcp`",
@@ -44,6 +44,33 @@ assert grafana["secrets"] == [
         "target": {"kind": "env", "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"},
     }
 ]
+
+gitlab = servers["gitlab"]
+assert gitlab["transport"] == "stdio"
+assert gitlab["lifecycle"] == "on-demand"
+assert "url" not in gitlab
+assert gitlab["runtime"] == {
+    "kind": "npm",
+    "package": "@zereight/mcp-gitlab",
+    "version": "2.1.48",
+    "command": "zereight-mcp-gitlab",
+    "args": [],
+    "env": {
+        "STREAMABLE_HTTP": "false",
+        "SSE": "false",
+        "REMOTE_AUTHORIZATION": "false",
+    },
+}
+assert gitlab["secrets"] == [
+    {
+        "name": "gitlab",
+        "file": "gitlab-pat",
+        "prompt": "GitLab PAT",
+        "memento_id": "mcp/gitlab/default",
+        "target": {"kind": "env", "name": "GITLAB_PERSONAL_ACCESS_TOKEN"},
+    }
+]
+assert "windows_task" not in gitlab
 
 elasticsearch = servers["elasticsearch"]
 assert elasticsearch["transport"] == "stdio"
@@ -77,19 +104,30 @@ for platform in ("linux", "windows"):
         manager.render_leanctx(args, manager.load_registry(REGISTRY_PATH))
         config = tomllib.loads(output.read_text(encoding="utf-8"))
         rendered = {item["name"]: item for item in config["gateway"]["servers"]}
+        grafana_rendered = rendered["grafana"]
+        assert grafana_rendered["transport"] == "stdio"
+        assert grafana_rendered["command"] == "harr-mcp-run"
+        assert grafana_rendered["args"] == ["grafana"]
+        assert "secret_env" in grafana_rendered
+        assert grafana_rendered["secret_env"]["GRAFANA_SERVICE_ACCOUNT_TOKEN"] == {"id": "mcp/grafana/default"}
 
-        item = rendered["grafana"]
-        assert item["transport"] == "http"
-        assert item["url"] == "http://127.0.0.1:3335/mcp"
-        assert "secret_env" not in item
-        assert "secret_headers" not in item
+        gitlab_rendered = rendered["gitlab"]
+        assert gitlab_rendered["transport"] == "stdio"
+        assert gitlab_rendered["command"] == "harr-mcp-run"
+        assert gitlab_rendered["args"] == ["gitlab"]
+        assert "secret_env" in gitlab_rendered
+        assert gitlab_rendered["secret_env"]["GITLAB_PERSONAL_ACCESS_TOKEN"] == {"id": "mcp/gitlab/default"}
 
-        item = rendered["elasticsearch"]
-        assert item["transport"] == "stdio"
-        assert item["command"] == "harr-mcp-run"
-        assert item["args"] == ["elasticsearch"]
-        assert item["secret_env"]["ES_API_KEY"] == {"id": "mcp/elasticsearch/default"}
-        assert "secret_headers" not in item
+        elasticsearch_rendered = rendered["elasticsearch"]
+        assert elasticsearch_rendered["transport"] == "stdio"
+        assert elasticsearch_rendered["command"] == "harr-mcp-run"
+        assert elasticsearch_rendered["args"] == ["elasticsearch"]
+        assert elasticsearch_rendered["secret_env"]["ES_API_KEY"] == {"id": "mcp/elasticsearch/default"}
+
+        gigacode_rendered = rendered["gigacode"]
+        assert gigacode_rendered["transport"] == "stdio"
+        assert gigacode_rendered["command"] == "harr-mcp-run"
+        assert gigacode_rendered["args"] == ["gigacode"]
 
 with tempfile.TemporaryDirectory() as tmp:
     target = Path(tmp)
@@ -98,6 +136,9 @@ with tempfile.TemporaryDirectory() as tmp:
     grafana_env = (target / "grafana.env").read_text(encoding="utf-8")
     assert "GRAFANA_URL=http://localhost:3000" in grafana_env
     assert "GRAFANA_SERVICE_ACCOUNT_TOKEN=" not in grafana_env
+    gitlab_env = (target / "gitlab.env").read_text(encoding="utf-8")
+    assert "GITLAB_API_URL" in gitlab_env
+    assert "GITLAB_PERSONAL_ACCESS_TOKEN=" not in gitlab_env
     elasticsearch_env = (target / "elasticsearch.env").read_text(encoding="utf-8")
     assert "ES_URL=https://elasticsearch.example.com:9200" in elasticsearch_env
     assert "ES_VERSION=8" in elasticsearch_env
@@ -106,13 +147,11 @@ with tempfile.TemporaryDirectory() as tmp:
 
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
 assert manager.memento_var("mcp/elasticsearch/default") == "LEAN_CTX_SECRET_6D63702F656C61737469637365617263682F64656661756C74"
-
-with patch.object(manager.shutil, "which", side_effect=lambda command: f"/tmp/{command}"):
+with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     grafana_command = manager.runtime_command(grafana)
-    assert grafana_command == ["/tmp/uvx", "mcp-grafana", "--transport", "streamable-http", "--address", "127.0.0.1:3335"]
+    assert grafana_command == ["/tmp/uvx", "--offline", "mcp-grafana", "--transport", "stdio"]
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
-
 with tempfile.TemporaryDirectory() as tmp:
     npm_bin = Path(tmp)
     executable = npm_bin / ("mcp-server-elasticsearch.cmd" if manager.os.name == "nt" else "mcp-server-elasticsearch")
@@ -120,13 +159,85 @@ with tempfile.TemporaryDirectory() as tmp:
     with patch.dict(manager.os.environ, {"HARR_NPM_BIN_DIR": str(npm_bin)}):
         assert manager.runtime_command(elasticsearch) == [str(executable)]
 
+gigacode = servers["gigacode"]
+assert gigacode["required"] is False
+assert gigacode["transport"] == "stdio"
+assert gigacode["lifecycle"] == "on-demand"
+assert gigacode["runtime"] == {
+    "kind": "bundled-python",
+    "version": "1.11.0",
+    "script": "gigacode_server.py",
+    "requires_command": "gigacode",
+    "args": [],
+    "install_hint": "GigaCode CLI is required for the optional GigaCode executor MCP; install/configure `gigacode` and ensure it is in PATH",
+}
+with patch.object(manager.shutil, "which", return_value="/tmp/gigacode"):
+    gigacode_command = manager.runtime_command(gigacode)
+    assert gigacode_command == [
+        manager.sys.executable,
+        str((REGISTRY_PATH.parent / "gigacode_server.py").resolve()),
+    ]
+
 with tempfile.TemporaryDirectory() as tmp:
     secret_dir = Path(tmp) / "secrets"
     secret_dir.mkdir()
     (secret_dir / "grafana-service-account-token").write_text("token-value\n", encoding="utf-8")
+    (secret_dir / "gitlab-pat").write_text("pat-value\n", encoding="utf-8")
     (secret_dir / "elasticsearch-api-key").write_text("elastic-value\n", encoding="utf-8")
     with patch.dict(manager.os.environ, {"HARR_CONFIG_DIR": tmp}):
         assert manager.service_secret_env(grafana) == {"GRAFANA_SERVICE_ACCOUNT_TOKEN": "token-value"}
+        assert manager.service_secret_env(gitlab) == {"GITLAB_PERSONAL_ACCESS_TOKEN": "pat-value"}
         assert manager.service_secret_env(elasticsearch) == {"ES_API_KEY": "elastic-value"}
+        assert manager.runtime_env(gitlab) == {"STREAMABLE_HTTP": "false", "SSE": "false", "REMOTE_AUTHORIZATION": "false"}
+        assert manager.runtime_env(grafana) == {}
+
+# Regression: runtime.env must override legacy STREAMABLE_HTTP=true from user .env
+# but secret values must never be overridden by runtime.env.
+with tempfile.TemporaryDirectory() as tmp:
+    config_dir = Path(tmp) / "harr"
+    mcp_dir = config_dir / "mcp"
+    mcp_dir.mkdir(parents=True)
+    secrets_dir = config_dir / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "gitlab-pat").write_text("secret-token\n", encoding="utf-8")
+    # Simulate a preserved legacy env with STREAMABLE_HTTP=true
+    (mcp_dir / "gitlab.env").write_text(
+        "STREAMABLE_HTTP=true\nGITLAB_API_URL=https://gitlab.example.com/api/v4\n", encoding="utf-8"
+    )
+    effective = {"schema": 1, "servers": [gitlab]}
+    eff_path = Path(tmp) / "effective.json"
+    eff_path.write_text(json.dumps(effective), encoding="utf-8")
+    eff_data = manager.load_registry(eff_path)
+    server = manager.server_by_name(eff_data, "gitlab")
+    forbidden = {
+        secret.get("target", {}).get("name")
+        for secret in server.get("secrets", [])
+        if secret.get("target", {}).get("kind") == "env"
+    }
+    forbidden.discard(None)
+    env_path = mcp_dir / "gitlab.env"
+    env = {}
+    env.update(manager.load_env_file(env_path, forbidden))
+    env.update(manager.runtime_env(server))
+    with patch.dict(manager.os.environ, {"HARR_CONFIG_DIR": str(config_dir)}):
+        env.update(manager.service_secret_env(server))
+    # runtime.env STREAMABLE_HTTP=false must override the legacy env's STREAMABLE_HTTP=true
+    assert env["STREAMABLE_HTTP"] == "false", f"expected false, got {env['STREAMABLE_HTTP']}"
+    assert env["GITLAB_API_URL"] == "https://gitlab.example.com/api/v4"
+    assert env["GITLAB_PERSONAL_ACCESS_TOKEN"] == "secret-token"
+    assert env["SSE"] == "false"
+    assert env["REMOTE_AUTHORIZATION"] == "false"
+
+# runtime.env with a secret target key must be rejected.
+with tempfile.TemporaryDirectory() as tmp:
+    bad_gitlab = dict(gitlab)
+    bad_gitlab["runtime"] = dict(gitlab["runtime"])
+    bad_gitlab["runtime"]["env"] = {"STREAMABLE_HTTP": "false", "GITLAB_PERSONAL_ACCESS_TOKEN": "leaked"}
+    bad_eff = {"schema": 1, "servers": [bad_gitlab]}
+    try:
+        manager.runtime_env(bad_gitlab)
+        assert False, "expected SystemExit for secret in runtime.env"
+    except SystemExit as e:
+        assert "GITLAB_PERSONAL_ACCESS_TOKEN" in str(e)
 
 print("cross-platform MCP registry: PASS")

@@ -25,10 +25,16 @@
 - A browser is a Grafana fallback only after the Harr Grafana route cannot resolve the short link or does not expose the required operation; state that limitation before using it.
 <!-- harr-mcp:grafana:end -->
 <!-- harr-mcp:elasticsearch:start -->
-- Elasticsearch logs, metrics and document investigation: FIRST discover and use the relevant `elasticsearch::*` operation through `{{CTX_TOOLS}}`. Use `search` with Query DSL for bounded time-window retrieval and aggregations; use `list_indices` and `get_mappings` only when index/schema discovery is actually needed.
-- Keep Elasticsearch reads narrow: constrain index patterns, time ranges, returned fields and `size`. Treat this route as read-only investigation and do not request broader cluster/index privileges merely to make a query easier.
+- Elasticsearch logs, metrics and document investigation: FIRST discover and use the relevant `elasticsearch::*` operation through `{{CTX_TOOLS}}`. Use `search` with Query DSL for bounded retrieval and aggregations; use `list_indices` and `get_mappings` only when index/schema discovery is actually needed.
+- Keep Elasticsearch reads narrow: constrain index patterns, time ranges, returned fields and `size`. Treat this route as read-only investigation.
 <!-- harr-mcp:elasticsearch:end -->
+<!-- harr-mcp:gigacode:start -->
+- For substantial implementation after architecture, scope, invariants and acceptance criteria are fixed, use the installed `$gigacode-executor` skill and delegate through `{{CTX_TOOLS}}` -> `gigacode::gigacode`.
+- After confirmed `RUNNING`, the delegated scope is frozen for the parent: do not read/search/edit it, inspect intermediate diffs/artifacts, rerun validation, or inspect GigaCode internals. The parent may do genuinely independent planner work. If no useful independent work remains and completion is needed, prefer one blocking `wait`; `status` remains the nonblocking snapshot path.
+- `DONE` means contract acceptance from the structured self-verification handoff, not an independent full code review. Missing evidence goes back to the same GigaCode session via `resume`; parent source/artifact inspection requires a concrete exception defined by `$gigacode-executor`.
+<!-- harr-mcp:gigacode:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
+- For code, locate symbols/structure with CodeGraph, then `{{CTX_READ}}` only for needed line ranges (`lines=`); avoid whole-file reads when scope is known. If output says `truncated`, read missing relevant ranges before drawing conclusions. Keep the 4096-token LeanCTX budget.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
 - Use `{{CTX_CALL}}` only for a known, non-editing LeanCTX capability with no direct `ctx_*` route. Never use it to edit workspace files or discover edit/patch tools; use the native host editor directly. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
 <!-- harr-tool-policy:end -->

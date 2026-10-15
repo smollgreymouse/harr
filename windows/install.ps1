@@ -120,6 +120,12 @@ if ($HarrOnly) {
     & $installedHarr hosts apply
     & $installedHarr agents apply all
     & $installedHarr leanctx apply
+    # Clean up retired GitLab/Grafana scheduled tasks even when skipping stack install.
+    $retiredTaskNames = @('Harr GitLab MCP', 'Harr MCP gitlab', 'Harr MCP grafana')
+    foreach ($taskName in $retiredTaskNames) {
+        try { Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue } catch { }
+        try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { }
+    }
 } else {
     & $installedHarr install all
 }

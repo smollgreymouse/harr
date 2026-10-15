@@ -19,18 +19,22 @@ Codex / OpenCode
       |
       | Harr-managed route
       v
-LeanCTX 3.9.15                         required
+LeanCTX 3.11.0 Harr progress build        required
       |
       +-- stdio -----------> CodeGraph 1.5.0       required
       |                     inherits LeanCTX cwd
       |
-      +-- HTTP :3334 -----> GitLab MCP 2.1.48     optional
+      +-- stdio -----------> GitLab MCP 2.1.48     optional
+      |                     on-demand stdio
       |
-      +-- HTTP :3335 -----> Grafana MCP           optional
-      |                     uvx mcp-grafana --transport streamable-http
+      +-- stdio -----------> Grafana MCP           optional
+      |                     on-demand uvx mcp-grafana
       |
       +-- stdio -----------> Elasticsearch MCP     optional
       |                     @elastic/mcp-server-elasticsearch 0.3.1
+      |
+      +-- stdio -----------> GigaCode Executor     optional
+      |                     bundled Harr bridge -> external gigacode CLI
       |
       +-- future MCPs -----> common registry       required/optional metadata
 
@@ -80,7 +84,39 @@ cd harr
 .\install.ps1 -Clean -Start
 ```
 
-On the first interactive install all three platforms show the same selector:
+### Debian package or portable archive
+
+Linux releases include both `harr_<version>_<arch>.deb` and
+`harr-<version>-linux-<arch>.tar.gz`.
+The Harr GitHub Actions release workflow downloads the pinned LeanCTX build from
+`smollgreymouse/lean-ctx`, verifies its release SHA-256 and embedded Harr build ID,
+and bundles the verified Linux binary into both packages. Packaged setup uses this
+local binary without fetching LeanCTX again; source-checkout setup can still
+download the pinned release. Harr releases therefore wait for the corresponding
+LeanCTX release to be published first. The Debian package installs the Harr
+files and provides the `harr` CLI; it does not change global user configuration
+during `apt install`.
+
+After installing the package, run the initial user setup as the normal user:
+
+```bash
+harr setup --clean
+```
+
+The first interactive setup offers the optional MCP checklist. For automation,
+use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
+`harr setup --clean --mcp gitlab,grafana,elasticsearch,gigacode`. The selection is saved and can be
+changed later with `harr mcp configure`.
+
+After a later Debian package upgrade, run `harr setup` to apply the new Harr
+files/runtime while reusing the saved MCP selection. Package-mode setup keeps
+`~/.local/bin/harr` as a shim to `/usr/bin/harr`, so future package upgrades
+do not leave a stale user-level CLI ahead of the packaged command in `PATH`.
+If migrating from an older source-based Harr that already has a standalone
+`~/.local/bin/harr`, use `/usr/bin/harr setup` once after installing the new
+Debian package; subsequent runs can use plain `harr setup`.
+
+On the first interactive setup all three platforms show the same selector:
 
 ```text
 Harr components
@@ -90,6 +126,7 @@ Harr components
 > [ ] GitLab       optional  GitLab API, merge requests, pipelines and issues
   [ ] Grafana      optional  Grafana dashboards and datasources
   [ ] Elasticsearch optional  read-only Elasticsearch data, mappings and search
+  [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -124,12 +161,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana,elasticsearch
+./install.sh --clean --mcp gitlab,grafana,elasticsearch,gigacode
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana,elasticsearch
+.\install.ps1 -Clean -Mcp gitlab,grafana,elasticsearch,gigacode
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -147,7 +184,9 @@ harr secret set elasticsearch
 ```
 
 Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globally install `mcp-grafana`.
-Elasticsearch uses the pinned official npm package `@elastic/mcp-server-elasticsearch@0.3.1`; no Docker runtime is required.
+Elasticsearch uses the pinned official npm package `@elastic/mcp-server-elasticsearch@0.3.1`; it is deprecated upstream but remains useful for Elasticsearch 8.x without adding Docker. Elastic recommends Agent Builder MCP for 9.2+.
+
+GigaCode is an executor bridge, not a bundled model/runtime. Enabling it installs Harr's MCP bridge and routing policy; the external `gigacode` CLI must already be installed, authenticated and available in `PATH`. Harr keeps the bridge behind LeanCTX and loads its single-tool schema only when delegation is needed. The bridge treats GigaCode as a black box: Harr does not configure, inspect or depend on GigaCode's own tools or MCP servers. The saved MCP selection is reused by later source/package upgrades, so a selected GigaCode executor remains selected across reinstall/update runs; change the set with `harr mcp configure`.
 
 Check the whole harness:
 
@@ -197,7 +236,7 @@ If a foreground test instance of a selected service MCP is already using its con
 
 ## Installation and lifecycle
 
-### First install
+### First setup / source install
 
 Linux:
 
@@ -347,7 +386,7 @@ Linux:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.9.15/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-progress.1/lean-ctx
 
 ~/.local/share/harr/npm/
 ~/.local/share/harr-state/pre-harr/
@@ -385,7 +424,7 @@ macOS:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.9.15/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-progress.1/lean-ctx
 
 ~/.config/harr/
   mcp-selection.json
@@ -406,7 +445,7 @@ Windows:
   libexec\
     common\
     windows\
-    vendor\lean-ctx\3.9.15\lean-ctx.exe
+    vendor\lean-ctx\3.11.0-harr-progress.1\lean-ctx.exe
   share\npm\
   logs\<service-mcp>.log
 
@@ -450,21 +489,17 @@ harr mcp list
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp configure gitlab,grafana,elasticsearch
-
-harr mcp start gitlab
-harr mcp stop gitlab
-harr mcp restart gitlab
-harr mcp status gitlab
-harr mcp logs gitlab
+harr mcp configure gitlab,grafana,elasticsearch,gigacode   # replace the whole optional set
+harr mcp add gigacode                        # preserve other selected MCPs
+harr mcp add gitlab,grafana
+harr mcp remove grafana
+harr mcp remove all                          # keep required MCPs only
 
 harr secret status
 harr secret set gitlab
 harr secret set grafana
-harr secret set elasticsearch
 harr secret unset gitlab
 harr secret unset grafana
-harr secret unset elasticsearch
 
 harr git <git-arguments>
 harr git -C /absolute/repository/path <git-arguments>
@@ -472,7 +507,7 @@ harr git -C /absolute/repository/path <git-arguments>
 harr uninstall
 ```
 
-`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument applies a non-interactive exact set.
+`harr mcp available` shows the full catalog and whether each entry is required/optional and enabled/disabled. `harr mcp list` lists the currently enabled downstream MCPs. `harr mcp add`/`remove` incrementally mutate the saved optional set while preserving every other choice. `harr mcp configure` opens the same cross-platform checklist used by first install; its optional argument replaces the complete optional set non-interactively.
 
 Lifecycle commands apply only to **enabled** registry entries with `lifecycle = service`; on-demand stdio MCPs such as CodeGraph are spawned by LeanCTX when called.
 
@@ -494,7 +529,7 @@ label:      short selector label
 description: selector/help description
 transport:  stdio | http
 lifecycle:  on-demand | service
-runtime:    npm package | command already available in PATH
+runtime:    npm package | bundled Python bridge | command already available in PATH
 secret:     env for local services | LeanCTX secret_env | secret_headers
 skill_reference: optional Harr diagnostic reference owned by that MCP
 ```
@@ -540,23 +575,15 @@ The separate `codegraph` launcher remains installed for manual commands such as 
 GitLab is **optional**. Enable it during install or later with:
 
 ```text
-harr mcp configure gitlab
+harr mcp add gitlab
 ```
 
-If other optional MCPs are already enabled, include them in the exact set as well, or use the interactive `harr mcp configure` checklist.
+For incremental changes prefer `harr mcp add gitlab` and `harr mcp remove gitlab`; these preserve every other selected optional MCP. Use `harr mcp configure` only when you want the interactive checklist or to replace the complete optional set explicitly.
 
-GitLab is declared as an HTTP service MCP in the common registry and exposed to LeanCTX at:
-
-```text
-http://127.0.0.1:3334/mcp
-```
-
-Its lifecycle adapter is platform-specific:
+GitLab is declared as an on-demand stdio MCP in the common registry and spawned by LeanCTX through the generic runner:
 
 ```text
-Linux:   systemd --user instance: harr-mcp@gitlab.service
-macOS:   ~/Library/LaunchAgents/com.harr.mcp.gitlab.plist
-Windows: per-user Scheduled Task
+LeanCTX -> harr-mcp-run gitlab -> zereight-mcp-gitlab
 ```
 
 Harr exposes the full GitLab tool catalog behind LeanCTX:
@@ -589,16 +616,16 @@ harr secret status
 harr secret unset gitlab
 ```
 
-Disabling GitLab removes it from the gateway, agent policy/skill and active service lifecycle, but preserves its local env/secret files.
+Disabling GitLab removes it from the gateway and agent policy/skill, but preserves its local env/secret files.
 
 
 
 ### Grafana
 
-Grafana is **optional** and declared as an on-demand stdio MCP. When enabled, the generated LeanCTX route is equivalent to:
+Grafana is **optional** and declared as an on-demand stdio MCP in the common registry. When enabled, the generated LeanCTX route is equivalent to:
 
 ```text
-LeanCTX -> harr-mcp-run grafana -> uvx mcp-grafana
+LeanCTX -> harr-mcp-run grafana -> uvx --offline mcp-grafana --transport stdio
 ```
 
 `uvx` must be available in `PATH` only when Grafana is selected/used. Harr creates the non-secret local config from `common/mcp/grafana.env.example`:
@@ -614,7 +641,7 @@ harr secret set grafana
 harr secret status
 ```
 
-The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP service while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
+The registry maps that secret to `GRAFANA_SERVICE_ACCOUNT_TOKEN` for the local Grafana MCP while Grafana is enabled. The token must not be placed in `grafana.env`, LeanCTX configuration, or the repository. Harr does not pass `--disable-write`.
 
 For dashboard edits, prefer the compact patch-first flow:
 
@@ -636,35 +663,12 @@ Elasticsearch is **optional** and uses Elastic's official npm package `@elastic/
 ```text
 LeanCTX -> harr-mcp-run elasticsearch
         -> mcp-server-elasticsearch
-        -> Elasticsearch
+        -> Elasticsearch 8.x
 ```
 
-Harr installs the package into its private npm runtime together with the other selected npm MCPs. No Docker/container runtime or listening service is required.
+The npm 0.3.1 line is deprecated upstream, but remains available and avoids a Docker dependency. For Elasticsearch 9.2+ or Serverless, Elastic recommends the Agent Builder MCP endpoint exposed through Kibana instead.
 
-The npm 0.3.1 server is the official Elastic package from the same `elastic/mcp-server-elasticsearch` repository and exposes a compact read-only investigation surface:
-
-```text
-list_indices
-get_mappings
-search
-get_shards
-```
-
-Set `ES_VERSION=8` for Elasticsearch 8.x, including 8.19.x. This npm release predates the later `esql` tool: ES|QL is available in the 0.4.x Rust/container line, but Harr deliberately keeps the Node/npm integration here to avoid adding Docker as a dependency. Query DSL search still supports targeted retrieval and aggregations.
-
-Enable it with `harr mcp configure` or an exact optional set, then install/update the selected runtimes:
-
-```text
-harr install mcp
-```
-
-Edit the generated non-secret config:
-
-```text
-~/.config/harr/mcp/elasticsearch.env
-```
-
-For Elasticsearch 8.x it contains:
+Enable it with `harr mcp configure` / `harr mcp add elasticsearch`, then install/update selected runtimes with `harr install mcp`. Configure the endpoint in `~/.config/harr/mcp/elasticsearch.env`:
 
 ```text
 ES_URL=https://elasticsearch.example.com:9200
@@ -676,12 +680,40 @@ Store the API key separately:
 
 ```text
 harr secret set elasticsearch
-harr secret status
 ```
 
-The key is injected as `ES_API_KEY` only for the MCP process and is never written to the env template or LeanCTX config. Prefer a read-only key scoped to the required index patterns; `read` + `view_index_metadata` on those indices and cluster `monitor` are sufficient for the MCP's data/mapping and CAT discovery tools.
+Harr injects it as `ES_API_KEY` only into the MCP process. Prefer a read-only key scoped to the required index patterns. This npm release exposes `list_indices`, `get_mappings`, `search`, and `get_shards`; it does **not** expose the later `esql` tool.
 
-For agent work, use `search` with bounded Query DSL: constrain index patterns, time ranges, returned fields and result size. See `common/skills/harr/references/elasticsearch.md` for setup, limitations and privilege details.
+For queries, keep index patterns, time windows, returned fields and `size` bounded. See `common/skills/harr/references/elasticsearch.md` for privilege guidance and version limitations.
+
+
+
+### GigaCode executor
+
+GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
+
+```text
+gigacode::gigacode
+```
+
+That one schema carries `action=start|resume|status|messages|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. Harr adds only its own managed global skill directories to LeanCTX `allow_paths`, so PathJail remains enabled while those skills can be read from projects outside the home config tree. A normal delegated flow is:
+
+```text
+parent: architecture + execution contract
+  -> ctx_tools(... gigacode::gigacode, action=start ...)
+  -> RUNNING + session_id
+  -> independent planner work OR one MCP-local wait (no delegated-source reads/review/test loops)
+  -> DONE + criterion evidence + final diff/scope self-review
+  -> parent contract acceptance
+```
+
+Harr ships only the bridge. The external `gigacode` CLI must already be installed and authenticated. The bridge deliberately treats it as a black box: it does not configure, inspect, or depend on GigaCode's own tool names, shell implementation, editor, extensions, or MCP servers.
+
+Normal RUNNING status is intentionally compact and does not expose GigaCode event history, internal logs, model text, or tool traces. `status` remains nonblocking; `wait` blocks inside the bridge for up to 1500 seconds so the parent model does not spend turns polling. With Harr's progress-aware LeanCTX fork, request-scoped GigaCode assistant prose is forwarded as MCP progress notifications for client UI display while the terminal tool result stays compact. Explicit `messages` calls can fetch only GigaCode assistant prose with a revision cursor, but because that is a normal MCP result it enters the parent tool context and is not used for automatic monitoring. Before a worker handoff is accepted as `DONE`, the bridge requires criterion-by-criterion PASS evidence, no unresolved blockers, and a successful final diff/scope self-review. Missing evidence is returned to the same GigaCode session with `resume`; the expensive parent does not repeat the executor's code reading and test loop by default.
+
+The bridge keeps a persistent GigaCode session, performs a bounded startup handshake, and runs execution detached. Hard timeout defaults to unlimited; cancellation is explicit unless the caller supplies a positive `timeout_sec`. One `wait` call is bounded to 1500 seconds; Harr configures the LeanCTX downstream timeout to 1800 seconds and Codex/OpenCode host-side LeanCTX timeouts to 1900 seconds so the blocking wait completes without forcing model-level polling.
+
+The saved Harr MCP selection controls whether the GigaCode route, routing policy, reference material, and `$gigacode-executor` skill exist. Normal later setup/update runs reuse that selection; use `harr mcp add/remove` for incremental changes or `harr mcp configure` for full replacement.
 
 ### Git
 
@@ -717,13 +749,13 @@ The permanent policy always keeps the core token-saving rules:
 - CodeGraph calls sequentially; returned source counts as already read;
 - missing exact evidence -> narrow LeanCTX read/search/glob/shell;
 - ordinary local Git operations -> exact `git ...` commands through `ctx_shell`; Git network operations -> `harr git ...`; GitLab server/API objects -> `gitlab::*` through `ctx_tools`;
-- Elasticsearch data/log/metric investigation -> `elasticsearch::*` through `ctx_tools`, preferring bounded Query DSL search over broad discovery;
+- Elasticsearch data/log/metric investigation -> `elasticsearch::*` through `ctx_tools`, preferring bounded Query DSL search;
 - known, non-editing uncommon LeanCTX capabilities -> `ctx_call`; never use it to discover edit/patch tools;
 - no broad repository inventory after CodeGraph;
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist in the installed AGENTS policy when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, and Elasticsearch query guidance does not exist when Elasticsearch is disabled.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, Elasticsearch query guidance does not exist when Elasticsearch is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 
