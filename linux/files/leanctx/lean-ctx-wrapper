@@ -2,7 +2,7 @@
 # HARR_LEANCTX_WRAPPER=1
 set -Eeuo pipefail
 
-readonly HARR_LEANCTX_BUILD="3.11.0-harr-workspace.1"
+readonly HARR_LEANCTX_BUILD="3.11.0-harr-workspace.2"
 readonly REAL="${HARR_LEANCTX_REAL:-${HOME}/.local/libexec/harr/vendor/lean-ctx/${HARR_LEANCTX_BUILD}/lean-ctx}"
 readonly MANAGER="${HARR_MCP_MANAGER:-${HOME}/.local/libexec/harr/common/mcp/manager.py}"
 readonly EFFECTIVE="${HARR_MCP_EFFECTIVE:-${XDG_CONFIG_HOME:-${HOME}/.config}/harr/mcp-registry.json}"
