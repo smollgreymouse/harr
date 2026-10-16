@@ -21,6 +21,13 @@ Direct Harr profile:
 
 Use `ctx_call` only for a known, non-editing uncommon capability; do not use it to discover edit/patch tools. Editing stays native; `ctx_edit`/`ctx_patch` are disabled.
 
+Investigation routing:
+
+- For text/content lookup use `ctx_search`; for filenames use `ctx_glob`; then use `ctx_read` with a narrow range. Prefer these over shell equivalents such as `rg`, `grep`, `find`, `sed`, `cat`, `head`, or `tail`.
+- Keep searches and reads bounded. When output is truncated, refine the query or read only the indicated lines instead of requesting the same large result again.
+- Reserve `ctx_shell` for real CLI work such as Git, builds, tests, generators, project commands and Harr bridges. Avoid search/read pipelines through `ctx_shell` when native `ctx_*` tools fit.
+- If shell output says LeanCTX blocked a command/segment before execution, report that as a policy rejection. Do not infer execution from trailing diagnostics, weaken shell security, or retry via another shell path. Treat exit 127 / `command not found` as a separate executable-availability problem only for commands that actually ran.
+
 Git routing through `ctx_shell`:
 
 - Local repository operations use one exact `git ...` command.

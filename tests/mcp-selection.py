@@ -86,6 +86,12 @@ def check(spec: str, expected: list[str]) -> None:
         run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--input", POLICY, "--output", filtered_policy)
         policy = filtered_policy.read_text(encoding="utf-8")
         assert "codegraph::codegraph_explore" in policy
+        assert "prefer `{{CTX_SEARCH}}`" in policy
+        assert "prefer `{{CTX_GLOB}}`" in policy
+        assert "Do not use shell tools merely to emulate search/read" in policy
+        assert "Keep investigation output bounded" in policy
+        assert "`{{CTX_SHELL}}` is for operations whose semantics are genuinely shell/CLI based" in policy
+        assert "A LeanCTX `BLOCKED`/`segment ... blocked` message means the command was rejected before execution" in policy
         assert "Kubernetes cluster operations" in policy
         assert "harr kubectl ..." in policy
         assert "Do not use a Kubernetes MCP" in policy
