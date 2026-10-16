@@ -19,7 +19,7 @@ Codex / OpenCode
       |
       | Harr-managed route
       v
-LeanCTX 3.11.0 Harr progress build        required
+LeanCTX 3.11.0 Harr workspace build       required
       |
       +-- stdio -----------> CodeGraph 1.5.0       required
       |                     inherits LeanCTX cwd
@@ -57,6 +57,19 @@ The user choice is stored separately from the catalog:
 ```
 
 The effective registry is the single source for the active LeanCTX gateway, runtime packages, secrets/status, service lifecycle, global routing policy and installed Harr skill/reference set. Disabling an MCP preserves its existing env/secret files so it can be re-enabled without re-entering configuration.
+
+Harr also owns LeanCTX Workspace state per project. For a Git checkout, the nearest `.git` root is the primary Workspace root; outside Git, the current directory is used. Persistent stores live under `~/.config/harr/workspaces/` and are selected automatically when Harr launches LeanCTX as MCP. Harr enables strict Workspace authority for those MCP launches; ordinary LeanCTX CLI commands such as `lean-ctx config validate` are not forced into Workspace mode.
+
+Additional roots can be changed live without restarting Codex or the LeanCTX MCP process:
+
+```bash
+harr workspace show
+harr workspace add ../shared-assets
+harr workspace remove ../shared-assets
+harr workspace list
+```
+
+The CLI and the already-running MCP share the same revisioned Workspace store, so a successful add becomes visible to the next MCP request and a remove revokes access on the next request.
 
 
 
@@ -484,6 +497,10 @@ harr status
 harr hosts status
 harr agents status
 harr leanctx status
+harr workspace show
+harr workspace list
+harr workspace add PATH
+harr workspace remove PATH
 
 harr install all
 harr install leanctx
