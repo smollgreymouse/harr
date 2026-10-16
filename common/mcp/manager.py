@@ -610,6 +610,55 @@ def memento_var(secret_id: str) -> str:
     return "LEAN_CTX_SECRET_" + secret_id.encode("utf-8").hex().upper()
 
 
+def read_workspace_state(real: str | Path, store: Path) -> dict:
+    result = workspace_admin(real, "show", str(store))
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"cannot read Workspace {store}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid Workspace JSON from LeanCTX: {exc}") from exc
+
+
+def workspace_command(args: argparse.Namespace) -> None:
+    real = Path(args.real).expanduser().resolve()
+    if not real.is_file():
+        raise SystemExit(f"LeanCTX binary not found: {real}")
+    if args.action == "list":
+        rows: list[dict] = []
+        for store in sorted(workspace_store_dir().glob("*.json")):
+            try:
+                state = read_workspace_state(real, store)
+            except SystemExit:
+                continue
+            rows.append({"store": str(store), **state})
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+
+    primary = workspace_root(Path(args.project).expanduser() if args.project else None)
+    store = ensure_workspace_store(real, primary)
+    state = read_workspace_state(real, store)
+    if args.action == "show":
+        print(json.dumps({"store": str(store), **state}, ensure_ascii=False, indent=2))
+        return
+
+    if not args.path:
+        raise SystemExit(f"workspace {args.action} requires a path")
+    target = Path(args.path).expanduser()
+    if not target.is_absolute():
+        target = (Path.cwd() / target).resolve()
+    else:
+        target = target.resolve()
+    if not target.is_dir():
+        raise SystemExit(f"Workspace root is not a directory: {target}")
+    operation = "add" if args.action == "add" else "remove"
+    result = workspace_admin(real, operation, str(store), str(target), str(state["revision"]))
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"workspace {operation} failed")
+    updated = json.loads(result.stdout)
+    print(json.dumps({"store": str(store), **updated}, ensure_ascii=False, indent=2))
+
+
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
     if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
@@ -714,6 +763,12 @@ def main() -> None:
     p_exec.add_argument("real")
     p_exec.add_argument("rest", nargs=argparse.REMAINDER)
 
+    p_workspace = sub.add_parser("workspace")
+    p_workspace.add_argument("action", choices=["show", "list", "add", "remove"])
+    p_workspace.add_argument("path", nargs="?")
+    p_workspace.add_argument("--real", required=True)
+    p_workspace.add_argument("--project")
+
     p_components = sub.add_parser("components")
     p_components.add_argument("--npm-prefix")
 
@@ -749,6 +804,8 @@ def main() -> None:
         if args.rest and args.rest[0] == "--":
             args.rest = args.rest[1:]
         exec_leanctx(args, data)
+    elif args.command == "workspace":
+        workspace_command(args)
     elif args.command == "components":
         component_rows(args, data)
 

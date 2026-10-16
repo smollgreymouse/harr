@@ -24,6 +24,7 @@ source "${CLI_LIB_DIR}/help.sh"
 source "${HARR_COMMON_DIR}/shell/agents.sh"
 source "${HARR_COMMON_DIR}/shell/hosts.sh"
 source "${CLI_LIB_DIR}/components.sh"
+source "${CLI_LIB_DIR}/workspace.sh"
 source "${HARR_COMMON_DIR}/shell/secret.sh"
 source "${HARR_COMMON_DIR}/shell/leanctx.sh"
 source "${HARR_COMMON_DIR}/shell/git.sh"
@@ -57,6 +58,7 @@ case "$command" in
   hosts) cmd_hosts "$@" ;;
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
+  workspace) cmd_workspace "$@" ;;
   git) cmd_git "$@" ;;
   kube) cmd_kube "$@" ;;
   kubectl) cmd_kubectl "$@" ;;
