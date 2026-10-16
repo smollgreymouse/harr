@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -179,6 +180,62 @@ def config_home() -> Path:
 
 def harr_config_dir() -> Path:
     return Path(os.environ.get("HARR_CONFIG_DIR", config_home() / "harr"))
+
+
+def workspace_root(cwd: Path | None = None) -> Path:
+    current = (cwd or Path.cwd()).expanduser().resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return current
+
+
+def workspace_store_dir() -> Path:
+    root = harr_config_dir() / "workspaces"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        root.chmod(0o700)
+    except OSError:
+        pass
+    return root
+
+
+def workspace_store_path(primary: Path) -> Path:
+    canonical = primary.expanduser().resolve()
+    digest = hashlib.sha256(str(canonical).encode("utf-8")).hexdigest()[:24]
+    return workspace_store_dir() / f"{digest}.json"
+
+
+def workspace_admin(real: str | Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["LEAN_CTX_HEADLESS"] = "1"
+    return subprocess.run(
+        [str(real), "workspace-admin", *args],
+        env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30,
+    )
+
+
+def ensure_workspace_store(real: str | Path, primary: Path) -> Path:
+    primary = primary.expanduser().resolve()
+    store = workspace_store_path(primary)
+    if not store.exists():
+        result = workspace_admin(real, "create", str(store), str(primary))
+        if result.returncode != 0:
+            raise SystemExit(f"cannot create Harr Workspace store: {result.stderr.strip() or result.stdout.strip()}")
+    shown = workspace_admin(real, "show", str(store))
+    if shown.returncode != 0:
+        raise SystemExit(f"cannot read Harr Workspace store: {shown.stderr.strip() or shown.stdout.strip()}")
+    try:
+        state = json.loads(shown.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid Harr Workspace store output: {exc}") from exc
+    if Path(state.get("primary", "")).resolve() != primary:
+        raise SystemExit(f"Harr Workspace store primary mismatch: expected {primary}, got {state.get('primary')}")
+    return store
+
+
+def leanctx_is_mcp(rest: list[str]) -> bool:
+    return not rest or rest[0] == "mcp"
 
 
 def npm_bin_dir() -> Path:
@@ -555,6 +612,11 @@ def memento_var(secret_id: str) -> str:
 
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
+    if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
+        primary = workspace_root()
+        store = ensure_workspace_store(args.real, primary)
+        env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
+        env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
     secret_root = harr_config_dir() / "secrets"
     for _, secret in secret_records(data):
         path = secret_root / secret["file"]
