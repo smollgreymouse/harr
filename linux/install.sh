@@ -117,6 +117,7 @@ select_mcp_set() {
 
 install_runtime_files() {
   install -d -m 0755 "$BIN_DIR" "$LIBEXEC_DIR" "$CLI_LIB_DIR" "$MCP_LIB_DIR" "$LEANCTX_LIB_DIR" "$STATE_LIB_DIR" "$MCP_CONFIG_DIR" "$SYSTEMD_USER_DIR"
+  if [[ -r "${SOURCE_DIR}/../VERSION" ]]; then install -m 0644 "${SOURCE_DIR}/../VERSION" "${LIBEXEC_DIR}/VERSION"; fi
   install -d -m 0700 "$SECRETS_DIR"
   rm -rf -- "$COMMON_LIB_DIR"
   cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
@@ -196,6 +197,10 @@ main() {
 
   if ((!harr_only)); then
     "${BIN_DIR}/harr" install all
+  elif [[ -n "${HARR_BUNDLED_LEANCTX:-}" && -x "${HARR_BUNDLED_LEANCTX}" ]]; then
+    # Package/tarball updates already carry the verified LeanCTX binary. Reuse it
+    # during a Harr-only refresh without downloading/reinstalling the optional MCP stack.
+    "${BIN_DIR}/harr" install leanctx
   else
     "${BIN_DIR}/harr" hosts apply
     "${BIN_DIR}/harr" agents apply all
