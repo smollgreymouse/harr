@@ -5,6 +5,8 @@ readonly SELF_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 readonly SELF_DIR="$(cd -- "$(dirname -- "${SELF_PATH}")" && pwd)"
 if [[ -r "${SELF_DIR}/../VERSION" ]]; then
   readonly HARR_VERSION="$(tr -d '[:space:]' < "${SELF_DIR}/../VERSION")"
+elif [[ -r "${HARR_LIBEXEC_DIR:-${HOME}/.local/libexec/harr}/VERSION" ]]; then
+  readonly HARR_VERSION="$(tr -d '[:space:]' < "${HARR_LIBEXEC_DIR:-${HOME}/.local/libexec/harr}/VERSION")"
 else
   readonly HARR_VERSION="1.0.0"
 fi
