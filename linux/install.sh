@@ -136,7 +136,7 @@ EOF_HARR_PACKAGE_SHIM
   install -m 0755 "${FILES_DIR}/mcp/harr-mcp-run" "${BIN_DIR}/harr-mcp-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${BIN_DIR}/codegraph"
   local f
-  for f in common help components mcp uninstall; do install -m 0644 "${FILES_DIR}/harr-cli/${f}.sh" "${CLI_LIB_DIR}/${f}.sh"; done
+  for f in common help components workspace mcp uninstall; do install -m 0644 "${FILES_DIR}/harr-cli/${f}.sh" "${CLI_LIB_DIR}/${f}.sh"; done
   install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${MCP_UNIT_TEMPLATE}" "${SYSTEMD_USER_DIR}/${MCP_UNIT_TEMPLATE}"

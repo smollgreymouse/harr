@@ -22,6 +22,9 @@ CLI:
   harr secret unset NAME
   harr leanctx apply
   harr leanctx status
+  harr workspace show|list
+  harr workspace add PATH
+  harr workspace remove PATH
   harr git <git-arguments>
   harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
   harr kube sync [--allow-exec] [--no-check]

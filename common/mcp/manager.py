@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -179,6 +180,62 @@ def config_home() -> Path:
 
 def harr_config_dir() -> Path:
     return Path(os.environ.get("HARR_CONFIG_DIR", config_home() / "harr"))
+
+
+def workspace_root(cwd: Path | None = None) -> Path:
+    current = (cwd or Path.cwd()).expanduser().resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return current
+
+
+def workspace_store_dir() -> Path:
+    root = harr_config_dir() / "workspaces"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        root.chmod(0o700)
+    except OSError:
+        pass
+    return root
+
+
+def workspace_store_path(primary: Path) -> Path:
+    canonical = primary.expanduser().resolve()
+    digest = hashlib.sha256(str(canonical).encode("utf-8")).hexdigest()[:24]
+    return workspace_store_dir() / f"{digest}.json"
+
+
+def workspace_admin(real: str | Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["LEAN_CTX_HEADLESS"] = "1"
+    return subprocess.run(
+        [str(real), "workspace-admin", *args],
+        env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=30,
+    )
+
+
+def ensure_workspace_store(real: str | Path, primary: Path) -> Path:
+    primary = primary.expanduser().resolve()
+    store = workspace_store_path(primary)
+    if not store.exists():
+        result = workspace_admin(real, "create", str(store), str(primary))
+        if result.returncode != 0:
+            raise SystemExit(f"cannot create Harr Workspace store: {result.stderr.strip() or result.stdout.strip()}")
+    shown = workspace_admin(real, "show", str(store))
+    if shown.returncode != 0:
+        raise SystemExit(f"cannot read Harr Workspace store: {shown.stderr.strip() or shown.stdout.strip()}")
+    try:
+        state = json.loads(shown.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid Harr Workspace store output: {exc}") from exc
+    if Path(state.get("primary", "")).resolve() != primary:
+        raise SystemExit(f"Harr Workspace store primary mismatch: expected {primary}, got {state.get('primary')}")
+    return store
+
+
+def leanctx_is_mcp(rest: list[str]) -> bool:
+    return not rest or rest[0] == "mcp"
 
 
 def npm_bin_dir() -> Path:
@@ -553,8 +610,62 @@ def memento_var(secret_id: str) -> str:
     return "LEAN_CTX_SECRET_" + secret_id.encode("utf-8").hex().upper()
 
 
+def read_workspace_state(real: str | Path, store: Path) -> dict:
+    result = workspace_admin(real, "show", str(store))
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"cannot read Workspace {store}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"invalid Workspace JSON from LeanCTX: {exc}") from exc
+
+
+def workspace_command(args: argparse.Namespace) -> None:
+    real = Path(args.real).expanduser().resolve()
+    if not real.is_file():
+        raise SystemExit(f"LeanCTX binary not found: {real}")
+    if args.action == "list":
+        rows: list[dict] = []
+        for store in sorted(workspace_store_dir().glob("*.json")):
+            try:
+                state = read_workspace_state(real, store)
+            except SystemExit:
+                continue
+            rows.append({"store": str(store), **state})
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+
+    primary = workspace_root(Path(args.project).expanduser() if args.project else None)
+    store = ensure_workspace_store(real, primary)
+    state = read_workspace_state(real, store)
+    if args.action == "show":
+        print(json.dumps({"store": str(store), **state}, ensure_ascii=False, indent=2))
+        return
+
+    if not args.path:
+        raise SystemExit(f"workspace {args.action} requires a path")
+    target = Path(args.path).expanduser()
+    if not target.is_absolute():
+        target = (Path.cwd() / target).resolve()
+    else:
+        target = target.resolve()
+    if not target.is_dir():
+        raise SystemExit(f"Workspace root is not a directory: {target}")
+    operation = "add" if args.action == "add" else "remove"
+    result = workspace_admin(real, operation, str(store), str(target), str(state["revision"]))
+    if result.returncode != 0:
+        raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"workspace {operation} failed")
+    updated = json.loads(result.stdout)
+    print(json.dumps({"store": str(store), **updated}, ensure_ascii=False, indent=2))
+
+
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
+    if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
+        primary = workspace_root()
+        store = ensure_workspace_store(args.real, primary)
+        env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
+        env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
     secret_root = harr_config_dir() / "secrets"
     for _, secret in secret_records(data):
         path = secret_root / secret["file"]
@@ -652,6 +763,12 @@ def main() -> None:
     p_exec.add_argument("real")
     p_exec.add_argument("rest", nargs=argparse.REMAINDER)
 
+    p_workspace = sub.add_parser("workspace")
+    p_workspace.add_argument("action", choices=["show", "list", "add", "remove"])
+    p_workspace.add_argument("path", nargs="?")
+    p_workspace.add_argument("--real", required=True)
+    p_workspace.add_argument("--project")
+
     p_components = sub.add_parser("components")
     p_components.add_argument("--npm-prefix")
 
@@ -687,6 +804,8 @@ def main() -> None:
         if args.rest and args.rest[0] == "--":
             args.rest = args.rest[1:]
         exec_leanctx(args, data)
+    elif args.command == "workspace":
+        workspace_command(args)
     elif args.command == "components":
         component_rows(args, data)
 
