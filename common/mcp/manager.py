@@ -700,6 +700,10 @@ def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
         primary = workspace_root()
         store = ensure_workspace_store(args.real, primary)
         env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
+        # Workspace changes root authority, not the familiar Harr tool surface.
+        # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
+        # strict session; LeanCTX still enforces request-scoped Workspace roots.
+        env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
         env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
     secret_root = harr_config_dir() / "secrets"
     for _, secret in secret_records(data):
