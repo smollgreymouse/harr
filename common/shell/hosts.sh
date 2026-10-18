@@ -20,14 +20,14 @@ cmd_hosts_apply() {
   require_command python3
   [[ -r "$HARR_OPENCODE_HELPER" ]] || die "OpenCode helper missing: $HARR_OPENCODE_HELPER"
   [[ -r "$HARR_CODEX_HELPER" ]] || die "Codex helper missing: $HARR_CODEX_HELPER"
-  python3 "$HARR_OPENCODE_HELPER" apply
-  python3 "$HARR_CODEX_HELPER" apply
+  env HARR_PLATFORM="${HARR_PLATFORM:-linux}" python3 "$HARR_OPENCODE_HELPER" apply
+  env HARR_PLATFORM="${HARR_PLATFORM:-linux}" python3 "$HARR_CODEX_HELPER" apply
 }
 
 host_helper_status_row() {
   local host="$1" helper="$2" line state detail
   if [[ -r "$helper" ]] && command -v python3 >/dev/null 2>&1; then
-    line="$(python3 "$helper" status 2>/dev/null || true)"
+    line="$(env HARR_PLATFORM="${HARR_PLATFORM:-linux}" python3 "$helper" status 2>/dev/null || true)"
     state="$(printf '%s' "$line" | cut -f2)"
     detail="$(printf '%s' "$line" | cut -f3-)"
     printf '%-12s %-14s %s\n' "$host" "${state:-unknown}" "${detail:--}"

@@ -20,31 +20,45 @@ Do **not** discover candidates by walking `$HOME`, listing sibling repositories,
 
 If the host exposes only the current working directory and no additional roots, sync only that directory and report that no other session roots were available.
 
+## Execution boundary
+
+Prefer the direct **Harr Workspace MCP** server `harr-workspace`. It intentionally runs outside the LeanCTX gateway so it can change the Workspace authority that LeanCTX itself consumes.
+
+Use these tools when available:
+
+- `harr-workspace::workspace_get` with the current project root;
+- `harr-workspace::workspace_sync` with the current project root and the already-known session roots.
+
+Do **not** route Workspace control through LeanCTX `ctx_shell`, `ctx_workspace_get`, or another LeanCTX MCP tool. A not-yet-authorized root cannot bootstrap its own authorization through LeanCTX.
+
+If the direct `harr-workspace` MCP is unavailable, native `harr workspace ...` commands are a fallback only when the client has host filesystem access to Harr config. If native execution reports a read-only/sandbox denial for Harr state, stop and report that the Workspace control MCP is unavailable; do not weaken the sandbox.
+
 ## Action
 
-1. Inspect the existing Harr Workspace:
-
-```text
-harr workspace show
-```
+1. Read the current Workspace with `harr-workspace::workspace_get`, passing the current project root as `project`.
 
 2. Build the list of absolute working-folder paths already known to this session. Keep the current project root in the list; Harr will safely skip it as the primary root.
 
-3. Synchronize those paths in one command:
+3. Call `harr-workspace::workspace_sync` once:
 
 ```text
-harr workspace sync /absolute/current/project /absolute/extra/root ...
+project = /absolute/current/project
+paths = [/absolute/current/project, /absolute/extra/root, ...]
 ```
 
-`sync` only **adds** missing roots. It never removes existing roots. Harr canonicalizes the paths, skips the primary root, already-present roots and duplicate inputs, and performs revisioned additions against the live Workspace store.
+`workspace_sync` only **adds** missing roots. It never removes existing roots. The server rejects filesystem root, the user home directory, and broad parents of the Workspace primary root. Harr canonicalizes paths, skips the primary root, already-present roots and duplicate inputs, and performs revisioned additions against the live Workspace store.
 
-4. Verify the result:
+4. Read the Workspace again with `harr-workspace::workspace_get` and report which roots were added or skipped.
+
+### CLI fallback
+
+For a non-sandboxed host that does not have the direct MCP registration, the equivalent commands are:
 
 ```text
 harr workspace show
+harr workspace sync /absolute/current/project /absolute/extra/root ...
+harr workspace show
 ```
-
-Report which roots were added and which were skipped. Treat a non-zero exit as a failed sync and report the exact Harr error.
 
 ## Boundaries
 

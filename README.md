@@ -70,7 +70,7 @@ harr workspace sync /absolute/current/project /absolute/other/session-root
 harr workspace list
 ```
 
-`harr workspace sync PATH...` is an add-only helper for agent sessions: it canonicalizes the supplied working folders, skips the primary root, existing roots and duplicate inputs, and adds only the missing roots. Harr installs the same `$harr-workspace` skill for both Codex and OpenCode, so you can ask either client to "sync/add your working folders to Harr". The skill uses only workspace/root paths already known to that session; it does not scan `$HOME` or guess sibling repositories.
+`harr workspace sync PATH...` is an add-only helper for agent sessions: it canonicalizes the supplied working folders, skips the primary root, existing roots and duplicate inputs, and adds only the missing roots. On Linux, Harr installs the same `$harr-workspace` skill and direct `harr-workspace` control MCP for both Codex and OpenCode, so you can ask either client to "sync/add your working folders to Harr". The skill uses only workspace/root paths already known to that session; it does not scan `$HOME` or guess sibling repositories.
 
 The CLI and the already-running MCP share the same revisioned Workspace store, so a successful add becomes visible to the next MCP request and a remove revokes access on the next request.
 

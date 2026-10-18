@@ -128,8 +128,13 @@ cmd_agents_apply() {
   if mcp_manager names | grep -Fxq -- gigacode; then gigacode_enabled=1; fi
   while IFS= read -r agent; do
     install_agent_policy "$agent"
-    for skill in lean-ctx harr harr-workspace; do install_one_skill "$agent" "$skill"; done
+    for skill in lean-ctx harr; do install_one_skill "$agent" "$skill"; done
     root="$(agent_skill_root "$agent")"
+    if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
+      install_one_skill "$agent" harr-workspace
+    else
+      rm -rf -- "${root}/harr-workspace"
+    fi
     if ((gigacode_enabled)); then
       install_one_skill "$agent" gigacode-executor
     else

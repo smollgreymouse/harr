@@ -135,6 +135,19 @@ def expected_leanctx_entry() -> dict[str, Any]:
     return {"type": "local", "command": [str(LEANCTX)], "enabled": True, "timeout": MCP_TOOL_TIMEOUT_MS}
 
 
+def workspace_server_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "mcp" / "workspace_control" / "server.py"
+
+
+def workspace_control_enabled() -> bool:
+    platform = os.environ.get("HARR_PLATFORM")
+    return platform == "linux" if platform else sys.platform.startswith("linux")
+
+
+def expected_workspace_entry() -> dict[str, Any]:
+    return {"type": "local", "command": [sys.executable, str(workspace_server_path())], "enabled": True, "timeout": 60000}
+
+
 def build_harr_config(current: dict[str, Any]) -> dict[str, Any]:
     config = dict(current)
     plugins = config.get("plugin")
@@ -167,6 +180,10 @@ def build_harr_config(current: dict[str, Any]) -> dict[str, Any]:
     mcp.pop("codegraph", None)
     mcp.pop("gitlab", None)
     mcp["lean-ctx"] = expected_leanctx_entry()
+    if workspace_control_enabled():
+        mcp["harr-workspace"] = expected_workspace_entry()
+    else:
+        mcp.pop("harr-workspace", None)
     config["mcp"] = mcp
     config.setdefault("$schema", "https://opencode.ai/config.json")
     return config
@@ -211,6 +228,11 @@ def status() -> int:
     else:
         if mcp.get("lean-ctx") != expected_leanctx_entry():
             problems.append("lean-ctx-stale")
+        if workspace_control_enabled():
+            if mcp.get("harr-workspace") != expected_workspace_entry():
+                problems.append("harr-workspace-stale")
+        elif "harr-workspace" in mcp:
+            problems.append("harr-workspace-unexpected")
         if "codegraph" in mcp:
             problems.append("direct-codegraph-present")
         if "gitlab" in mcp:
