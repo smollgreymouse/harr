@@ -13,8 +13,8 @@ workspace_usage() {
 Usage:
   harr workspace show
   harr workspace list
-  harr workspace add PATH
-  harr workspace remove PATH
+  harr workspace add PATH [--expected-revision N]
+  harr workspace remove PATH [--expected-revision N]
   harr workspace sync PATH [PATH ...]
 
 Workspace is selected from the current Git repository root (or current directory
@@ -27,7 +27,10 @@ cmd_workspace() {
   shift || true
   case "$action" in
     show|list) [[ $# -eq 0 ]] || { workspace_usage >&2; return 2; } ;;
-    add|remove) [[ $# -eq 1 ]] || { workspace_usage >&2; return 2; } ;;
+    add|remove)
+      if [[ $# -ne 1 && $# -ne 3 ]]; then workspace_usage >&2; return 2; fi
+      if [[ $# -eq 3 && "$2" != "--expected-revision" ]]; then workspace_usage >&2; return 2; fi
+      ;;
     sync) [[ $# -ge 1 ]] || { workspace_usage >&2; return 2; } ;;
     -h|--help|help) workspace_usage; return 0 ;;
     *) workspace_usage >&2; return 2 ;;

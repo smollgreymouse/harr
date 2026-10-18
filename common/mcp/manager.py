@@ -686,7 +686,8 @@ def workspace_command(args: argparse.Namespace) -> None:
         raise SystemExit(f"workspace {args.action} requires exactly one path")
     target = resolve_target(args.paths[0])
     operation = "add" if args.action == "add" else "remove"
-    result = workspace_admin(real, operation, str(store), str(target), str(state["revision"]))
+    expected_revision = args.expected_revision if args.expected_revision is not None else int(state["revision"])
+    result = workspace_admin(real, operation, str(store), str(target), str(expected_revision))
     if result.returncode != 0:
         raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"workspace {operation} failed")
     updated = json.loads(result.stdout)
@@ -802,6 +803,7 @@ def main() -> None:
     p_workspace.add_argument("paths", nargs="*")
     p_workspace.add_argument("--real", required=True)
     p_workspace.add_argument("--project")
+    p_workspace.add_argument("--expected-revision", type=int)
 
     p_components = sub.add_parser("components")
     p_components.add_argument("--npm-prefix")
