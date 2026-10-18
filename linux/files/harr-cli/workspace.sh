@@ -15,6 +15,7 @@ Usage:
   harr workspace list
   harr workspace add PATH
   harr workspace remove PATH
+  harr workspace sync PATH [PATH ...]
 
 Workspace is selected from the current Git repository root (or current directory
 outside Git). Changes are live for already-running Harr-managed LeanCTX MCP sessions.
@@ -27,6 +28,7 @@ cmd_workspace() {
   case "$action" in
     show|list) [[ $# -eq 0 ]] || { workspace_usage >&2; return 2; } ;;
     add|remove) [[ $# -eq 1 ]] || { workspace_usage >&2; return 2; } ;;
+    sync) [[ $# -ge 1 ]] || { workspace_usage >&2; return 2; } ;;
     -h|--help|help) workspace_usage; return 0 ;;
     *) workspace_usage >&2; return 2 ;;
   esac

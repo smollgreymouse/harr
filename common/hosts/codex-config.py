@@ -314,6 +314,8 @@ def apply_with_fallback() -> None:
 
 
 APP_SERVER_NAME = "harr-gigacode-app"
+WORKSPACE_SERVER_NAME = "harr-workspace"
+WORKSPACE_TOOLS = ("workspace_get", "workspace_sync")
 
 
 def apply_gigacode_app() -> None:
@@ -344,10 +346,62 @@ def apply_gigacode_app() -> None:
     write_config_text(text)
 
 
+
+def workspace_server_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "mcp" / "workspace_control" / "server.py"
+
+
+def workspace_control_enabled() -> bool:
+    platform = os.environ.get("HARR_PLATFORM")
+    return platform == "linux" if platform else sys.platform.startswith("linux")
+
+
+def apply_workspace_control() -> None:
+    server = workspace_server_path()
+    if not server.is_file():
+        raise RuntimeError(f"Harr Workspace MCP missing: {server}")
+    text = load_config_text()
+    parse_config(text)
+    for tool in WORKSPACE_TOOLS:
+        text = remove_exact_table(text, ["mcp_servers", WORKSPACE_SERVER_NAME, "tools", tool])
+    text = remove_exact_table(text, ["mcp_servers", WORKSPACE_SERVER_NAME]).rstrip()
+    if not workspace_control_enabled():
+        write_config_text(text + "\n")
+        return
+    block = (f"[mcp_servers.{WORKSPACE_SERVER_NAME}]\n"
+             f"command = {toml_basic_string(sys.executable)}\n"
+             f"args = [{toml_basic_string(str(server))}]\n"
+             "enabled = true\nstartup_timeout_sec = 30\ntool_timeout_sec = 60\n"
+             "default_tools_approval_mode = \"auto\"\n"
+             + "\n".join(
+                 f"[mcp_servers.{WORKSPACE_SERVER_NAME}.tools.{tool}]\napproval_mode = \"auto\""
+                 for tool in WORKSPACE_TOOLS
+             ) + "\n")
+    text = f"{text}\n\n{block}" if text else block
+    parse_config(text)
+    write_config_text(text)
+
+
+def workspace_control_is_managed(config: dict[str, Any]) -> bool:
+    servers = config.get("mcp_servers")
+    entry = servers.get(WORKSPACE_SERVER_NAME) if isinstance(servers, dict) else None
+    if not workspace_control_enabled():
+        return entry is None
+    if not isinstance(entry, dict):
+        return False
+    if (entry.get("command") != sys.executable or entry.get("args") != [str(workspace_server_path())]
+            or entry.get("enabled") is not True or entry.get("default_tools_approval_mode") != "auto"
+            or entry.get("startup_timeout_sec") != 30 or entry.get("tool_timeout_sec") != 60):
+        return False
+    tools = entry.get("tools")
+    return isinstance(tools, dict) and all(tools.get(tool) == {"approval_mode": "auto"} for tool in WORKSPACE_TOOLS)
+
+
 def apply() -> None:
     binary = codex_cli()
     apply_with_codex_cli(binary) if binary else apply_with_fallback()
     apply_gigacode_app()
+    apply_workspace_control()
 
 
 def status() -> int:
@@ -363,7 +417,7 @@ def status() -> int:
     if entry is None:
         print(f"codex-config\tmissing\tLeanCTX MCP not registered in {CONFIG}")
         return 1
-    if entry_is_managed(entry):
+    if entry_is_managed(entry) and workspace_control_is_managed(config):
         print(f"codex-config\tmanaged\t{CONFIG}")
         return 0
 

@@ -80,6 +80,8 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/kibana.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor" ]]
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
+[[ ! -e "${CODEX_HOME}/skills/harr-workspace" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace" ]]
 ! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
 # Retired LaunchAgent plists must be removed.
 for label in com.harr.mcp.gitlab com.harr.mcp.grafana; do
@@ -108,8 +110,10 @@ assert codex['mcp_servers']['external-mcp']['url'] == 'https://example.invalid/c
 assert codex['mcp_servers']['lean-ctx']['command'] == str(home / '.local/bin/lean-ctx')
 assert codex['mcp_servers']['lean-ctx']['default_tools_approval_mode'] == 'auto'
 assert codex['mcp_servers']['lean-ctx']['tool_timeout_sec'] == 1900
+assert 'harr-workspace' not in codex['mcp_servers']
 opencode = json.loads((config / 'opencode/opencode.jsonc').read_text())
 assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
+assert 'harr-workspace' not in opencode['mcp']
 lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
 assert lean['allow_paths'] == [
     str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),

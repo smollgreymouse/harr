@@ -95,11 +95,12 @@ grep -q 'Do not open the dashboard in a browser as the first action' "${CODEX_HO
 ! grep -q 'git-mcp' "${CODEX_HOME}/AGENTS.md"
 
 python3 - <<'PY'
-import json, os, tomllib
+import json, os, sys, tomllib
 from pathlib import Path
 
 home = Path(os.environ['HOME'])
 lean = home / '.local' / 'bin' / 'lean-ctx'
+workspace_server = Path.cwd() / 'common/mcp/workspace_control/server.py'
 trusted = ('ctx_read', 'ctx_search', 'ctx_glob', 'ctx_shell', 'ctx_tools')
 
 codex_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
@@ -118,6 +119,17 @@ assert set(leanctx['tools']) == set(trusted)
 for name in trusted:
     assert leanctx['tools'][name] == {'approval_mode': 'approve'}
 assert 'ctx_call' not in leanctx['tools']
+workspace = codex['mcp_servers']['harr-workspace']
+assert workspace['command'] == sys.executable
+assert workspace['args'] == [str(workspace_server)]
+assert workspace['enabled'] is True
+assert workspace['default_tools_approval_mode'] == 'auto'
+assert workspace['startup_timeout_sec'] == 30
+assert workspace['tool_timeout_sec'] == 60
+assert workspace['tools'] == {
+    'workspace_get': {'approval_mode': 'auto'},
+    'workspace_sync': {'approval_mode': 'auto'},
+}
 
 p = Path(os.environ['XDG_CONFIG_HOME']) / 'opencode' / 'opencode.jsonc'
 cfg = json.loads(p.read_text())
@@ -131,6 +143,9 @@ assert 'codegraph' not in cfg['mcp']
 assert 'gitlab' not in cfg['mcp']
 assert cfg['mcp']['external-mcp']['url'] == 'https://example.invalid/mcp'
 assert cfg['mcp']['lean-ctx'] == {'type': 'local', 'command': [str(lean)], 'enabled': True, 'timeout': 1900000}
+assert cfg['mcp']['harr-workspace'] == {
+    'type': 'local', 'command': [sys.executable, str(workspace_server)], 'enabled': True, 'timeout': 60000,
+}
 assert cfg['tools']['external_tool'] is True
 assert 'bash' not in cfg['tools'] and 'read' not in cfg['tools']
 assert cfg['permission']['external_perm'] == 'allow'
@@ -159,11 +174,18 @@ for tool in ctx_read ctx_search ctx_glob ctx_shell ctx_tools; do
 done
 [[ "$(grep -c '^approval_mode = "approve"$' "${CODEX_HOME}/config.toml")" -eq 5 ]]
 ! grep -q '^\[mcp_servers\.lean-ctx\.tools\.ctx_call\]$' "${CODEX_HOME}/config.toml"
+grep -q '^\[mcp_servers\.harr-workspace\]$' "${CODEX_HOME}/config.toml"
+grep -q '^\[mcp_servers\.harr-workspace\.tools\.workspace_get\]$' "${CODEX_HOME}/config.toml"
+grep -q '^\[mcp_servers\.harr-workspace\.tools\.workspace_sync\]$' "${CODEX_HOME}/config.toml"
 
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/commands/quick.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md" ]]
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/harr-workspace/SKILL.md" ]]
+grep -q 'harr workspace sync' "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace/SKILL.md"
+grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/references/kibana.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
@@ -201,9 +223,11 @@ codex = Path(os.environ['CODEX_HOME'])
 lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
 assert lean['allow_paths'] == [
     str(codex / 'skills/harr'),
+    str(codex / 'skills/harr-workspace'),
     str(codex / 'skills/lean-ctx'),
     str(codex / 'skills/gigacode-executor'),
     str(config / 'opencode/skills/harr'),
+    str(config / 'opencode/skills/harr-workspace'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/gigacode-executor'),
 ]
