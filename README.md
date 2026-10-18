@@ -74,6 +74,8 @@ harr workspace list
 
 The CLI and the already-running MCP share the same revisioned Workspace store, so a successful add becomes visible to the next MCP request and a remove revokes access on the next request.
 
+Codex Desktop also gets a direct **Harr Workspace** MCP App. Ask Codex to open/show the Harr Workspace panel (model-visible tool: `show_harr_workspace`). The panel shows the primary root, revision and additional roots, and performs Add/Remove/Refresh through app-only tools with revision/CAS protection. The current MVP accepts a path manually; it does not fake a filesystem picker, and adding a LeanCTX root does not grant Codex new OS/sandbox permissions. The CLI remains the fallback when MCP Apps are unavailable.
+
 
 
 ## Quickstart

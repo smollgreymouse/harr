@@ -101,6 +101,7 @@ from pathlib import Path
 home = Path(os.environ['HOME'])
 lean = home / '.local' / 'bin' / 'lean-ctx'
 workspace_server = Path.cwd() / 'common/mcp/workspace_control/server.py'
+workspace_app_server = Path.cwd() / 'common/mcp/workspace_app/server.py'
 trusted = ('ctx_read', 'ctx_search', 'ctx_glob', 'ctx_shell', 'ctx_tools')
 
 codex_path = Path(os.environ['CODEX_HOME']) / 'config.toml'
@@ -130,6 +131,14 @@ assert workspace['tools'] == {
     'workspace_get': {'approval_mode': 'auto'},
     'workspace_sync': {'approval_mode': 'auto'},
 }
+workspace_app = codex['mcp_servers']['harr-workspace-app']
+assert workspace_app['command'] == sys.executable
+assert workspace_app['args'] == [str(workspace_app_server)]
+assert workspace_app['enabled'] is True
+assert workspace_app['default_tools_approval_mode'] == 'auto'
+assert workspace_app['startup_timeout_sec'] == 60
+assert workspace_app['tool_timeout_sec'] == 120
+assert workspace_app['tools'] == {'show_harr_workspace': {'approval_mode': 'auto'}}
 
 p = Path(os.environ['XDG_CONFIG_HOME']) / 'opencode' / 'opencode.jsonc'
 cfg = json.loads(p.read_text())
@@ -177,6 +186,8 @@ done
 grep -q '^\[mcp_servers\.harr-workspace\]$' "${CODEX_HOME}/config.toml"
 grep -q '^\[mcp_servers\.harr-workspace\.tools\.workspace_get\]$' "${CODEX_HOME}/config.toml"
 grep -q '^\[mcp_servers\.harr-workspace\.tools\.workspace_sync\]$' "${CODEX_HOME}/config.toml"
+grep -q '^\[mcp_servers\.harr-workspace-app\]$' "${CODEX_HOME}/config.toml"
+grep -q '^\[mcp_servers\.harr-workspace-app\.tools\.show_harr_workspace\]$' "${CODEX_HOME}/config.toml"
 
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/commands/quick.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
@@ -191,7 +202,7 @@ grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]
 grep -q 'Session boundaries' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
-grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-workspace.3"' "${ROOT}/linux/files/harr-cli/components.sh"
+grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-workspace.4"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"

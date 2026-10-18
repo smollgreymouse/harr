@@ -1,8 +1,8 @@
 # Harr Workspace Service (LeanCTX fork): multi-root для Codex CLI и Desktop
 
-> Статус: **план, реализация не начата**. Дата: 2026-10-14.
+> Статус на 2026-10-18: **Workspace backend и agent sync реализованы; Desktop MCP App реализуется в PR #34**. LeanCTX strict multi-root и live revisioned store уже поставляются Harr 0.2.7; Codex/OpenCode получают direct add-only `harr-workspace` control MCP и `$harr-workspace` skill. UI использует отдельный direct MCP App и тот же revisioned store.
 > Область: Harr + поставляемая интеграция LeanCTX; без патчей Codex.
-> Решение: ручное управление проектными корнями в CLI и через HTML MCP App в Desktop при единой серверной модели.
+> Решение: ручное управление проектными корнями в CLI, agent sync через control MCP и HTML MCP App в Desktop при единой Workspace authority модели.
 
 ## 1. Цель и принятые решения
 
