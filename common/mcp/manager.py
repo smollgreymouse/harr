@@ -642,15 +642,49 @@ def workspace_command(args: argparse.Namespace) -> None:
         print(json.dumps({"store": str(store), **state}, ensure_ascii=False, indent=2))
         return
 
-    if not args.path:
-        raise SystemExit(f"workspace {args.action} requires a path")
-    target = Path(args.path).expanduser()
-    if not target.is_absolute():
-        target = (Path.cwd() / target).resolve()
-    else:
-        target = target.resolve()
-    if not target.is_dir():
-        raise SystemExit(f"Workspace root is not a directory: {target}")
+    def resolve_target(raw: str) -> Path:
+        target = Path(raw).expanduser()
+        if not target.is_absolute():
+            target = (Path.cwd() / target).resolve()
+        else:
+            target = target.resolve()
+        if not target.is_dir():
+            raise SystemExit(f"Workspace root is not a directory: {target}")
+        return target
+
+    if args.action == "sync":
+        if not args.paths:
+            raise SystemExit("workspace sync requires at least one path")
+        primary_path = Path(state["primary"]).resolve()
+        existing = {str(Path(path).resolve()) for path in state.get("additional", [])}
+        seen: set[str] = set()
+        added: list[str] = []
+        skipped: list[dict[str, str]] = []
+        for raw in args.paths:
+            target = resolve_target(raw)
+            target_text = str(target)
+            if target == primary_path:
+                skipped.append({"path": target_text, "reason": "primary"})
+                continue
+            if target_text in seen:
+                skipped.append({"path": target_text, "reason": "duplicate-input"})
+                continue
+            seen.add(target_text)
+            if target_text in existing:
+                skipped.append({"path": target_text, "reason": "already-present"})
+                continue
+            result = workspace_admin(real, "add", str(store), target_text, str(state["revision"]))
+            if result.returncode != 0:
+                raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"workspace add failed: {target_text}")
+            state = json.loads(result.stdout)
+            existing.add(target_text)
+            added.append(target_text)
+        print(json.dumps({"store": str(store), **state, "sync": {"added": added, "skipped": skipped}}, ensure_ascii=False, indent=2))
+        return
+
+    if len(args.paths) != 1:
+        raise SystemExit(f"workspace {args.action} requires exactly one path")
+    target = resolve_target(args.paths[0])
     operation = "add" if args.action == "add" else "remove"
     result = workspace_admin(real, operation, str(store), str(target), str(state["revision"]))
     if result.returncode != 0:
@@ -764,8 +798,8 @@ def main() -> None:
     p_exec.add_argument("rest", nargs=argparse.REMAINDER)
 
     p_workspace = sub.add_parser("workspace")
-    p_workspace.add_argument("action", choices=["show", "list", "add", "remove"])
-    p_workspace.add_argument("path", nargs="?")
+    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync"])
+    p_workspace.add_argument("paths", nargs="*")
     p_workspace.add_argument("--real", required=True)
     p_workspace.add_argument("--project")
 

@@ -128,7 +128,7 @@ cmd_agents_apply() {
   if mcp_manager names | grep -Fxq -- gigacode; then gigacode_enabled=1; fi
   while IFS= read -r agent; do
     install_agent_policy "$agent"
-    for skill in lean-ctx harr; do install_one_skill "$agent" "$skill"; done
+    for skill in lean-ctx harr harr-workspace; do install_one_skill "$agent" "$skill"; done
     root="$(agent_skill_root "$agent")"
     if ((gigacode_enabled)); then
       install_one_skill "$agent" gigacode-executor
@@ -162,9 +162,9 @@ cmd_agents_status() {
   local agent ownership=missing
   [[ -f "$HARR_CLEAN_SNAPSHOT" ]] && ownership=clean
   printf 'ownership: %s\n' "$ownership"
-  printf '%-12s %-12s %-16s %s\n' AGENT POLICY LEAN-CTX-SKILL HARR-SKILL
+  printf '%-12s %-12s %-16s %-12s %s\n' AGENT POLICY LEAN-CTX-SKILL HARR-SKILL WORKSPACE-SKILL
   for agent in codex opencode; do
-    printf '%-12s %-12s %-16s %s\n' "$agent" "$(policy_state "$agent")" "$(skill_state "$agent" lean-ctx)" "$(skill_state "$agent" harr)"
+    printf '%-12s %-12s %-16s %-12s %s\n' "$agent" "$(policy_state "$agent")" "$(skill_state "$agent" lean-ctx)" "$(skill_state "$agent" harr)" "$(skill_state "$agent" harr-workspace)"
   done
 }
 

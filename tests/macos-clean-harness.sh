@@ -113,9 +113,11 @@ assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
 lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
 assert lean['allow_paths'] == [
     str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/harr-workspace'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/lean-ctx'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor'),
     str(config / 'opencode/skills/harr'),
+    str(config / 'opencode/skills/harr-workspace'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/gigacode-executor'),
 ]

@@ -40,12 +40,14 @@ leanctx-config|${XDG_CONFIG_HOME_REAL}/lean-ctx
 codex-agents|${CODEX_HOME_REAL}/AGENTS.md
 codex-config|${CODEX_HOME_REAL}/config.toml
 codex-skill-harr|${CODEX_HOME_REAL}/skills/harr
+codex-skill-workspace|${CODEX_HOME_REAL}/skills/harr-workspace
 codex-skill-leanctx|${CODEX_HOME_REAL}/skills/lean-ctx
 codex-skill-gigacode|${CODEX_HOME_REAL}/skills/gigacode-executor
 opencode-agents|${XDG_CONFIG_HOME_REAL}/opencode/AGENTS.md
 opencode-jsonc|${XDG_CONFIG_HOME_REAL}/opencode/opencode.jsonc
 opencode-json|${XDG_CONFIG_HOME_REAL}/opencode/opencode.json
 opencode-skill-harr|${XDG_CONFIG_HOME_REAL}/opencode/skills/harr
+opencode-skill-workspace|${XDG_CONFIG_HOME_REAL}/opencode/skills/harr-workspace
 opencode-skill-leanctx|${XDG_CONFIG_HOME_REAL}/opencode/skills/lean-ctx
 opencode-skill-gigacode|${XDG_CONFIG_HOME_REAL}/opencode/skills/gigacode-executor
 opencode-leanctx|${XDG_CONFIG_HOME_REAL}/opencode/lean-ctx

@@ -23,9 +23,11 @@ cmd_leanctx_apply() {
     --platform "${HARR_PLATFORM:-linux}" \
     --runner-command harr-mcp-run \
     --allow-path "${codex_skills}/harr" \
+    --allow-path "${codex_skills}/harr-workspace" \
     --allow-path "${codex_skills}/lean-ctx" \
     --allow-path "${codex_skills}/gigacode-executor" \
     --allow-path "${opencode_skills}/harr" \
+    --allow-path "${opencode_skills}/harr-workspace" \
     --allow-path "${opencode_skills}/lean-ctx" \
     --allow-path "${opencode_skills}/gigacode-executor"
   chmod 0600 "$HARR_LEANCTX_CONFIG"

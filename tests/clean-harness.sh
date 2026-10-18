@@ -164,6 +164,10 @@ done
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md" ]]
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/harr-workspace/SKILL.md" ]]
+grep -q 'harr workspace sync' "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace/SKILL.md"
+grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/references/kibana.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
@@ -201,9 +205,11 @@ codex = Path(os.environ['CODEX_HOME'])
 lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
 assert lean['allow_paths'] == [
     str(codex / 'skills/harr'),
+    str(codex / 'skills/harr-workspace'),
     str(codex / 'skills/lean-ctx'),
     str(codex / 'skills/gigacode-executor'),
     str(config / 'opencode/skills/harr'),
+    str(config / 'opencode/skills/harr-workspace'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/gigacode-executor'),
 ]
