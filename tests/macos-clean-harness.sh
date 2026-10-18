@@ -111,6 +111,7 @@ assert codex['mcp_servers']['lean-ctx']['command'] == str(home / '.local/bin/lea
 assert codex['mcp_servers']['lean-ctx']['default_tools_approval_mode'] == 'auto'
 assert codex['mcp_servers']['lean-ctx']['tool_timeout_sec'] == 1900
 assert 'harr-workspace' not in codex['mcp_servers']
+assert 'harr-workspace-app' not in codex['mcp_servers']
 opencode = json.loads((config / 'opencode/opencode.jsonc').read_text())
 assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
 assert 'harr-workspace' not in opencode['mcp']
