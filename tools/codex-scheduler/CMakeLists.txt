@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(harr_codex_scheduler VERSION 0.3.3 LANGUAGES CXX)
+project(harr_codex_scheduler VERSION 0.3.4 LANGUAGES CXX)
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install prefix" FORCE)
@@ -21,6 +21,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
 
@@ -37,6 +38,7 @@ set(SCHEDULER_SOURCES
     src/TaskPage.cpp
     src/QuickSchedule.cpp
     src/MainWindow.cpp
+    assets/harr.qrc
 )
 
 add_executable(harr-codex-scheduler
@@ -94,6 +96,11 @@ install(TARGETS harr-codex-scheduler RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR
 install(PROGRAMS
     ${SCHEDULER_BIN_PATHS}
     DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../harr.png"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps"
+    RENAME "harr-codex-scheduler.png"
 )
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/harr-codex-scheduler.desktop"

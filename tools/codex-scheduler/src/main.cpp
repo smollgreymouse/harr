@@ -10,6 +10,7 @@
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTextStream>
 #include <QtCore/QTimer>
+#include <QtGui/QIcon>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QCalendarWidget>
 #include <QtWidgets/QDateEdit>
@@ -114,6 +115,8 @@ int runSelfTest()
         || stillScheduled.value("status").toString() != "scheduled"
         || stillScheduled.value("at_job").toString() != "74") return 14;
 
+    if (QIcon(":/harr/icon.png").isNull() || QIcon(":/harr/icon.png").pixmap(64, 64).isNull()) return 18;
+
     harr::MainWindow window(&store);
     window.hide();
 
@@ -150,6 +153,7 @@ int main(int argc, char **argv)
     QApplication app(argc, argv);
     app.setApplicationName(harr::APP_NAME);
     app.setQuitOnLastWindowClosed(false);
+    app.setWindowIcon(QIcon(":/harr/icon.png"));
     harr::applyTheme(app);
 
     if (mode == "self-test") return runSelfTest();
