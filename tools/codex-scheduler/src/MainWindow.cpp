@@ -89,6 +89,7 @@ MainWindow::MainWindow(TaskStore *store)
       m_store(store ? store : m_ownedStore.get())
 {
     setWindowTitle(APP_NAME);
+    setWindowIcon(QIcon(":/harr/icon.png"));
     resize(1120, 780);
 
     m_splitter = new QSplitter(Qt::Horizontal, this);
@@ -245,7 +246,7 @@ void MainWindow::buildWorkspace()
 
 void MainWindow::setupTray()
 {
-    m_tray = new QSystemTrayIcon(QIcon::fromTheme("utilities-terminal"), this);
+    m_tray = new QSystemTrayIcon(QIcon(":/harr/icon.png"), this);
     m_tray->setToolTip(APP_NAME);
     m_trayMenu = new QMenu(this);
     m_tray->setContextMenu(m_trayMenu);
