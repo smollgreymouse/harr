@@ -1,3 +1,5 @@
+<img src="harr.png" alt="Harr — Norse raven mascot" width="160" align="left">
+
 # Harr
 
 > *Herblindi ok Hár.*
@@ -5,6 +7,8 @@
 > **Harr er reiði Hárs.**
 >
 > — *Grímnismál 46* / with apologies to the skalds
+
+<br clear="all">
 
 A global harness for token-efficient MCP infrastructure.
 
