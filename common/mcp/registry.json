@@ -163,6 +163,22 @@
       "skill_reference": "gigacode.md"
     },
     {
+      "name": "einherjar",
+      "label": "Einherjar",
+      "description": "generic persistent external CLI agent worker",
+      "required": false,
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "bundled-python",
+        "version": "0.1.0",
+        "script": "einherjar_server.py",
+        "args": [],
+        "install_hint": "Einherjar uses an external agent CLI backend such as gigacode, opencode, codex, or a configured command-template backend"
+      },
+      "skill_reference": "einherjar.md"
+    },
+    {
       "name": "jira",
       "label": "Jira",
       "description": "Jira Server/Data Center issues and JQL via local REST MCP",

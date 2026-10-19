@@ -80,6 +80,8 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/references/kibana.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor" ]]
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/einherjar-worker" ]]
+[[ ! -e "${CODEX_HOME}/skills/einherjar-worker" ]]
 [[ ! -e "${CODEX_HOME}/skills/harr-workspace" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace" ]]
 ! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
@@ -120,9 +122,11 @@ assert lean['allow_paths'] == [
     str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/lean-ctx'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker'),
     str(config / 'opencode/skills/harr'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/gigacode-executor'),
+    str(config / 'opencode/skills/einherjar-worker'),
 ]
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())

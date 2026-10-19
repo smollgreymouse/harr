@@ -1,0 +1,1 @@
+"""Einherjar vendor adapters."""

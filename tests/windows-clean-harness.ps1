@@ -107,6 +107,8 @@ enabled = false
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\lean-ctx\SKILL.md'))) { throw 'LeanCTX skill missing' }
     if (Test-Path (Join-Path $OpenCodeDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed' }
     if (Test-Path (Join-Path $CodexDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed for Codex' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\einherjar-worker')) { throw 'Disabled Einherjar worker skill installed' }
+    if (Test-Path (Join-Path $CodexDir 'skills\einherjar-worker')) { throw 'Disabled Einherjar worker skill installed for Codex' }
     if ($codexAgents -match '\$gigacode-executor') { throw 'Disabled GigaCode routing leaked into Codex policy' }
 
     $codexText = Get-Content -Raw (Join-Path $CodexDir 'config.toml')
@@ -121,8 +123,12 @@ enabled = false
     if (-not $leanText.Contains('allow_paths = [')) { throw 'LeanCTX global skill allow_paths missing' }
     $codexGigaSkillToml = (Join-Path $CodexDir 'skills\gigacode-executor').Replace('\', '\\')
     $openGigaSkillToml = (Join-Path $OpenCodeDir 'skills\gigacode-executor').Replace('\', '\\')
+    $codexEinherjarSkillToml = (Join-Path $CodexDir 'skills\einherjar-worker').Replace('\', '\\')
+    $openEinherjarSkillToml = (Join-Path $OpenCodeDir 'skills\einherjar-worker').Replace('\', '\\')
     if (-not $leanText.Contains($codexGigaSkillToml)) { throw 'Codex GigaCode skill path is not allowed by LeanCTX PathJail' }
     if (-not $leanText.Contains($openGigaSkillToml)) { throw 'OpenCode GigaCode skill path is not allowed by LeanCTX PathJail' }
+    if (-not $leanText.Contains($codexEinherjarSkillToml)) { throw 'Codex Einherjar skill path is not allowed by LeanCTX PathJail' }
+    if (-not $leanText.Contains($openEinherjarSkillToml)) { throw 'OpenCode Einherjar skill path is not allowed by LeanCTX PathJail' }
 
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }

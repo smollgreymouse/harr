@@ -201,6 +201,8 @@ grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/skills/gigacode-executor/SKILL.md" ]]
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/einherjar-worker/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/einherjar-worker/SKILL.md" ]]
 grep -q 'Session boundaries' "${XDG_CONFIG_HOME}/opencode/skills/gigacode-executor/SKILL.md"
 grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-workspace.4"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/linux/files/harr-cli/components.sh"
@@ -237,10 +239,12 @@ assert lean['allow_paths'] == [
     str(codex / 'skills/harr-workspace'),
     str(codex / 'skills/lean-ctx'),
     str(codex / 'skills/gigacode-executor'),
+    str(codex / 'skills/einherjar-worker'),
     str(config / 'opencode/skills/harr'),
     str(config / 'opencode/skills/harr-workspace'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/gigacode-executor'),
+    str(config / 'opencode/skills/einherjar-worker'),
 ]
 PY
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]

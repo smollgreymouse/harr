@@ -129,7 +129,7 @@ harr setup --clean
 
 The first interactive setup offers the optional MCP checklist. For automation,
 use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
-`harr setup --clean --mcp gitlab,grafana,kibana,gigacode`. The selection is saved and can be
+`harr setup --clean --mcp gitlab,grafana,kibana,gigacode,einherjar`. The selection is saved and can be
 changed later with `harr mcp configure`.
 
 After a later Debian package upgrade, run `harr setup` to apply the new Harr
@@ -152,6 +152,7 @@ Harr components
   [ ] Jira         optional  Jira Server/Data Center issues and JQL via local REST MCP
   [ ] Kibana       optional  read-only logs/search through Kibana
   [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
+  [ ] Einherjar     optional  generic external CLI-agent worker (GigaCode/OpenCode/Codex/custom)
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -186,12 +187,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana,kibana,gigacode
+./install.sh --clean --mcp gitlab,grafana,kibana,gigacode,einherjar
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana,kibana,gigacode
+.\install.ps1 -Clean -Mcp gitlab,grafana,kibana,gigacode,einherjar
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -721,6 +722,49 @@ See common/skills/harr/references/kibana.md for pinned-runtime and routing detai
 
 
 
+### Einherjar generic CLI worker
+
+Einherjar is an **optional, backend-neutral** external worker bridge. Enable it with:
+
+```text
+harr mcp add einherjar
+harr install mcp
+```
+
+It appears behind LeanCTX as one downstream tool:
+
+```text
+einherjar::worker
+```
+
+The single schema carries `action=start|resume|status|messages|wait|cancel|backends`. The planner owns architecture and the execution contract; Einherjar owns detached process/session lifecycle and maps the Harr session to the selected CLI's private session. Built-in adapters are `gigacode`, `opencode`, and `codex`; the configured default is used unless `start` explicitly names a backend.
+
+Harr does not own agent-provider authentication. Each CLI must already be installed/authenticated in its normal way; provider tokens are not stored in Einherjar config. `action=backends` reports only safe capability/discovery information.
+
+Configuration lives at `~/.config/harr/einherjar.json` (or the Harr/XDG config root). Example:
+
+```json
+{
+  "schema": 1,
+  "default_backend": "gigacode",
+  "backends": {
+    "my-agent": {
+      "adapter": "command-template",
+      "start": ["my-agent", "run", "--prompt-file", "{prompt_file}"],
+      "resume": ["my-agent", "resume", "{session_id}", "--prompt-file", "{prompt_file}"],
+      "session_id": {"source": "stdout-json", "keys": ["session_id", "sessionId"]},
+      "events": {"mode": "jsonl"}
+    }
+  }
+}
+```
+
+Command-template commands are argv arrays, never shell strings. Supported placeholders are `{prompt}`, `{prompt_file}`, `{session_id}`, and `{workspace}`; prompt transport may also use `"stdin": true`. More complex CLIs should get a dedicated adapter rather than leaking vendor behavior into the core.
+
+The stable adapter specification is [`docs/EINHERJAR_BRIDGE_CONTRACT.md`](docs/EINHERJAR_BRIDGE_CONTRACT.md). It defines the core↔adapter boundary, capabilities, session identity, start/resume/cancel semantics, event normalization, final handoff rules, conformance tests, and the checklist for wrapping another agent CLI.
+
+The older `gigacode::gigacode` MCP remains available and unchanged for compatibility. Enabling Einherjar does not automatically enable or replace that legacy route.
+
 ### GigaCode executor
 
 GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
@@ -799,7 +843,7 @@ The permanent policy always keeps the core token-saving rules:
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, Kibana investigation guidance does not exist when Kibana is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, Kibana investigation guidance does not exist when Kibana is disabled, the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected, and Einherjar routing is absent unless the Einherjar MCP is selected.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 

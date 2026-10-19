@@ -1,6 +1,8 @@
 # План: optional External Executor Bridge для Harr
 
-> Статус: design / implementation plan
+> Статус: **foundation/MVP implemented as Einherjar** — generic MCP lifecycle, backend abstraction, built-in GigaCode/OpenCode/Codex adapters, command-template backend, selection/skill integration, and adapter contract. Later workspace-guard/artifact-journal/hardening phases in this document are still roadmap work.
+>
+> Реализованный stable adapter boundary описан отдельно в `docs/EINHERJAR_BRIDGE_CONTRACT.md`; новые CLI следует оборачивать по нему, не выводя vendor-specific semantics в planner-facing MCP.
 >
 > Цель: дать Codex/Harr единый planner→executor протокол, где executor может
 > быть **любой CLI agent/runtime**, умеющий выполнить задачу и желательно

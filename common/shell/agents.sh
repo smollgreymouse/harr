@@ -124,8 +124,9 @@ cmd_agents_apply() {
   local requested="${1:-all}"
   [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode]'
   local agent skill root
-  local gigacode_enabled=0
+  local gigacode_enabled=0 einherjar_enabled=0
   if mcp_manager names | grep -Fxq -- gigacode; then gigacode_enabled=1; fi
+  if mcp_manager names | grep -Fxq -- einherjar; then einherjar_enabled=1; fi
   while IFS= read -r agent; do
     install_agent_policy "$agent"
     for skill in lean-ctx harr; do install_one_skill "$agent" "$skill"; done
@@ -139,6 +140,11 @@ cmd_agents_apply() {
       install_one_skill "$agent" gigacode-executor
     else
       rm -rf -- "${root}/gigacode-executor"
+    fi
+    if ((einherjar_enabled)); then
+      install_one_skill "$agent" einherjar-worker
+    else
+      rm -rf -- "${root}/einherjar-worker"
     fi
   done < <(agent_targets "$requested")
 }
