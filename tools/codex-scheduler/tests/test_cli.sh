@@ -77,6 +77,21 @@ FAKE_LOGIN_PATH="$TMP/login-bin:/usr/bin:/bin" FAKE_PATH_RESULT="$TMP/path.resul
   "$BIN" job-runner --log "$TMP/path-probe.log" -- "$TMP/bin/path-probe"
 grep -Fxq "$TMP/login-bin/path-probe-tool" "$TMP/path.result"
 
+# atd omits SHELL from the job environment. The runner must still recover
+# the account login shell's PATH instead of silently using /bin/sh.
+LOGIN_SHELL=$(getent passwd "$(id -u)" | cut -d: -f7)
+LOGIN_SHELL=${LOGIN_SHELL:-/bin/sh}
+if [[ "$LOGIN_SHELL" = */bash ]]; then
+  env -u SHELL PATH="/usr/bin:/bin" \
+    "$BIN" job-runner --log "$TMP/no-shell-env.log" -- /usr/bin/env
+  expected_path=$(env -u SHELL PATH="/usr/bin:/bin" "$LOGIN_SHELL" -l -i -c env 2>/dev/null | grep '^PATH=' | tail -n1)
+  actual_path=$(grep '^PATH=' "$TMP/no-shell-env.log" | tail -n1)
+  [[ -n "$expected_path" && "$actual_path" = "$expected_path" ]] || {
+    echo 'runner did not restore login-shell PATH without SHELL (atd case)' >&2
+    exit 1
+  }
+fi
+
 export AT_BIN="$TMP/bin/at" CODEX_BIN="$TMP/bin/codex" TTY_PATH="$TMP/tty"
 export FAKE_CODEX_CWD="$TMP/work" FAKE_CODEX_ARGS="$TMP/codex.args"
 export HARR_CODEX_SCHEDULER_BIN="$BIN"
