@@ -11,6 +11,9 @@
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTextStream>
 
+#include <pwd.h>
+#include <unistd.h>
+
 namespace harr {
 
 static std::optional<TaskStore> storeForTaskState(const QString &taskState)
@@ -26,6 +29,14 @@ static QProcessEnvironment commandEnvironment()
 {
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     QString shell = environment.value("SHELL").trimmed();
+    // atd deliberately does not preserve SHELL. Resolve the account login shell
+    // before falling back to /bin/sh, otherwise NVM-installed MCP tools disappear.
+    if (shell.isEmpty() || !QFileInfo(shell).isExecutable()) {
+        if (const passwd *account = getpwuid(getuid()); account && account->pw_shell) {
+            const QString loginShell = QString::fromLocal8Bit(account->pw_shell);
+            if (QFileInfo(loginShell).isExecutable()) shell = loginShell;
+        }
+    }
     if (shell.isEmpty() || !QFileInfo(shell).isExecutable()) shell = "/bin/sh";
 
     QProcess loginShell;
