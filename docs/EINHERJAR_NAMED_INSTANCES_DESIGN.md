@@ -113,18 +113,18 @@ Non-interactive parity:
 
 ## Codex Desktop live panel integration
 
-Each enabled named Ein instance registers a separate **read-only direct MCP App**
-`harr-ein-<name>-app::show_ein_live`. It takes an existing Harr session UUID,
-never starts or resumes a worker, and returns only session/scope/status metadata
-to the model. `poll_ein_ui`, `list_ein_ui` and panel lifecycle tooling are
-app-only. Its UI resource is `ui://harr-ein-<name>/live.html`, with per-instance
-session restoration, independent progress cursors, bounded long polling, and no
-transcript consumption by the planner. GigaCode instances reuse their legacy
-backend status/messages; other instances use the generic Ein backend.
+All enabled Ein instances share **one read-only direct MCP App**,
+`harr-ein-ui::show_ein_live`. Its arguments are `instance` (the configured MCP
+name) and `session_id` (Harr UUID). Its resource is `ui://harr-ein-ui/live.html`.
+The server checks that the session belongs to the requested instance before
+opening a panel, pins the instance into each invocation scope, and blocks
+cross-instance reads. `poll_ein_ui`, `list_ein_ui` and lifecycle hooks remain
+app-only. Restoration records the pair `(instance, session_id)`; a single UI
+registration serves any number of CLI adapters, without additional model calls.
 
 The source integration is installed by `common/hosts/codex-config.py` on normal
-host apply or by `harr ein apply`; only Harr-named app tables are reconciled.
-Tests: `python3 tests/ein-app-panel.py` (two app identities, idempotent host
+host apply or by `harr ein apply`; the old per-instance app tables are removed in favor of one shared app.
+Tests: `python3 tests/ein-app-panel.py` (single app serving multiple identities, idempotent host
 registration, disabled/removal reconciliation, fake detached session through
 panel attach/poll/recovery). **A real Codex Desktop UI smoke is still required**
 prior to declaring visual host parity; do not run it on the production Codex

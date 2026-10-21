@@ -46,16 +46,15 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
         host.apply_named_ein_apps()
         host.apply_named_ein_apps()  # idempotent; no duplicate namespace
         data=tomllib.loads(host.CONFIG.read_text())
-        assert set(data['mcp_servers'])=={'user-owned','harr-ein-gigacode-app','harr-ein-open-review-app'},data
+        assert set(data['mcp_servers'])=={'user-owned','harr-ein-ui'},data
         assert data['mcp_servers']['user-owned']['command']=='untouched'
-        assert data['mcp_servers']['harr-ein-gigacode-app']['env']['HARR_EIN_INSTANCE']=='gigacode'
-        assert data['mcp_servers']['harr-ein-open-review-app']['env']['HARR_EIN_INSTANCE']=='open-review'
+        assert data['mcp_servers']['harr-ein-ui']['env']['HARR_CONFIG_DIR']==str(config_root)
         # Reconcile removal and keep original third-party MCP.
         config['instances'][1]['enabled']=False
         (config_root/'einherjar/instances.json').write_text(json.dumps(config))
         host.apply_named_ein_apps()
         names=set(tomllib.loads(host.CONFIG.read_text())['mcp_servers'])
-        assert names=={'user-owned','harr-ein-gigacode-app'},names
+        assert names=={'user-owned','harr-ein-ui'},names
         config['instances'][1]['enabled']=True
         (config_root/'einherjar/instances.json').write_text(json.dumps(config))
     finally:
@@ -63,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
         else:os.environ['HARR_CONFIG_DIR']=prior
 
     for instance in ('gigacode','open-review'):
-        penv={**env,'HARR_EIN_INSTANCE':instance}
+        penv={**env}
         p=subprocess.Popen([sys.executable,str(SCRIPT)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=base,env=penv,bufsize=1)
         try:
             response=rpc(p,1,'tools/list')['result']['tools']
@@ -73,11 +72,11 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
             for hidden in ('panel_event_ui','list_ein_ui','poll_ein_ui'):
                 assert tools[hidden]['_meta']['ui']['visibility']==['app']
             uri=tools['show_ein_live']['_meta']['ui']['resourceUri']
-            assert uri==f'ui://harr-ein-{instance}/live.html'
+            assert uri=='ui://harr-ein-ui/live.html'
             html=rpc(p,2,'resources/read',{'uri':uri})['result']['contents'][0]['text']
-            assert instance in html and 'poll_ein_ui' in html and 'show_gigacode_live' not in html
+            assert "Harr · Ein" in html and 'poll_ein_ui' in html and 'show_gigacode_live' not in html
             unknown='11111111-1111-1111-1111-111111111111'
-            reply=rpc(p,3,'tools/call',{'name':'show_ein_live','arguments':{'session_id':unknown}})
+            reply=rpc(p,3,'tools/call',{'name':'show_ein_live','arguments':{'instance':instance,'session_id':unknown}})
             assert 'error' in reply  # Cannot attach to arbitrary or other-instance sessions.
             print(instance,'read-only isolated panel PASS')
         finally:
@@ -105,15 +104,19 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
             time.sleep(.2)
         assert current['status']=='DONE',current
         # App uses original Harr config dir, but engine used instance-specific runtime config.
-        appenv={**env,'HARR_EIN_INSTANCE':'fake-panel'}
+        appenv={**env}
         app=subprocess.Popen([sys.executable,str(SCRIPT)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=base,env=appenv,bufsize=1)
         try:
-            attached=rpc(app,50,'tools/call',{'name':'show_ein_live','arguments':{'session_id':sid}})['result']['structuredContent']
+            attached=rpc(app,50,'tools/call',{'name':'show_ein_live','arguments':{'instance':'fake-panel','session_id':sid}})['result']['structuredContent']
             assert attached['status']=='DONE'
-            polled=rpc(app,51,'tools/call',{'name':'poll_ein_ui','arguments':{'session_id':sid,'scope_id':attached['scope_id'],'after_revision':0,'wait_ms':0}})['result']['structuredContent']
+            polled=rpc(app,51,'tools/call',{'name':'poll_ein_ui','arguments':{'instance':'fake-panel','session_id':sid,'scope_id':attached['scope_id'],'after_revision':0,'wait_ms':0}})['result']['structuredContent']
             assert polled['status']=='DONE',polled
+            denied=rpc(app,53,'tools/call',{'name':'poll_ein_ui','arguments':{'instance':'open-review','session_id':sid,'scope_id':attached['scope_id'],'wait_ms':0}})
+            assert 'error' in denied, denied
+            denied=rpc(app,54,'tools/call',{'name':'show_ein_live','arguments':{'instance':'open-review','session_id':sid}})
+            assert 'error' in denied, denied
             listed=rpc(app,52,'tools/call',{'name':'list_ein_ui','arguments':{}})['result']['structuredContent']
-            assert sid in listed['sessions']
+            assert {'instance':'fake-panel','session_id':sid} in listed['sessions']
             print('fake-panel detached lifecycle + UI restore PASS')
         finally:
             app.terminate();app.communicate(timeout=5)

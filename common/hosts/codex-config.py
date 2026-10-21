@@ -354,38 +354,28 @@ def apply_gigacode_app() -> None:
 
 
 def apply_named_ein_apps() -> None:
-    """Register one read-only direct MCP App per configured Ein instance.
-
-    Gateway execution remains separate; no worker is launched by this method.
-    """
+    """Reconcile one shared read-only MCP App for all enabled Ein instances."""
     from common.mcp.ein_instances import read
 
     app = Path(__file__).resolve().parents[1] / "mcp" / "ein_app" / "server.py"
     data = read()
     text = load_config_text()
-    parse_config(text)
-    # Remove only Harr-managed named-app entries, never unrelated MCPs.
     existing = parse_config(text).get("mcp_servers", {})
     for name in list(existing):
-        if re.fullmatch(r"harr-ein-[a-z][a-z0-9-]{0,62}-app", name):
+        if name == "harr-ein-ui" or re.fullmatch(r"harr-ein-[a-z][a-z0-9-]{0,62}-app", name):
             text = remove_exact_table(text, ["mcp_servers", name, "tools", "show_ein_live"])
             text = remove_exact_table(text, ["mcp_servers", name, "env"])
             text = remove_exact_table(text, ["mcp_servers", name])
-    for instance in data["instances"]:
-        if not instance.get("enabled", True):
-            continue
-        name = instance["id"]
-        server_name = f"harr-ein-{name}-app"
+    if any(item.get("enabled", True) for item in data["instances"]):
         block = (
-            f"[mcp_servers.{server_name}]\n"
+            "[mcp_servers.harr-ein-ui]\n"
             f"command = {toml_basic_string(sys.executable)}\n"
             f"args = [{toml_basic_string(str(app))}]\n"
             'enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n'
             'default_tools_approval_mode = "auto"\n'
-            f"[mcp_servers.{server_name}.env]\n"
-            f"HARR_EIN_INSTANCE = {toml_basic_string(name)}\n"
+            "[mcp_servers.harr-ein-ui.env]\n"
             f"HARR_CONFIG_DIR = {toml_basic_string(str(Path(os.environ.get('HARR_CONFIG_DIR') or (Path.home() / '.config/harr'))))}\n"
-            f"[mcp_servers.{server_name}.tools.show_ein_live]\n"
+            "[mcp_servers.harr-ein-ui.tools.show_ein_live]\n"
             'approval_mode = "auto"\n'
         )
         text = text.rstrip() + "\n\n" + block
