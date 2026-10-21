@@ -6,6 +6,10 @@ Status: design proposal for PR #39; no production integration in this document.
 
 Harr setup owns *any number* of independently named Einherjar instances. An instance is a stable MCP identity with its own backend adapter, executable/launch flags, workspace and session namespace, policy/skill binding, permission/timeouts and optional secrets. Multiple instances may use the same adapter with different settings. The existing GigaCode consumer contract MUST remain unchanged when migrated to this implementation.
 
+## Short public API name
+
+The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherjar` remains the conceptual/documentation name, not something users must type. Setup displays **Ein workers**. The existing, user-chosen MCP server name is not changed by this abbreviation; its tool is still `gigacode` for legacy API parity. Do not expose `harr einherjar` as the required spelling. The shared skill keeps the existing `$einherjar-worker` identifier as a compatibility reference until a separate skill-name migration is approved; the CLI abbreviation does not silently break existing skills.
+
 ## Identity model
 
 - `instance.id`: **required user-entered MCP server name at instance creation**, unique, stable, lowercase slug matching `[a-z][a-z0-9-]{0,62}`. Identity is immutable after creation; rename is explicit migration, never an implicit update.
@@ -65,10 +69,10 @@ Use separate protected `environment_refs` to Harr secret store; never inline sec
 
 ## Setup interaction
 
-Add **Einherjar instances…** as a repeatable section in initial `harr setup` and `harr mcp configure`, not as N fixed catalog entries. Every Add flow starts by **asking the user to name the MCP server**, before selecting its adapter; the UI never quietly assigns `gigacode`, `opencode-2`, etc. The explicit MCP name determines the gateway namespace and is distinct from the optional friendly label. Setup loop:
+Add **Ein workers…** as a repeatable section in initial `harr setup` and `harr mcp configure`, not as N fixed catalog entries. Every Add flow starts by **asking the user to name the MCP server**, before selecting its adapter; the UI never quietly assigns `gigacode`, `opencode-2`, etc. The explicit MCP name determines the gateway namespace and is distinct from the optional friendly label. Setup loop:
 
 ```
-Harr setup  >  External workers (Einherjar)
+Harr setup  >  External workers (Ein)
 
   NAME              ADAPTER      API                   ENABLED
   gigacode          GigaCode     gigacode-v1   yes
@@ -93,8 +97,8 @@ Add worker:
 
 Non-interactive parity:
 
-- `harr einherjar list`, `show NAME`, `add --id NAME --adapter ADAPTER`, `edit NAME`, `enable NAME`, `disable NAME`, `remove NAME`, `test NAME`, `doctor`.
-- `harr setup --einherjar-file PATH` (or import subcommand) for reproducible CI/sandbox setup. No direct `--args 'shell command'`; accept safe argument arrays.
+- `harr ein list`, `show NAME`, `add --id NAME --adapter ADAPTER`, `edit NAME`, `enable NAME`, `disable NAME`, `remove NAME`, `test NAME`, `doctor`.
+- `harr setup --ein-file PATH` (or import subcommand) for reproducible CI/sandbox setup. No direct `--args 'shell command'`; accept safe argument arrays.
 - Initial setup offers importing existing GigaCode configuration without changing its public identity.
 - Edits validate and generate a **preview diff** of gateway names, skills, policy blocks and affected session ownership before apply. Apply is atomic with rollback (config temp file + fsync/rename and staged generated manifests). No systemd changes for on-demand instances.
 - `test` checks executable/protocol via bounded probe and mock or opt-in real run; MUST NOT consume model tokens by default.
