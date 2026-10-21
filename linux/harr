@@ -66,6 +66,7 @@ case "$command" in
       [[ $# -eq 1 ]] || die 'usage: harr ein apply'
       cmd_leanctx_apply
       cmd_agents_apply all
+      python3 "${HARR_COMMON_DIR}/hosts/codex-config.py" apply-ein-panels
     else
       python3 "${HARR_COMMON_DIR}/mcp/ein_instances.py" "$@"
     fi

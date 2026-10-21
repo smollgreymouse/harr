@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""Harr named Ein live panel. Read-only MCP App, per-instance session namespace."""
+import sys, json, os, pathlib, importlib.util, traceback, threading, time, uuid
+ROOT=pathlib.Path(__file__).resolve().parents[3]
+sys.path.insert(0,str(ROOT))
+INSTANCE=os.environ.get("HARR_EIN_INSTANCE", "")
+if not INSTANCE or not __import__("re").fullmatch(r"[a-z][a-z0-9-]{0,62}", INSTANCE):
+ raise SystemExit("HARR_EIN_INSTANCE is required for named Ein panel")
+from common.mcp.ein_instances import config_for_instance
+CONFIG=config_for_instance(INSTANCE)
+BACKEND_FILE="gigacode_server.py" if CONFIG["adapter"]=="gigacode" else "einherjar_server.py"
+spec=importlib.util.spec_from_file_location("harr_ein_app_backend",str(ROOT/"common/mcp"/BACKEND_FILE))
+gc=importlib.util.module_from_spec(spec);spec.loader.exec_module(gc)
+URI=f"ui://harr-ein-{INSTANCE}/live.html"
+STATE=pathlib.Path(os.environ.get("XDG_STATE_HOME", pathlib.Path.home()/".local/state"))/"harr/ein-app"/INSTANCE
+STATE.mkdir(exist_ok=True,parents=True)
+ACTIVE=STATE/"ein-ui-sessions.json"
+SCOPES=STATE/"ein-ui-invocations.json"
+OUTPUT_LOCK=threading.Lock()
+REGISTRY_LOCK=threading.Lock()
+TERMINAL={"DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"}
+MAX_RESTORED_ACTIVE=8
+MAX_RESTORED_FINISHED=3
+LOG=STATE/"ein-ui-server.jsonl"
+HTML=(pathlib.Path(__file__).with_name("panel.html")).read_text().replace("__EIN_INSTANCE__",INSTANCE)
+def record(event,**data):
+ with LOG.open("a") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
+def result(id,obj):
+ with OUTPUT_LOCK: print(json.dumps({"jsonrpc":"2.0","id":id,"result":obj},ensure_ascii=False),flush=True)
+def err(id,msg):
+ with OUTPUT_LOCK: print(json.dumps({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":str(msg)}},ensure_ascii=False),flush=True)
+def unbox(r):
+ return json.loads(r["content"][0]["text"])
+def tools():
+ return [
+ {"name":"show_ein_live","description":"Read-only: display an existing Ein session in an HTML panel; no job is started or modified. The transcript is app-only and is not returned to the model.","annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Existing Ein session UUID to display."}},"required":["session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
+ {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"list_ein_ui","description":"App-only list of displayed Ein sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"poll_ein_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
+def registered(sid):
+ with REGISTRY_LOCK:
+  try: return sid in json.loads(ACTIVE.read_text())
+  except (OSError,ValueError): return False
+
+def register(sid):
+ with REGISTRY_LOCK:
+  try: ids=json.loads(ACTIVE.read_text())
+  except (OSError,ValueError): ids=[]
+  if sid not in ids:ids.append(sid)
+  tmp=ACTIVE.with_suffix(".tmp")
+  tmp.write_text(json.dumps(ids))
+  tmp.replace(ACTIVE)
+
+def register_scope(session_id, after_revision):
+ scope_id=str(uuid.uuid4())
+ with REGISTRY_LOCK:
+  try: scopes=json.loads(SCOPES.read_text())
+  except (OSError,ValueError):scopes={}
+  scopes[scope_id]={"session_id":session_id,"initial_revision":after_revision}
+  temp=SCOPES.with_suffix(".tmp")
+  temp.write_text(json.dumps(scopes))
+  temp.replace(SCOPES)
+ return scope_id
+
+def lookup_scope(scope_id,session_id):
+ with REGISTRY_LOCK:
+  try: scope=json.loads(SCOPES.read_text()).get(scope_id)
+  except (OSError,ValueError,TypeError):return None
+ if not isinstance(scope,dict) or scope.get("session_id")!=session_id:return None
+ return scope
+
+
+def restored_sessions():
+ """Only this workspace's live jobs plus recent finished jobs; do not delete history."""
+ with REGISTRY_LOCK:
+  try: ids=json.loads(ACTIVE.read_text())
+  except (OSError,ValueError): ids=[]
+ if not isinstance(ids,list): return []
+ active=[]
+ finished=[]
+ for sid in dict.fromkeys(x for x in ids if isinstance(x,str)):
+  if not gc._validate_session_id(sid): continue
+  state=gc._load_state(sid)
+  # gc._load_state resolves under WORKSPACE_KEY, never in another workspace.
+  if not isinstance(state,dict): continue
+  state_path=gc._state_path(sid)
+  try: modified=state_path.stat().st_mtime
+  except OSError: continue
+  status=(state.get("handoff") or {}).get("status") if state.get("phase")=="finished" else "RUNNING"
+  entry=(modified,sid)
+  (finished if status in TERMINAL else active).append(entry)
+ active.sort(reverse=True)
+ finished.sort(reverse=True)
+ return [sid for _,sid in active[:MAX_RESTORED_ACTIVE]+finished[:MAX_RESTORED_FINISHED]]
+
+
+def wait_events(sid,revision,wait_ms):
+ """Bounded server-side long poll. Independent cursor and deadline per panel."""
+ deadline=time.monotonic()+wait_ms/1000
+ while True:
+  msg=unbox(gc.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
+  status=unbox(gc.status_tool({"session_id":sid}))
+  value=status.get("status","UNKNOWN")
+  data={"messages":msg.get("messages",[]),"revision":msg.get("revision",revision),
+        "has_more":msg.get("has_more",False),"status":value}
+  if data["messages"] or data["has_more"] or value in TERMINAL or value not in ("RUNNING","STARTING","PENDING"):
+   return data
+  remaining=deadline-time.monotonic()
+  if remaining<=0:return data
+  time.sleep(min(0.75,remaining))
+
+def dispatch(req):
+ id=req.get("id")
+ if id is None:return
+ method=req.get("method");p=req.get("params") or {}
+ try:
+  record("request",method=method,name=p.get("name"),id=id)
+  if method=="initialize":
+   result(id,{"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":f"harr-ein-{INSTANCE}-app","version":"0.2"}})
+  elif method=="tools/list":result(id,{"tools":tools()})
+  elif method=="tools/call":
+   name=p.get("name")
+   if name=="show_ein_live":
+    args=p.get("arguments") or {}
+    requested=args.get("session_id")
+    if not isinstance(requested,str) or not gc._validate_session_id(requested):
+     raise ValueError("show_ein_live requires existing session_id UUID")
+    sid=requested
+    started={"status":unbox(gc.status_tool({"session_id":sid})).get("status","UNKNOWN")}
+    if started["status"]=="UNKNOWN":raise ValueError("Ein session not found")
+    register(sid)
+    first_revision=0
+    record("attached",session_id=sid,status=started["status"])
+    scope_id=register_scope(sid,first_revision)
+    visible={"session_id":sid,"scope_id":scope_id,"initial_revision":first_revision,"status":started.get("status")}
+    result(id,{"content":[{"type":"text","text":json.dumps(visible)}],"structuredContent":visible,"_meta":{"ui":{"resourceUri":URI},"ui/resourceUri":URI,"openai/outputTemplate":URI}})
+   elif name=="panel_event_ui":
+    args=p.get("arguments") or {}
+    event=str(args.get("event",""))[:48]
+    pid=str(args.get("panel_id",""))[:80]
+    record("panel_lifecycle",panel_id=pid,lifecycle_event=event,session_id=str(args.get("session_id",""))[:80])
+    result(id,{"content":[{"type":"text","text":"ok"}],"structuredContent":{"ok":True}})
+   elif name=="list_ein_ui":
+    ids=restored_sessions()
+    record("restored_list",sessions=len(ids))
+    result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
+   elif name=="poll_ein_ui":
+    args=p.get("arguments") or {}
+    sid=args.get("session_id","")
+    if not isinstance(sid,str) or not gc._validate_session_id(sid) or not registered(sid):
+     raise ValueError("unrecognized test session")
+    scope=lookup_scope(args.get("scope_id"),sid)
+    if scope is None:raise ValueError("unrecognized invocation scope")
+    revision=max(int(scope["initial_revision"]),int(args.get("after_revision",0)))
+    wait_ms=min(15000,max(0,int(args.get("wait_ms",10000))))
+    data=wait_events(sid,revision,wait_ms)
+    record("app_poll",session_id=sid,count=len(data["messages"]),revision=data["revision"],status=data["status"],wait_ms=wait_ms)
+    result(id,{"content":[{"type":"text","text":"UI-only poll succeeded"}],"structuredContent":data})
+   else:err(id,"unknown tool")
+  elif method=="resources/read":
+   record("resource_read",uri=p.get("uri"))
+   uri=p.get("uri")
+   if uri != URI:raise ValueError("unknown resource")
+   result(id,{"contents":[{"uri":uri,"mimeType":"text/html;profile=mcp-app","text":HTML}]})
+  elif method=="resources/list":result(id,{"resources":[{"uri":URI,"name":f"Ein {INSTANCE} live","mimeType":"text/html;profile=mcp-app"}]})
+  elif method=="resources/templates/list":result(id,{"resourceTemplates":[]})
+  elif method=="ping":result(id,{})
+  else:err(id,"unsupported method")
+ except Exception as ex:
+  record("error",message=str(ex),trace=traceback.format_exc()[-900:])
+  err(id,str(ex))
+
+def main():
+ record("started",cwd=str(ROOT))
+ for line in sys.stdin:
+  try:
+   req=json.loads(line)
+   threading.Thread(target=dispatch,args=(req,),daemon=True).start()
+  except Exception as ex:record("protocol_error",message=str(ex))
+
+if __name__ == "__main__":
+ main()

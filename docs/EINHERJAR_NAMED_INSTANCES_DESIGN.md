@@ -111,6 +111,25 @@ Non-interactive parity:
 4. Tools published only for enabled instances. One shared skill and one shared policy template enumerate the *actual enabled instance tool names*. No separate per-adapter skills or behavior forks; the legacy `$gigacode-executor` remains only as an optional alias to this single canonical skill. Preserve user-authored policy and unrelated MCP settings.
 5. If several workers use the same adapter, their executable args, environment, permissions, concurrency limits and session lifecycles remain independent; optional per-workspace concurrency conflict protection prevents two workers editing the same scope simultaneously.
 
+## Codex Desktop live panel integration
+
+Each enabled named Ein instance registers a separate **read-only direct MCP App**
+`harr-ein-<name>-app::show_ein_live`. It takes an existing Harr session UUID,
+never starts or resumes a worker, and returns only session/scope/status metadata
+to the model. `poll_ein_ui`, `list_ein_ui` and panel lifecycle tooling are
+app-only. Its UI resource is `ui://harr-ein-<name>/live.html`, with per-instance
+session restoration, independent progress cursors, bounded long polling, and no
+transcript consumption by the planner. GigaCode instances reuse their legacy
+backend status/messages; other instances use the generic Ein backend.
+
+The source integration is installed by `common/hosts/codex-config.py` on normal
+host apply or by `harr ein apply`; only Harr-named app tables are reconciled.
+Tests: `python3 tests/ein-app-panel.py` (two app identities, idempotent host
+registration, disabled/removal reconciliation, fake detached session through
+panel attach/poll/recovery). **A real Codex Desktop UI smoke is still required**
+prior to declaring visual host parity; do not run it on the production Codex
+installation for this PR without explicit user authorization.
+
 ## Non-negotiable GigaCode parity
 
 Treat the pre-feature `gigacode_server.py` as an executable contract. `interface=ein-v1`, `id=gigacode` must preserve:

@@ -92,6 +92,7 @@ switch ($command) {
             if ($rest.Count -ne 1) { throw 'usage: harr ein apply' }
             Apply-LeanCtx
             Apply-Agents 'all'
+            [void](Invoke-Python -CommandArgs @((Join-Path $CommonDir 'hosts\codex-config.py'), 'apply-ein-panels'))
         }
         else {
             [string[]]$einArgs = @((Join-Path $CommonDir 'mcp\ein_instances.py')) + @($rest)

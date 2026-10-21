@@ -32,7 +32,7 @@ harr ein add --id gigacode --adapter gigacode
 harr ein list
 harr ein edit opencode-reviewer --display-name "Review worker"
 harr ein test opencode-builder       # checks executable availability, no model calls
-harr ein apply                       # regenerate LeanCTX and common skill/policy
+harr ein apply                       # publish gateway, skill/policy, named Desktop panels
 ```
 
 `gigacode::ein`, `opencode-builder::ein` and `opencode-reviewer::ein`
@@ -50,6 +50,12 @@ Configurations live under `~/.config/harr/einherjar/instances.json`.
 
 The old static GigaCode MCP remains selectable until an instance named
 `gigacode` is configured, at which point it is replaced by `gigacode::ein`.
+Each named instance can display a **read-only Codex Desktop MCP App** under
+`harr-ein-<name>-app::show_ein_live`. The panel attaches to an existing
+Ein session UUID (it never launches a new model run), keeps `poll_ein_ui` and
+`list_ein_ui` app-only, and uses per-instance session/history files. This direct
+MCP registration is distinct from the LeanCTX execution gateway.
+
 No running global Harr or Codex installation is modified by this source PR.
 See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for migration and validation.
 
