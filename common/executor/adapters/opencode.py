@@ -1,6 +1,7 @@
 """Built-in OpenCode adapter for Einherjar."""
 from __future__ import annotations
 import shutil
+import os
 from common.executor.backends import (
     BackendAdapter, BackendCapabilities, BackendStartRequest, BackendResumeRequest,
     session_id_from_jsonl, text_candidates_from_jsonl,
@@ -12,7 +13,7 @@ class OpenCodeAdapter(BackendAdapter):
         return "opencode"
 
     def probe(self) -> BackendCapabilities:
-        executable = shutil.which("opencode")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "opencode"))
         return BackendCapabilities(
             name="opencode", source="builtin", found=bool(executable),
             resumable=True, structured_events=True, progress_messages=True,
@@ -21,7 +22,7 @@ class OpenCodeAdapter(BackendAdapter):
         )
 
     def _base(self, workspace) -> list[str]:
-        executable = shutil.which("opencode")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "opencode"))
         if not executable:
             raise FileNotFoundError("opencode executable not found in PATH")
         return [executable, "run", "--format", "json", "--auto", "--pure", "--dir", str(workspace)]

@@ -1,6 +1,7 @@
 """Built-in GigaCode adapter for Einherjar."""
 from __future__ import annotations
 import shutil
+import os
 from common.executor.backends import BackendAdapter, BackendCapabilities, BackendStartRequest, BackendResumeRequest
 from common.executor.protocol import WORKER_CONTRACT
 
@@ -9,7 +10,7 @@ class GigaCodeAdapter(BackendAdapter):
         return "gigacode"
 
     def probe(self) -> BackendCapabilities:
-        executable = shutil.which("gigacode")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "gigacode"))
         return BackendCapabilities(
             name="gigacode", source="builtin", found=bool(executable),
             resumable=True, structured_events=False, progress_messages=False,
@@ -22,7 +23,7 @@ class GigaCodeAdapter(BackendAdapter):
         return prompt
 
     def start_command(self, request: BackendStartRequest) -> list[str]:
-        executable = shutil.which("gigacode")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "gigacode"))
         if not executable:
             raise FileNotFoundError("gigacode executable not found in PATH")
         if not request.harr_session_id:
@@ -34,7 +35,7 @@ class GigaCodeAdapter(BackendAdapter):
         ]
 
     def resume_command(self, request: BackendResumeRequest) -> list[str]:
-        executable = shutil.which("gigacode")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "gigacode"))
         if not executable:
             raise FileNotFoundError("gigacode executable not found in PATH")
         return [

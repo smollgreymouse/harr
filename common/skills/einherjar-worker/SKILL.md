@@ -1,21 +1,21 @@
 ---
 name: einherjar-worker
-description: Delegate bounded code implementation, debugging, and test loops to any Harr Einherjar external CLI-agent backend while the parent remains planner.
+description: Delegate bounded code implementation, debugging, and validation to any named Harr Ein external CLI worker while the parent remains the planner.
 ---
 <!-- harr-managed-skill-v1 -->
 
-# Einherjar worker
+# Ein worker — shared execution contract
 
-Use Einherjar only after architecture, scope, invariants, forbidden changes, and acceptance criteria are fixed.
+This is **the single skill for every configured Ein instance**, including GigaCode. All instances have the same `start`, `resume`, `status`, `messages`, `wait`, `cancel` API via `<mcp-name>::ein`.
 
-1. **Choose backend only when needed.** Normally omit `backend` and let Harr use `~/.config/harr/einherjar.json`. Use an explicit backend only when the user or task requires it.
-2. **Delegate the whole bounded implementation loop.** Prefer `plan_path` for substantial work; use a direct prompt only for small self-contained tasks.
-3. **Do not duplicate active work.** After `start` or `resume`, do not edit/read/revalidate the delegated scope in the parent while the session is RUNNING.
-4. **Use compact supervision.** `status` is a one-shot snapshot; `wait` blocks inside the bridge; `messages` is only for an explicit progress request. Do not create model-side polling loops.
-5. **Trust verified DONE handoffs.** Ask the same worker for missing proof rather than automatically repeating its full code review.
-6. **Resolve ESCALATE in the planner.** Send only the new decision/evidence back with `resume`; Einherjar maps the Harr session to the backend's private vendor session.
-7. **Session identity is Harr-owned.** Never ask for, store, or pass vendor session ids yourself.
-8. **No external writes by default.** Worker commits/pushes/publishes only when the user's explicit task and execution contract require them.
-9. **Backend failures are not design decisions.** Missing executable, malformed output, timeout, or permissions are FAILED/tool issues. Architecture contradictions are ESCALATE.
+1. **Planner owns architecture.** Fix scope, invariants, forbidden changes, decisions and acceptance criteria first. The worker executes the bounded implementation and verification loop. Do not ask a worker to invent architecture or broaden scope.
+2. **Choose the instance, not the adapter.** Select an enabled, user-named MCP such as `gigacode::ein` or `opencode-builder::ein`. No `backend` argument is allowed: Harr setup permanently binds each MCP name to its CLI adapter. The chosen instance cannot change on resume.
+3. **Delegate complete execution.** Prefer `plan_path` for substantial implementation, or `prompt` for a small self-contained task. The worker investigates only needed code, edits, builds, tests and fixes ordinary implementation mistakes. No unsolicited commits, pushes or external changes.
+4. **Startup confirmation.** `STARTING` means a process exists but genuine agent work is not yet verified. A confirmed `RUNNING` freezes the delegated scope in the parent: do not edit/read/inspect it, re-run its checks or watch intermediate diffs. Do independent planning elsewhere if useful.
+5. **Supervision consumes minimal model context.** Do not automatically wait, repeatedly call `status` or fetch a transcript. `status` is a one-off snapshot for explicit user request or real dependency; `wait` is one bounded bridge-local wait when blocking is genuinely necessary; `messages` is opt-in for explicit progress requests. Never create short model-side polling loops. An expired wait does not cancel the job. Desktop live progress is display-only, not planner input.
+6. **Accept evidence, not optimism.** A complete terminal `DONE` must map every criterion to a real PASS result and include a diff/scope self-review. Accept that structured contract without automatically conducting a second full code review. If proof is missing, request that *specific* evidence from the worker.
+7. **Escalate decisions, not trivial errors.** On `ESCALATE`, the planner resolves the exact unexpected plan/code mismatch or ambiguous decision from the worker's code evidence. Send only the decision and new evidence via `resume`. `FAILED` covers tools, timeouts, permissions and execution problems, not speculative design changes.
+8. **Preserve healthy session boundaries.** Use `resume` for small corrections within the same implementation phase. For a major new phase or an independent verification, start a fresh session **after** the old one is terminal; transfer only validated facts, allowed scope, check results, logs/build-directory locations and resource limits. Do not launch overlapping workers on the same editing scope.
+9. **Session identity belongs to Harr.** Pass only the returned Harr `session_id`, never vendor session IDs. Explicit `cancel` stops that session; it does not mean the execution history is erased.
 
-The stable adapter contract for adding new CLI backends is documented in `docs/EINHERJAR_BRIDGE_CONTRACT.md`.
+The adapter-implementation interface is documented in `docs/EINHERJAR_BRIDGE_CONTRACT.md`. Named-instance setup and migration are documented in `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md`.

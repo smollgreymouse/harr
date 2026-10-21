@@ -127,6 +127,8 @@ cmd_agents_apply() {
   local gigacode_enabled=0 einherjar_enabled=0
   if mcp_manager names | grep -Fxq -- gigacode; then gigacode_enabled=1; fi
   if mcp_manager names | grep -Fxq -- einherjar; then einherjar_enabled=1; fi
+  if grep -q '"ein_instance"' "$HARR_MCP_EFFECTIVE" 2>/dev/null; then einherjar_enabled=1; fi
+  if [[ "$(mcp_manager server-field gigacode ein_instance 2>/dev/null || true)" == gigacode ]]; then gigacode_enabled=0; fi
   while IFS= read -r agent; do
     install_agent_policy "$agent"
     for skill in lean-ctx harr; do install_one_skill "$agent" "$skill"; done

@@ -1,6 +1,6 @@
 # Einherjar: named multi-instance setup and GigaCode compatibility
 
-Status: design proposal for PR #39; no production integration in this document.
+Status: design + implementation in PR #39; isolated test harness passes. Public installation and real CLI model sessions are not activated/tested here.
 
 ## Goal
 

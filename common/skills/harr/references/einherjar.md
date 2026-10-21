@@ -1,12 +1,14 @@
 # Einherjar generic external worker MCP
 
-Einherjar is Harr's backend-neutral planner→worker bridge. It exposes one downstream tool:
+Einherjar is Harr's backend-neutral planner→worker bridge. Each named MCP instance exposes one common tool:
 
 ```text
-einherjar::worker
+<user-chosen-mcp-name>::ein
 ```
 
-Actions are `start|resume|status|messages|wait|cancel|backends`.
+Actions are `start|resume|status|messages|wait|cancel` for every named instance. Configure them using `harr ein add` and `harr ein list`.
+
+The deprecated PR #39 singleton API `einherjar::worker` was a transitional endpoint; the named API is `<mcp-name>::ein`.
 
 ## Backends
 
@@ -16,9 +18,9 @@ Built-in adapters:
 - `opencode`
 - `codex`
 
-Additional simple CLIs can be declared in `~/.config/harr/einherjar.json` with the `command-template` adapter. Authentication remains owned by each CLI; Harr stores no provider tokens.
+Additional simple CLIs can be declared per instance using `harr ein add --adapter custom --definition-file PATH`, stored under `~/.config/harr/einherjar/instances.json`. Authentication remains owned by each CLI; Harr stores no provider tokens.
 
-Use `action=backends` to see the safe capability view and current default backend.
+The adapter is bound to the MCP instance in Harr setup, not selected by a model invocation.
 
 ## Start
 
@@ -40,7 +42,7 @@ arguments = {
 }
 ```
 
-Optional `backend=gigacode|opencode|codex|<configured-name>` overrides the configured default for that new Harr session. The backend is then frozen for resume.
+No `backend` parameter is accepted. Each named MCP instance always uses its configured adapter.
 
 ## Resume
 

@@ -191,6 +191,13 @@ main() {
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for Harr host configuration management'
   prepare_clean_ownership
   select_mcp_set
+  if [[ -t 0 && -t 1 && ( "$first_install" == 1 || "$configure_mcp" == 1 ) ]]; then
+    local configure_ein=''
+    read -r -p 'Configure named Ein CLI workers now? [y/N]: ' configure_ein
+    case "$configure_ein" in
+      y|Y|yes|YES|Yes) python3 "${COMMON_DIR}/mcp/ein_instances.py" configure ;;
+    esac
+  fi
   install_runtime_files
   install_mcp_configs
   configure_systemd

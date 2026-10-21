@@ -27,7 +27,7 @@ import re
 from collections import deque
 
 
-SERVER_NAME = "gigacode"
+SERVER_NAME = os.environ.get("HARR_EIN_INSTANCE", "gigacode")
 SERVER_VERSION = "1.11.0"
 ROOT = Path.cwd().resolve()
 DEFAULT_HARD_TIMEOUT_SEC = 0
@@ -40,7 +40,7 @@ STARTUP_CONFIRM_TIMEOUT_SEC = 20.0
 STARTUP_CONFIRM_POLL_SEC = 0.25
 POLL_INTERVAL_SEC = 5.0
 WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
-CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "gigacode-mcp" / WORKSPACE_KEY
+CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / ("harr/einherjar/" + SERVER_NAME if os.environ.get("HARR_EIN_INSTANCE") else "gigacode-mcp") / WORKSPACE_KEY
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 
 # Regex: canonical UUID hex format only
@@ -162,7 +162,7 @@ Rules for the handoff:
 
 TOOLS = [
     {
-        "name": "gigacode",
+        "name": "ein" if os.environ.get("HARR_EIN_INSTANCE") else "gigacode",
         "description": (
             "Delegate a bounded implementation/verification contract to detached GigaCode. "
             "Parent decides architecture, scope, invariants and acceptance; worker owns code, "
@@ -863,7 +863,7 @@ def run_gigacode(
     chat_start_offset: int = 0,
     owner: dict | None = None,
 ) -> tuple[int, str, str]:
-    executable = shutil.which("gigacode")
+    executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "gigacode"))
     if not executable:
         return 127, "", "gigacode executable not found in PATH"
 
@@ -1689,7 +1689,7 @@ def handle(request: dict) -> dict | None:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         try:
-            if name != "gigacode":
+            if name != ("ein" if os.environ.get("HARR_EIN_INSTANCE") else "gigacode"):
                 raise ValueError(f"unknown tool: {name}")
             action = arguments.get("action")
             timeout_value = arguments.get("timeout_sec")

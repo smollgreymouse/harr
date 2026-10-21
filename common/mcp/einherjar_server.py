@@ -37,13 +37,16 @@ DEFAULT_WAIT_TIMEOUT_SEC = 1500
 MAX_WAIT_TIMEOUT_SEC = 1500
 POLL_INTERVAL_SEC = 0.5
 STARTUP_WAIT_SEC = 3.0
+INSTANCE_ID = os.environ.get("HARR_EIN_INSTANCE")
+if INSTANCE_ID and not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", INSTANCE_ID):
+    raise SystemExit("invalid Ein MCP instance name")
 WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
-CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "harr" / "einherjar" / WORKSPACE_KEY
+CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "harr" / "einherjar" / (INSTANCE_ID or "default") / WORKSPACE_KEY
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 TOOLS = [{
-    "name": "worker",
+    "name": "ein" if INSTANCE_ID else "worker",
     "description": (
         "Delegate a bounded implementation/verification contract to an external CLI agent through "
         "Harr Einherjar. start/resume are detached; status is nonblocking; wait blocks inside the "
@@ -302,13 +305,13 @@ def status_tool(arguments: dict) -> dict:
             "blockers": [{"kind": "tool", "detail": "worker process is no longer running", "evidence": f"phase={state.get('phase')}; job_id={state.get('job_id')}"}],
         }, is_error=True)
     return text_result({
-        "session_id": session_id, "backend": state.get("backend"), "status": "RUNNING",
+        "session_id": session_id, "backend": state.get("backend"), "status": "RUNNING" if state.get("startup_confirmed") else "STARTING",
         "summary": f"Einherjar backend {state.get('backend')} is still executing.",
         "runtime": {
             "phase": state.get("phase"), "job_id": state.get("job_id"),
             "elapsed_sec": state.get("elapsed_sec"), "timeout_sec": state.get("timeout_sec"),
             "cancel_requested": bool(state.get("job_id")) and _cancel_requested(session_id, state["job_id"]),
-            "process_running": running,
+            "process_running": running, "startup_confirmed": bool(state.get("startup_confirmed")),
         },
     })
 
@@ -358,7 +361,7 @@ def wait_tool(arguments: dict, progress_token: object = None) -> dict:
                 _emit_progress(progress_token, float(revision), f"Einherjar: {item.get('text', '')}")
         result = status_tool({"session_id": session_id})
         payload = json.loads(result["content"][0]["text"])
-        if payload.get("status") != "RUNNING":
+        if payload.get("status") not in {"RUNNING", "STARTING"}:
             return result
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -463,6 +466,7 @@ def _run_turn(spec: dict) -> int:
                 "worker_pid": os.getpid(), "cwd": str(ROOT), "started_epoch": started_epoch,
                 "elapsed_sec": 0.0, "timeout_sec": timeout_sec,
                 "stdout_path": str(stdout_path), "stderr_path": str(stderr_path),
+            "startup_confirmed": False,
             }
             _write_state(session_id, state)
             _append_log(session_id, f"START backend={backend} mode={mode} job={job_id} pid={process.pid}")
@@ -470,6 +474,17 @@ def _run_turn(spec: dict) -> int:
             while process.poll() is None:
                 elapsed = time.monotonic() - started
                 state["elapsed_sec"] = round(elapsed, 1)
+                if not state["startup_confirmed"]:
+                    try:
+                        size = stdout_path.stat().st_size
+                        if size:
+                            with stdout_path.open("rb") as live:
+                                live.seek(max(0, size - 131072))
+                                chunk = live.read().decode("utf-8", errors="replace")
+                            if adapter.progress_messages(chunk):
+                                state["startup_confirmed"] = True
+                    except OSError:
+                        pass
                 _write_state(session_id, state)
                 if not _owner_alive(owner):
                     terminal_reason = "owner_disconnected"
@@ -545,7 +560,7 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
         "phase": "queued", "session_id": session_id, "job_id": job_id, "backend": backend,
         "backend_config": backend_config, "vendor_session_id": vendor_session_id,
         "worker_pid": None, "cwd": str(ROOT), "started_epoch": time.time(),
-        "elapsed_sec": 0.0, "timeout_sec": timeout_sec,
+        "elapsed_sec": 0.0, "timeout_sec": timeout_sec, "startup_confirmed": False,
     }
     _write_state(session_id, state)
     worker_log = CACHE_ROOT / f"{session_id}.{job_id}.worker.log"
@@ -567,11 +582,11 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
                 "session_id": session_id, "backend": backend, **current["handoff"],
                 "runtime": {"phase": current.get("phase"), "job_id": job_id, "elapsed_sec": current.get("elapsed_sec"), "exit_code": current.get("exit_code")},
             }
-        if current.get("phase") == "running" and _pid_alive(current.get("pid")):
+        if current.get("phase") == "running" and current.get("startup_confirmed") and _pid_alive(current.get("pid")):
             return {
                 "session_id": session_id, "backend": backend, "status": "RUNNING",
                 "summary": f"Einherjar started backend {backend}.", "job_id": job_id,
-                "runtime": {"phase": "running", "timeout_sec": timeout_sec},
+                "runtime": {"phase": "running", "timeout_sec": timeout_sec, "startup_confirmed": True},
             }
         if not _pid_alive(current.get("worker_pid")):
             break
@@ -581,7 +596,7 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
         return {
             "session_id": session_id, "backend": backend, "status": "STARTING",
             "summary": f"Einherjar backend {backend} worker is starting.", "job_id": job_id,
-            "runtime": {"phase": current.get("phase"), "timeout_sec": timeout_sec},
+            "runtime": {"phase": current.get("phase"), "timeout_sec": timeout_sec, "startup_confirmed": False},
         }
     return {
         "session_id": session_id, "backend": backend, "status": "FAILED",
@@ -597,6 +612,8 @@ def start_tool(arguments: dict) -> dict:
     if bool(plan_path) == bool(direct_prompt):
         raise ValueError("start requires exactly one of plan_path or prompt")
     config = load_einherjar_config()
+    if INSTANCE_ID and "backend" in arguments:
+        raise ValueError("backend is fixed by Ein instance")
     backend_name, adapter = resolve_backend(arguments.get("backend"), config)
     probe = adapter.probe()
     if not probe.found:
@@ -646,7 +663,7 @@ def resume_tool(arguments: dict) -> dict:
 
 def _validate_arguments(arguments: dict) -> None:
     action = arguments.get("action")
-    if action not in {"start", "resume", "status", "messages", "wait", "cancel", "backends"}:
+    if action not in ({"start", "resume", "status", "messages", "wait", "cancel"} if INSTANCE_ID else {"start", "resume", "status", "messages", "wait", "cancel", "backends"}):
         raise ValueError("unknown Einherjar action")
     timeout = arguments.get("timeout_sec")
     if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 0):
@@ -675,6 +692,10 @@ def _validate_arguments(arguments: dict) -> None:
         raise ValueError(f"{action} requires session_id")
 
 
+if INSTANCE_ID:
+    TOOLS[:] = [json.loads((Path(__file__).with_name("ein_tool_schema.json")).read_text(encoding="utf-8"))]
+
+
 def handle(request: dict) -> dict | None:
     method = request.get("method")
     request_id = request.get("id")
@@ -690,7 +711,7 @@ def handle(request: dict) -> dict | None:
     if method == "tools/call":
         params = request.get("params", {})
         try:
-            if params.get("name") != "worker":
+            if params.get("name") != ("ein" if INSTANCE_ID else "worker"):
                 raise ValueError(f"unknown tool: {params.get('name')}")
             arguments = params.get("arguments") or {}
             _validate_arguments(arguments)

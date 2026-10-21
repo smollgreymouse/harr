@@ -1,6 +1,7 @@
 """Built-in Codex CLI adapter for Einherjar."""
 from __future__ import annotations
 import shutil
+import os
 from common.executor.backends import (
     BackendAdapter, BackendCapabilities, BackendStartRequest, BackendResumeRequest,
     session_id_from_jsonl, text_candidates_from_jsonl,
@@ -12,7 +13,7 @@ class CodexAdapter(BackendAdapter):
         return "codex"
 
     def probe(self) -> BackendCapabilities:
-        executable = shutil.which("codex")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "codex"))
         return BackendCapabilities(
             name="codex", source="builtin", found=bool(executable),
             resumable=True, structured_events=True, progress_messages=True,
@@ -21,7 +22,7 @@ class CodexAdapter(BackendAdapter):
         )
 
     def _global(self, workspace) -> list[str]:
-        executable = shutil.which("codex")
+        executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "codex"))
         if not executable:
             raise FileNotFoundError("codex executable not found in PATH")
         return [

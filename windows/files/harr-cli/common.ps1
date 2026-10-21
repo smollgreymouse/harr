@@ -165,6 +165,12 @@ function Apply-Agents([string]$Requested = 'all') {
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
     [bool]$gigacodeEnabled = @(Active-McpNames) -contains 'gigacode'
     [bool]$einherjarEnabled = @(Active-McpNames) -contains 'einherjar'
+    if (Test-Path -LiteralPath $McpEffective) {
+        $registry = Get-Content -Raw -LiteralPath $McpEffective | ConvertFrom-Json
+        $named = @($registry.servers | Where-Object { $_.PSObject.Properties['ein_instance'] -and $_.ein_instance })
+        if ($named.Count -gt 0) { $einherjarEnabled = $true }
+        if (@($named | Where-Object { $_.name -eq 'gigacode' }).Count -gt 0) { $gigacodeEnabled = $false }
+    }
     foreach ($agent in $agents) {
         $policy = Agent-PolicyPath $agent
         $skillRoot = Agent-SkillRoot $agent

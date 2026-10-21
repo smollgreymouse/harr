@@ -12,6 +12,47 @@
 
 A global harness for token-efficient MCP infrastructure.
 
+## Named Ein CLI workers (PR #39)
+
+Harr manages any number of **user-named Ein MCP instances**. Every instance has a
+fixed adapter (`gigacode`, `opencode`, `codex`, or a custom command-template)
+with its own runtime state and configuration. Each publishes the **same**
+`<mcp-name>::ein` tool and shared `$einherjar-worker` skill, preserving the
+legacy GigaCode action and argument schema. The GigaCode adapter reuses its
+established bridge for startup confirmation, lifecycle and Desktop progress.
+
+At first interactive `harr setup`, choose **Configure named Ein workers**,
+or manage them later:
+
+```bash
+harr ein configure
+harr ein add --id opencode-builder --adapter opencode
+harr ein add --id opencode-reviewer --adapter opencode
+harr ein add --id gigacode --adapter gigacode
+harr ein list
+harr ein edit opencode-reviewer --display-name "Review worker"
+harr ein test opencode-builder       # checks executable availability, no model calls
+harr ein apply                       # regenerate LeanCTX and common skill/policy
+```
+
+`gigacode::ein`, `opencode-builder::ein` and `opencode-reviewer::ein`
+are **distinct MCP servers**, not aliases to one global backend selector.
+MCP names are entered explicitly at creation time and checked for collisions.
+Use `harr ein disable NAME`, `enable NAME` or `remove NAME` to manage instances.
+
+For an arbitrary CLI, use
+`harr ein add --id NAME --adapter custom --definition-file custom.json`;
+its `start`/`resume` commands must be JSON argv arrays (no shell expansion).
+Optional `--executable PATH` overrides a built-in executable and
+`--secret-env ENV=SECRET_FILE` references a file in Harr's private `secrets/`
+directory without putting its contents into the instances config.
+Configurations live under `~/.config/harr/einherjar/instances.json`.
+
+The old static GigaCode MCP remains selectable until an instance named
+`gigacode` is configured, at which point it is replaced by `gigacode::ein`.
+No running global Harr or Codex installation is modified by this source PR.
+See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for migration and validation.
+
 ## Design
 
 Harr is not merged into another global harness. On first installation it takes **clean ownership of its global layer**, after saving an exact rollback snapshot. Project-level configuration is deliberately out of scope.
