@@ -432,19 +432,8 @@ def _assistant_messages_after_offset(session_id: str, offset: int) -> tuple[int,
                     item = json.loads(raw.decode("utf-8"))
                 except Exception:
                     continue
-                if item.get("type") != "assistant":
-                    continue
                 timestamp = item.get("timestamp")
-                parts = item.get("message", {}).get("parts", [])
-                for part in parts:
-                    if not isinstance(part, dict):
-                        continue
-                    text = part.get("text")
-                    if not isinstance(text, str):
-                        continue
-                    text = text.strip()
-                    if not text:
-                        continue
+                for text in _visible_assistant_texts(item):
                     messages.append({"timestamp": timestamp, "text": text})
     except OSError:
         return offset, []
@@ -477,6 +466,32 @@ def _save_stream_offset(session_id: str, job_id: str, offset: int) -> None:
 def _is_worker_handoff_text(text: str) -> bool:
     value = extract_json_object(text)
     return isinstance(value, dict) and value.get("status") in {"DONE", "ESCALATE", "FAILED"}
+
+
+def _visible_assistant_texts(item: dict) -> list[str]:
+    """Return assistant text that GigaCode exposes as ordinary chat content.
+
+    The recorded Part shape marks reasoning text with thought=true. Qwen/Giga
+    does not render those parts as ordinary assistant chat content. The Harr
+    structured DONE/FAILED/ESCALATE handoff is protocol data for the parent
+    agent and is likewise not a chat message.
+    """
+    if item.get("type") != "assistant":
+        return []
+
+    visible: list[str] = []
+    parts = item.get("message", {}).get("parts", [])
+    for part in parts:
+        if not isinstance(part, dict) or part.get("thought"):
+            continue
+        text = part.get("text")
+        if not isinstance(text, str):
+            continue
+        text = text.strip()
+        if not text or _is_worker_handoff_text(text):
+            continue
+        visible.append(text)
+    return visible
 
 
 def _emit_progress(progress_token: object, progress: float, message: str) -> None:
@@ -518,19 +533,8 @@ def _assistant_messages(session_id: str) -> list[dict]:
                     item = json.loads(line)
                 except Exception:
                     continue
-                if item.get("type") != "assistant":
-                    continue
                 timestamp = item.get("timestamp")
-                parts = item.get("message", {}).get("parts", [])
-                for part in parts:
-                    if not isinstance(part, dict):
-                        continue
-                    text = part.get("text")
-                    if not isinstance(text, str):
-                        continue
-                    text = text.strip()
-                    if not text:
-                        continue
+                for text in _visible_assistant_texts(item):
                     revision += 1
                     messages.append({
                         "revision": revision,
