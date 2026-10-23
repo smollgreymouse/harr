@@ -151,7 +151,8 @@ def dispatch(req):
     args=p.get("arguments") or {};sid=args.get("session_id","")
     if not isinstance(sid,str) or not gc._validate_session_id(sid) or lookup_scope(args.get("scope_id"),sid) is None:
      raise ValueError("unrecognized invocation scope")
-    current=unbox(gc.status_tool({"session_id":sid})).get("status")
+    handoff=unbox(gc.status_tool({"session_id":sid}))
+    current=handoff.get("status")
     claimed=False
     if current in TERMINAL:
      claim_dir=STATE/"delivered-completions";claim_dir.mkdir(exist_ok=True)
@@ -161,7 +162,7 @@ def dispatch(req):
       with os.fdopen(fd,"w") as f:f.write(args["scope_id"])
       claimed=True
      except FileExistsError:pass
-    result(id,{"content":[{"type":"text","text":"notification claim"}],"structuredContent":{"claimed":claimed,"status":current}})
+    result(id,{"content":[{"type":"text","text":"notification claim"}],"structuredContent":{"claimed":claimed,"status":current,"handoff":handoff if claimed else None}})
    elif name=="poll_gigacode_ui":
     args=p.get("arguments") or {}
     sid=args.get("session_id","")

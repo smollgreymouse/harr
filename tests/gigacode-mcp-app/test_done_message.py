@@ -33,7 +33,9 @@ with tempfile.TemporaryDirectory() as td:
 
     assert call('claim_done_notification_ui', scope)['claimed'] is False
     current = 'DONE'
-    assert call('claim_done_notification_ui', scope)['claimed'] is True
+    claimed = call('claim_done_notification_ui', scope)
+    assert claimed['claimed'] is True
+    assert claimed['handoff']['status'] == 'DONE'
     assert call('claim_done_notification_ui', other)['claimed'] is False
     call('release_done_notification_ui', other)
     assert call('claim_done_notification_ui', other)['claimed'] is False
@@ -47,4 +49,8 @@ for name in ('claim_done_notification_ui', 'release_done_notification_ui'):
 html = (root/'common/mcp/gigacode_app/panel.html').read_text()
 assert "request('ui/message',{role:'user'" in html
 assert 'notifyEligible' in html
+assert 'JSON.stringify(claim.handoff)' in html
+assert 'do not call gigacode status/messages/wait' in html
+assert "append('Вызов:" not in html
+assert "append('— '+d.status" not in html
 print('MCP App DONE notification contract: PASS')

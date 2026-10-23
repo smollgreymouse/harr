@@ -58,7 +58,7 @@ arguments = {
 
 `wait` polls only inside the MCP bridge, so the parent model is not re-entered for every RUNNING check. If the MCP client provides a request progress token, `wait` streams only newly appended GigaCode assistant prose as `notifications/progress`; old reused-session text, tool calls/results, runtime events, and the final JSON handoff are excluded. A bounded wait timeout returns compact `RUNNING`; it never cancels the detached GigaCode job.
 
-For explicit transcript inspection, `messages` returns only GigaCode assistant prose and omits tool calls/results plus runtime/debug events. It supports `after_revision` and `message_limit` so callers can fetch only new messages without duplicates. Normal waiting must not call it automatically. `messages` is still a normal MCP result and therefore belongs to the parent tool context; it is not the UI-only live-stream mechanism.
+For explicit transcript inspection, `messages` returns the same GigaCode chat-display assistant text: thought/reasoning parts, tool calls/results, runtime/debug events, and the final structured handoff are omitted. It supports `after_revision` and `message_limit` so callers can fetch only new messages without duplicates. Normal waiting must not call it automatically. `messages` is still a normal MCP result and therefore belongs to the parent tool context; it is not the UI-only live-stream mechanism.
 
 RUNNING responses intentionally expose only compact public runtime state; they do not return GigaCode event history, internal logs, model text, or tool traces.
 
