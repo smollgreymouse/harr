@@ -29,6 +29,14 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition))
     run('add','--id','fake-two','--adapter','custom','--definition-file',str(definition))
     run('add','--id','gigacode','--adapter','gigacode')
+    codex_home=base/'profiles/codex'
+    codex_home.mkdir(parents=True)
+    (codex_home/'config.toml').write_text('model = "synthetic"\n')
+    run('add','--id','codex-worker','--adapter','codex','--codex-home',str(codex_home))
+    assert json.loads(run('show','codex-worker'))['codex_home']==str(codex_home)
+    run('add','--id','bad-profile','--adapter','opencode','--codex-home',str(codex_home),ok=False)
+    run('add','--id','bad-relative','--adapter','codex','--codex-home','relative/path',ok=False)
+    run('add','--id','bad-missing','--adapter','codex',ok=False)
     run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition),ok=False)
     run('add','--id','codegraph','--adapter','opencode',ok=False)
     assert 'fake-one' in run('list') and 'fake-two' in run('list')
@@ -40,7 +48,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     subprocess.run(select,env=env,check=True,capture_output=True)
     data=json.loads(effective.read_text())
     servers={s['name']:s for s in data['servers']}
-    assert {'fake-one','fake-two','gigacode'} <= set(servers)
+    assert {'fake-one','fake-two','gigacode','codex-worker'} <= set(servers)
     assert servers['gigacode']['runtime']['script']=='gigacode_server.py'
     assert servers['fake-one']['runtime']['script']=='einherjar_server.py'
     assert len([x for x in data['servers'] if x['name']=='gigacode'])==1
@@ -63,7 +71,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
         assert f'name = "{tool_name}"' in leanctx.read_text()
 
     manager=[PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'run']
-    for name in ('fake-one','fake-two','gigacode'):
+    for name in ('fake-one','fake-two','gigacode','codex-worker'):
         proc=subprocess.Popen([*manager,name],env=env,cwd=work,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
         def call(i,method,params=None):
             proc.stdin.write(json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params or {}})+'\n');proc.stdin.flush()
@@ -76,7 +84,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
             assert schema['properties']['action']['enum']==['start','resume','status','messages','wait','cancel']
             assert 'backend' not in schema['properties']
             assert schema == canonical_schema, name
-            if name=='gigacode':continue # NEVER run real GigaCode; test API only.
+            if name in ('gigacode','codex-worker'):continue # NEVER run real backends; test API only.
             rejected=call(2,'tools/call',{'name':'ein','arguments':{'action':'start','backend':'gigacode','prompt':'test'}})
             assert rejected.get('isError')
             started=call(3,'tools/call',{'name':'ein','arguments':{'action':'start','prompt':'fake task'}})['structuredContent']

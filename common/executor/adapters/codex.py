@@ -25,6 +25,9 @@ class CodexAdapter(BackendAdapter):
         executable = shutil.which(os.environ.get("HARR_EIN_EXECUTABLE", "codex"))
         if not executable:
             raise FileNotFoundError("codex executable not found in PATH")
+        profile = os.environ.get("CODEX_HOME")
+        if profile and not os.path.isfile(os.path.join(profile,"config.toml")):
+            raise ValueError("configured CODEX_HOME has no config.toml")
         return [
             executable, "--ask-for-approval", "never", "--sandbox", "workspace-write",
             "-C", str(workspace),

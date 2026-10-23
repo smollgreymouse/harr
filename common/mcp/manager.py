@@ -587,6 +587,13 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
         env["HARR_EIN_INSTANCE"] = instance["id"]
         if instance.get("executable"):
             env["HARR_EIN_EXECUTABLE"] = instance["executable"]
+        if instance["adapter"] == "codex":
+            # Never inherit the caller's OpenAI login for a named Codex worker.
+            env.pop("CODEX_HOME", None)
+            profile = Path(instance["codex_home"])
+            if not profile.is_dir() or not (profile / "config.toml").is_file():
+                raise SystemExit(f"Ein {instance['id']}: Codex profile is missing: {profile}")
+            env["CODEX_HOME"] = str(profile)
         for variable, filename in instance.get("secret_env", {}).items():
             secret_path = harr_config_dir() / "secrets" / filename
             if not secret_path.is_file():

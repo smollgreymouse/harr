@@ -55,6 +55,15 @@ def validate(data: object) -> dict:
             raise ValueError(f"Ein {name}: invalid adapter")
         if not isinstance(item.get("enabled", True), bool):
             raise ValueError(f"Ein {name}: enabled must be boolean")
+        codex_home = item.get("codex_home")
+        if adapter == "codex" and codex_home is None:
+            raise ValueError(f"Ein {name}: codex adapter requires explicit codex_home")
+        if codex_home is not None:
+            if adapter != "codex":
+                raise ValueError(f"Ein {name}: codex_home requires adapter=codex")
+            if (not isinstance(codex_home,str) or not Path(codex_home).is_absolute()
+                or any(char in codex_home for char in "\n\r\x00")):
+                raise ValueError(f"Ein {name}: codex_home must be an absolute directory path")
         executable = item.get("executable")
         if executable is not None and (
             not isinstance(executable, str)
@@ -227,6 +236,7 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--display-name")
     add.add_argument("--definition-file")
     add.add_argument("--executable")
+    add.add_argument("--codex-home", help="absolute local Codex profile path (codex adapter only)")
     add.add_argument("--secret-env", action="append", default=[], metavar="ENV=SECRET_FILE")
     for command in ("show", "enable", "disable", "remove", "test"):
         commands.add_parser(command).add_argument("name")
@@ -236,6 +246,7 @@ def parser() -> argparse.ArgumentParser:
     edit.add_argument("--display-name")
     edit.add_argument("--definition-file")
     edit.add_argument("--executable")
+    edit.add_argument("--codex-home", help="absolute local Codex profile path (codex adapter only)")
     edit.add_argument("--secret-env", action="append", default=[], metavar="ENV=SECRET_FILE")
     return root
 
@@ -268,6 +279,8 @@ def main() -> None:
         value = {"id": name, "adapter": backend, "enabled": True, "display_name": args.display_name or name}
         if args.executable:
             value["executable"] = args.executable
+        if args.codex_home:
+            value["codex_home"] = args.codex_home
         if args.secret_env:
             try:
                 value["secret_env"] = parse_secret_env(args.secret_env)
@@ -307,6 +320,8 @@ def main() -> None:
             instance["display_name"] = args.display_name
         if args.executable:
             instance["executable"] = args.executable
+        if args.codex_home:
+            instance["codex_home"] = args.codex_home
         if args.secret_env:
             try:
                 instance.setdefault("secret_env", {}).update(parse_secret_env(args.secret_env))
@@ -316,6 +331,8 @@ def main() -> None:
             instance["definition"] = json.loads(Path(args.definition_file).read_text(encoding="utf-8"))
         if adapter != "custom":
             instance.pop("definition", None)
+        if adapter != "codex":
+            instance.pop("codex_home", None)
         persist(data)
     elif args.cmd == "remove":
         data["instances"].remove(instance)
