@@ -61,6 +61,16 @@ case "$command" in
   secret) cmd_secret "$@" ;;
   leanctx) cmd_leanctx "$@" ;;
   workspace) cmd_workspace "$@" ;;
+  ein)
+    if [[ "${1:-}" == apply ]]; then
+      [[ $# -eq 1 ]] || die 'usage: harr ein apply'
+      cmd_leanctx_apply
+      cmd_agents_apply all
+      python3 "${HARR_COMMON_DIR}/hosts/codex-config.py" apply-ein-panels
+    else
+      python3 "${HARR_COMMON_DIR}/mcp/ein_instances.py" "$@"
+    fi
+    ;;
   git) cmd_git "$@" ;;
   kube) cmd_kube "$@" ;;
   kubectl) cmd_kubectl "$@" ;;

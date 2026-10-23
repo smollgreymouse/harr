@@ -90,6 +90,17 @@ if ($All) { $selectorArgs += @('--spec', 'all') }
 elseif ($explicitMcp) { $selectorArgs += @('--spec', $Mcp) }
 elseif ($ConfigureMcp -or $firstInstall) { $selectorArgs += '--configure' }
 Invoke-Selector $selectorArgs
+if (($firstInstall -or $ConfigureMcp) -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    $answer = Read-Host 'Configure named Ein CLI workers now? [y/N]'
+    if ($answer -match '^(?i:y|yes)$') {
+        [string[]]$cmd = @(Resolve-Python)
+        $pyexe = $cmd[0]
+        [string[]]$prefix = @()
+        if ($cmd.Count -gt 1) { $prefix = @($cmd[1..($cmd.Count - 1)]) }
+        & $pyexe @prefix (Join-Path $CommonSource 'mcp\ein_instances.py') configure
+        if ($LASTEXITCODE -ne 0) { throw 'Ein instance setup failed' }
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $BinDir, $LibExecDir, $StateRoot | Out-Null
 Copy-Item -LiteralPath $StateHelperSource -Destination $StateHelper -Force

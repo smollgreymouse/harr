@@ -41,6 +41,11 @@
 - After confirmed `RUNNING`, the delegated scope is frozen for the parent: do not read/search/edit it, inspect intermediate diffs/artifacts, rerun validation, or inspect GigaCode internals. The parent may do genuinely independent planner work. If no useful independent work remains and completion is needed, prefer one blocking `wait`; `status` remains the nonblocking snapshot path.
 - `DONE` means contract acceptance from the structured self-verification handoff, not an independent full code review. Missing evidence goes back to the same GigaCode session via `resume`; parent source/artifact inspection requires a concrete exception defined by `$gigacode-executor`.
 <!-- harr-mcp:gigacode:end -->
+<!-- harr-mcp:einherjar:start -->
+- For substantial implementation through a backend-neutral external CLI worker, use the installed `$einherjar-worker` skill and delegate through `{{CTX_TOOLS}}` -> `einherjar::worker`. Prefer the configured default backend; override `backend` only when the user/task requires a specific CLI.
+- While an Einherjar session is RUNNING, do not duplicate its delegated scope in the parent. Use one-shot `status`, bridge-local `wait`, and opt-in `messages`; never model-side polling loops. Vendor session ids are private to the bridge.
+- Treat a complete verified `DONE` handoff as contract evidence. Resolve `ESCALATE` in the planner and resume the same Harr session with only the decision delta.
+<!-- harr-mcp:einherjar:end -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - For code, locate symbols/structure with CodeGraph, then `{{CTX_READ}}` only for needed line ranges (`lines=`); avoid whole-file reads when scope is known. If output says `truncated`, read missing relevant ranges before drawing conclusions. Keep the 4096-token LeanCTX budget.
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.

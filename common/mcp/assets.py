@@ -32,13 +32,34 @@ def strip_conditional_blocks(text: str, catalog: list[dict], active: set[str]) -
     return text
 
 
+def named_ein_tools(path: Path) -> list[str]:
+    return sorted(str(s['name']) + '::ein' for s in load_servers(path) if s.get('ein_instance'))
+
+
+def ein_policy(tools: list[str]) -> str:
+    if not tools:
+        return ''
+    lines = [
+        '- For delegated implementation after architecture and acceptance are fixed, load the single `$einherjar-worker` skill. All Ein instances expose identical `start|resume|status|messages|wait|cancel` through their `ein` tool.',
+        '- Select a specific named MCP instance from the configured list; do not pass a backend override or auto-poll. Keep the planner separate from the working executor.',
+        '- Available Ein tools: ' + ', '.join('`' + name + '`' for name in tools) + '.',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
 def active_names(path: Path) -> set[str]:
-    return {str(item["name"]) for item in load_servers(path)}
+    return {str(item['name']) for item in load_servers(path) if not item.get('ein_instance')}
+
 
 
 def filter_text(args: argparse.Namespace) -> None:
     text = args.input.read_text(encoding="utf-8")
     rendered = strip_conditional_blocks(text, load_servers(args.catalog), active_names(args.registry))
+    tools = named_ein_tools(args.registry)
+    if tools:
+        marker = '<!-- harr-tool-policy:end -->'
+        if marker in rendered:
+            rendered = rendered.replace(marker, ein_policy(tools) + marker)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(rendered, encoding="utf-8")
 
@@ -51,12 +72,25 @@ def filter_skill(args: argparse.Namespace) -> None:
     shutil.copytree(args.source, args.output)
     for path in args.output.rglob("*.md"):
         path.write_text(strip_conditional_blocks(path.read_text(encoding="utf-8"), catalog, active), encoding="utf-8")
+    tools = named_ein_tools(args.registry)
+    if tools:
+        skill = args.output / 'SKILL.md'
+        if skill.exists():
+            with skill.open('a', encoding='utf-8') as out:
+                out.write('\n## Named Ein workers\n\nUse the shared `$einherjar-worker` skill. Available MCP tools: ' + ', '.join('`' + t + '`' for t in tools) + '.\n')
     for server in catalog:
         reference = server.get("skill_reference")
         if reference and str(server["name"]) not in active:
             target = args.output / "references" / str(reference)
             if target.exists():
                 target.unlink()
+    if tools:
+        # A named worker uses the generic reference even without legacy singleton.
+        source_ref = args.source / 'references' / 'einherjar.md'
+        target = args.output / 'references' / 'einherjar.md'
+        if source_ref.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_ref, target)
 
 
 def main() -> None:

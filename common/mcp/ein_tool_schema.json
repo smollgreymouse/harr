@@ -1,0 +1,59 @@
+{
+  "name": "ein",
+  "description": "Delegate an implementation/verification contract to a named Ein CLI worker. All named Ein MCPs share the legacy GigaCode action, argument, lifecycle, and result contract.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "start",
+          "resume",
+          "status",
+          "messages",
+          "wait",
+          "cancel"
+        ],
+        "description": "start/resume return RUNNING without blocking conversation. No automatic wait/poll. status only on demand; optional wait blocks up to 1500s; messages on request; cancel explicitly."
+      },
+      "plan_path": {
+        "type": "string",
+        "description": "For start: existing implementation plan path inside the workspace. Use either plan_path or prompt, not both."
+      },
+      "session_id": {
+        "type": "string",
+        "description": "For resume/cancel/status/messages/wait: session id returned by a prior start."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "For start: direct task when no plan file exists. For resume: only new planner decision/correction/evidence."
+      },
+      "timeout_sec": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "For start/resume: optional hard wall-clock limit in seconds. 0 (default) means unlimited. Any nonnegative integer accepted."
+      },
+      "wait_timeout_sec": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1500,
+        "description": "Only for explicitly desired blocking wait: default/max 1500s (25min). Never short-loop polling. Timeout returns RUNNING, does not cancel."
+      },
+      "after_revision": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "For messages: return assistant messages newer than this revision. Omit to return the latest messages."
+      },
+      "message_limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "For messages: maximum number of assistant messages to return. Default 8."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  }
+}

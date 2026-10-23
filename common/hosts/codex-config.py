@@ -12,6 +12,8 @@ import tempfile
 import tomllib
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 SERVER_NAME = "lean-ctx"
 DEFAULT_TOOLS_APPROVAL_MODE = "auto"
 MCP_TOOL_TIMEOUT_SEC = 1900
@@ -328,6 +330,10 @@ def apply_gigacode_app() -> None:
     parse_config(text)
     text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME, "tools", "show_gigacode_live"])
     text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME]).rstrip()
+    from common.mcp.ein_instances import read as read_ein_instances
+    if any(item["id"] == "gigacode" for item in read_ein_instances()["instances"]):
+        write_config_text(text + "\n")
+        return
     selection_path = Path.home() / ".config" / "harr" / "mcp-selection.json"
     if selection_path.is_file():
         import json
@@ -345,6 +351,36 @@ def apply_gigacode_app() -> None:
     text = f"{text}\n\n{block}" if text else block
     parse_config(text)
     write_config_text(text)
+
+
+def apply_named_ein_apps() -> None:
+    """Reconcile one shared read-only MCP App for all enabled Ein instances."""
+    from common.mcp.ein_instances import read
+
+    app = Path(__file__).resolve().parents[1] / "mcp" / "ein_app" / "server.py"
+    data = read()
+    text = load_config_text()
+    existing = parse_config(text).get("mcp_servers", {})
+    for name in list(existing):
+        if name == "harr-ein-ui" or re.fullmatch(r"harr-ein-[a-z][a-z0-9-]{0,62}-app", name):
+            text = remove_exact_table(text, ["mcp_servers", name, "tools", "show_ein_live"])
+            text = remove_exact_table(text, ["mcp_servers", name, "env"])
+            text = remove_exact_table(text, ["mcp_servers", name])
+    if any(item.get("enabled", True) for item in data["instances"]):
+        block = (
+            "[mcp_servers.harr-ein-ui]\n"
+            f"command = {toml_basic_string(sys.executable)}\n"
+            f"args = [{toml_basic_string(str(app))}]\n"
+            'enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n'
+            'default_tools_approval_mode = "auto"\n'
+            "[mcp_servers.harr-ein-ui.env]\n"
+            f"HARR_CONFIG_DIR = {toml_basic_string(str(Path(os.environ.get('HARR_CONFIG_DIR') or (Path.home() / '.config/harr'))))}\n"
+            "[mcp_servers.harr-ein-ui.tools.show_ein_live]\n"
+            'approval_mode = "auto"\n'
+        )
+        text = text.rstrip() + "\n\n" + block
+    parse_config(text)
+    write_config_text(text.rstrip() + "\n")
 
 
 def workspace_server_path() -> Path:
@@ -447,6 +483,7 @@ def apply() -> None:
     binary = codex_cli()
     apply_with_codex_cli(binary) if binary else apply_with_fallback()
     apply_gigacode_app()
+    apply_named_ein_apps()
     apply_workspace_control()
     apply_workspace_app()
 
@@ -490,9 +527,13 @@ def main() -> int:
     if command == "apply":
         apply()
         return 0
+    if command == "apply-ein-panels":
+        apply_gigacode_app()
+        apply_named_ein_apps()
+        return 0
     if command == "status":
         return status()
-    print("usage: codex-config.py {apply|status}", file=sys.stderr)
+    print("usage: codex-config.py {apply|apply-ein-panels|status}", file=sys.stderr)
     return 2
 
 

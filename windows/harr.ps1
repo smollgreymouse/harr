@@ -34,6 +34,7 @@ Harr Windows CLI
   harr kube sync [--allow-exec] [--no-check]
   harr kube status [--no-check]
   harr kubectl <kubectl args...>
+  harr ein configure|list|add|show|edit|enable|disable|remove|test|apply
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]
@@ -85,6 +86,19 @@ switch ($command) {
     'gitlab' { GitLab-Command $rest }
     'kube' { Kube-Command $rest }
     'kubectl' { Kubectl-Command $rest }
+    'ein' {
+        $sub = if ($rest.Count) { $rest[0] } else { 'list' }
+        if ($sub -eq 'apply') {
+            if ($rest.Count -ne 1) { throw 'usage: harr ein apply' }
+            Apply-LeanCtx
+            Apply-Agents 'all'
+            [void](Invoke-Python -CommandArgs @((Join-Path $CommonDir 'hosts\codex-config.py'), 'apply-ein-panels'))
+        }
+        else {
+            [string[]]$einArgs = @((Join-Path $CommonDir 'mcp\ein_instances.py')) + @($rest)
+            [void](Invoke-Python -CommandArgs $einArgs)
+        }
+    }
     'mcp' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'list') { foreach ($name in @(All-Mcp-Names)) { Write-Host $name } }

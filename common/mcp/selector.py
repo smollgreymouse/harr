@@ -118,7 +118,8 @@ def save_selection(path: Path, selected: list[str]) -> None:
 
 def write_effective(path: Path, data: dict, selected: list[str]) -> None:
     enabled = set(selected)
-    save_json(path, {"schema": 1, "servers": [item for item in data["servers"] if item["name"] in enabled]}, private=True)
+    from ein_instances import expanded_servers
+    save_json(path, {"schema": 1, "servers": expanded_servers([item for item in data["servers"] if item["name"] in enabled])}, private=True)
 
 
 def is_interactive() -> bool:

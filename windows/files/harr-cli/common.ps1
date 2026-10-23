@@ -164,6 +164,13 @@ function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
     [bool]$gigacodeEnabled = @(Active-McpNames) -contains 'gigacode'
+    [bool]$einherjarEnabled = @(Active-McpNames) -contains 'einherjar'
+    if (Test-Path -LiteralPath $McpEffective) {
+        $registry = Get-Content -Raw -LiteralPath $McpEffective | ConvertFrom-Json
+        $named = @($registry.servers | Where-Object { $_.PSObject.Properties['ein_instance'] -and $_.ein_instance })
+        if ($named.Count -gt 0) { $einherjarEnabled = $true }
+        if (@($named | Where-Object { $_.name -eq 'gigacode' }).Count -gt 0) { $gigacodeEnabled = $false }
+    }
     foreach ($agent in $agents) {
         $policy = Agent-PolicyPath $agent
         $skillRoot = Agent-SkillRoot $agent
@@ -175,6 +182,12 @@ function Apply-Agents([string]$Requested = 'all') {
             Copy-TreeFresh (Join-Path $CommonDir 'skills\gigacode-executor') $gigaSkill
         } elseif (Test-Path -LiteralPath $gigaSkill) {
             Remove-Item -LiteralPath $gigaSkill -Recurse -Force
+        }
+        $einherjarSkill = Join-Path $skillRoot 'einherjar-worker'
+        if ($einherjarEnabled) {
+            Copy-TreeFresh (Join-Path $CommonDir 'skills\einherjar-worker') $einherjarSkill
+        } elseif (Test-Path -LiteralPath $einherjarSkill) {
+            Remove-Item -LiteralPath $einherjarSkill -Recurse -Force
         }
         Write-Host "Applied Harr-owned global policy for ${agent}: $policy"
     }

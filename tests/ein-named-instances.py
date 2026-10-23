@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Named Ein CLI/registry/MCP flow without any real external models."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT=Path(__file__).resolve().parents[1]
+PYTHON=sys.executable
+with tempfile.TemporaryDirectory(prefix='harr-ein-named-') as tmp:
+    base=Path(tmp)
+    env={**os.environ, 'HOME':str(base/'home'),'XDG_CONFIG_HOME':str(base/'home/.config'),'XDG_CACHE_HOME':str(base/'home/.cache'),'HARR_CONFIG_DIR':str(base/'home/.config/harr'),'PYTHONPATH':str(ROOT)}
+    work=base/'workspace';work.mkdir()
+    fake=work/'fake.py'
+    fake.write_text('''import json
+print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[],"verified":[{"criterion":"fake","check":"fake run","result":"PASS","evidence":"exit 0"}],"self_review":{"criteria_complete":True,"diff_scope_clean":True,"unverified":[]},"escalation":None,"blockers":[]}))
+''')
+    definition=base/'definition.json'
+    definition.write_text(json.dumps({'adapter':'command-template','start':[PYTHON,str(fake),'{prompt}']}))
+    cli=[PYTHON,str(ROOT/'common/mcp/ein_instances.py')]
+    def run(*args,ok=True):
+        p=subprocess.run([*cli,*args],env=env,cwd=work,text=True,capture_output=True)
+        if ok:assert p.returncode==0,(args,p.stdout,p.stderr)
+        else:assert p.returncode!=0,args
+        return p.stdout
+    run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition))
+    run('add','--id','fake-two','--adapter','custom','--definition-file',str(definition))
+    run('add','--id','gigacode','--adapter','gigacode')
+    codex_home=base/'profiles/codex'
+    codex_home.mkdir(parents=True)
+    (codex_home/'config.toml').write_text('model = "synthetic"\n')
+    run('add','--id','codex-worker','--adapter','codex','--codex-home',str(codex_home))
+    assert json.loads(run('show','codex-worker'))['codex_home']==str(codex_home)
+    run('add','--id','bad-profile','--adapter','opencode','--codex-home',str(codex_home),ok=False)
+    run('add','--id','bad-relative','--adapter','codex','--codex-home','relative/path',ok=False)
+    run('add','--id','bad-missing','--adapter','codex',ok=False)
+    run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition),ok=False)
+    run('add','--id','codegraph','--adapter','opencode',ok=False)
+    assert 'fake-one' in run('list') and 'fake-two' in run('list')
+    run('edit','fake-two','--display-name','Second worker')
+    assert json.loads(run('show','fake-two'))['display_name']=='Second worker'
+    selection=base/'home/.config/harr/mcp-selection.json'
+    effective=base/'home/.config/harr/mcp-registry.json'
+    select=[PYTHON,str(ROOT/'common/mcp/selector.py'),'--catalog',str(ROOT/'common/mcp/registry.json'),'--selection',str(selection),'--effective',str(effective),'--spec','none']
+    subprocess.run(select,env=env,check=True,capture_output=True)
+    data=json.loads(effective.read_text())
+    servers={s['name']:s for s in data['servers']}
+    assert {'fake-one','fake-two','gigacode','codex-worker'} <= set(servers)
+    assert servers['gigacode']['runtime']['script']=='gigacode_server.py'
+    assert servers['fake-one']['runtime']['script']=='einherjar_server.py'
+    assert len([x for x in data['servers'] if x['name']=='gigacode'])==1
+    assets=ROOT/'common/mcp/assets.py'
+    rendered=base/'generated-policy.md'
+    subprocess.run([PYTHON,str(assets),'filter-text','--catalog',str(ROOT/'common/mcp/registry.json'),'--registry',str(effective),'--input',str(ROOT/'common/policy/tool-routing.template.md'),'--output',str(rendered)],check=True,env=env)
+    assert 'fake-one::ein' in rendered.read_text() and 'fake-two::ein' in rendered.read_text()
+    assert 'gigacode::ein' in rendered.read_text()
+    assert 'gigacode::gigacode' not in rendered.read_text()
+    # Legacy GigaCode's *entire* argument schema is shared, not only action names.
+    legacy_source = ROOT/'common/mcp/ein_tool_schema.json'
+    canonical_schema = json.loads(legacy_source.read_text())['inputSchema']
+    skill_dir = base/'rendered-skill'
+    subprocess.run([PYTHON,str(assets),'filter-skill','--catalog',str(ROOT/'common/mcp/registry.json'),'--registry',str(effective),'--source',str(ROOT/'common/skills/harr'),'--output',str(skill_dir)],check=True,env=env)
+    assert 'fake-one::ein' in (skill_dir/'SKILL.md').read_text()
+    assert (skill_dir/'references/einherjar.md').exists()
+    leanctx=base/'leanctx.toml'
+    subprocess.run([PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'render-leanctx','--base',str(ROOT/'common/leanctx/config.base.toml'),'--output',str(leanctx),'--platform','linux','--runner-command','harr-mcp-run'],check=True,env=env)
+    for tool_name in ('fake-one','fake-two','gigacode'):
+        assert f'name = "{tool_name}"' in leanctx.read_text()
+
+    manager=[PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'run']
+    for name in ('fake-one','fake-two','gigacode','codex-worker'):
+        proc=subprocess.Popen([*manager,name],env=env,cwd=work,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
+        def call(i,method,params=None):
+            proc.stdin.write(json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params or {}})+'\n');proc.stdin.flush()
+            raw=proc.stdout.readline();assert raw,proc.stderr.read()
+            return json.loads(raw)['result']
+        try:
+            tools=call(1,'tools/list')['tools']
+            assert len(tools)==1 and tools[0]['name']=='ein',(name,tools)
+            schema=tools[0]['inputSchema']
+            assert schema['properties']['action']['enum']==['start','resume','status','messages','wait','cancel']
+            assert 'backend' not in schema['properties']
+            assert schema == canonical_schema, name
+            if name in ('gigacode','codex-worker'):continue # NEVER run real backends; test API only.
+            rejected=call(2,'tools/call',{'name':'ein','arguments':{'action':'start','backend':'gigacode','prompt':'test'}})
+            assert rejected.get('isError')
+            started=call(3,'tools/call',{'name':'ein','arguments':{'action':'start','prompt':'fake task'}})['structuredContent']
+            sid=started['session_id']
+            for i in range(30):
+                status=call(10+i,'tools/call',{'name':'ein','arguments':{'action':'status','session_id':sid}})['structuredContent']
+                if status['status']!='RUNNING':break
+                time.sleep(.2)
+            assert status['status']=='DONE',(name,status)
+            assert status['summary']=='named fake worker done'
+            print(name,'MCP tools + lifecycle PASS')
+        finally:
+            proc.terminate()
+            try:proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:proc.kill();proc.communicate()
+    run('disable','fake-one')
+    data=json.loads(effective.read_text())
+    assert 'fake-one' not in {s['name'] for s in data['servers']}
+    assert 'fake-two' in {s['name'] for s in data['servers']}
+    run('enable','fake-one')
+    assert 'fake-one' in {s['name'] for s in json.loads(effective.read_text())['servers']}
+    run('remove','fake-two')
+    assert 'fake-two' not in {s['name'] for s in json.loads(effective.read_text())['servers']}
+    print('Named Ein integration: PASS')

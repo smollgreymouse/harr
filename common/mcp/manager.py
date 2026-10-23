@@ -578,6 +578,41 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
         raise SystemExit(f"MCP {server['name']} configuration is missing: {env_path}")
     env.update(load_env_file(env_path, forbidden))
     env.update(runtime_env(server))
+    # Instance identity must be supplied by Harr, not an inherited caller variable.
+    env.pop("HARR_EIN_INSTANCE", None)
+    env.pop("HARR_EIN_EXECUTABLE", None)
+    if server.get("ein_instance"):
+        from ein_instances import config_for_instance
+        instance = config_for_instance(str(server["ein_instance"]))
+        env["HARR_EIN_INSTANCE"] = instance["id"]
+        if instance.get("executable"):
+            env["HARR_EIN_EXECUTABLE"] = instance["executable"]
+        if instance["adapter"] == "codex":
+            # Never inherit the caller's OpenAI login for a named Codex worker.
+            env.pop("CODEX_HOME", None)
+            profile = Path(instance["codex_home"])
+            if not profile.is_dir() or not (profile / "config.toml").is_file():
+                raise SystemExit(f"Ein {instance['id']}: Codex profile is missing: {profile}")
+            env["CODEX_HOME"] = str(profile)
+        for variable, filename in instance.get("secret_env", {}).items():
+            secret_path = harr_config_dir() / "secrets" / filename
+            if not secret_path.is_file():
+                raise SystemExit(f"Ein {instance['id']}: required secret {filename} is missing")
+            env[variable] = secret_path.read_text(encoding="utf-8").strip()
+        runtime_dir = harr_config_dir() / "einherjar" / "runtime" / instance["id"]
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        config = {"schema": 1, "default_backend": instance["adapter"], "backends": {}}
+        if instance["adapter"] == "custom":
+            config["default_backend"] = instance["id"]
+            config["backends"] = {instance["id"]: instance["definition"]}
+        target = runtime_dir / "einherjar.json"
+        with tempfile.NamedTemporaryFile(mode="w", dir=runtime_dir, delete=False, encoding="utf-8") as tmp:
+            json.dump(config, tmp)
+            tmp.write("\n")
+            temporary = Path(tmp.name)
+        temporary.chmod(0o600)
+        temporary.replace(target)
+        env["HARR_CONFIG_DIR"] = str(runtime_dir)
     env.update(service_secret_env(server))
     if server.get("trust_store") == "system":
         bundle = system_trust_bundle()

@@ -20,7 +20,7 @@ spec.loader.exec_module(manager)
 
 registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 servers = {item["name"]: item for item in registry["servers"]}
-assert set(("codegraph", "gitlab", "grafana", "kibana", "gigacode")) <= set(servers)
+assert set(("codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar")) <= set(servers)
 
 grafana = servers["grafana"]
 assert grafana["transport"] == "stdio"
@@ -164,6 +164,19 @@ with patch.object(manager.shutil, "which", return_value="/tmp/gigacode"):
         manager.sys.executable,
         str((REGISTRY_PATH.parent / "gigacode_server.py").resolve()),
     ]
+
+einherjar = servers["einherjar"]
+assert einherjar["required"] is False
+assert einherjar["transport"] == "stdio"
+assert einherjar["lifecycle"] == "on-demand"
+assert einherjar["runtime"]["kind"] == "bundled-python"
+assert einherjar["runtime"]["script"] == "einherjar_server.py"
+assert "requires_command" not in einherjar["runtime"]
+einherjar_command = manager.runtime_command(einherjar)
+assert einherjar_command == [
+    manager.sys.executable,
+    str((REGISTRY_PATH.parent / "einherjar_server.py").resolve()),
+]
 
 with tempfile.TemporaryDirectory() as tmp:
     secret_dir = Path(tmp) / "secrets"

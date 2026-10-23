@@ -30,6 +30,10 @@ CLI:
   harr kube sync [--allow-exec] [--no-check]
   harr kube status [--no-check]
   harr kubectl <kubectl args...>
+  harr ein configure                         # add/edit named Ein MCP workers
+  harr ein apply                             # publish to LeanCTX and host skills/policy
+  harr ein add --id NAME --adapter ADAPTER
+  harr ein list|show NAME|edit NAME|enable NAME|disable NAME|remove NAME|test NAME
   harr mcp list
   harr mcp available
   harr mcp configure [none|all|name1,name2]

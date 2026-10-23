@@ -43,6 +43,9 @@ LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected
 <!-- harr-mcp:gigacode:start -->
 When the optional GigaCode executor is enabled, normal implementation delegation uses the separately installed `$gigacode-executor` skill. Load `references/gigacode.md` only for bridge setup, transport semantics, cancellation, or diagnostics.
 <!-- harr-mcp:gigacode:end -->
+<!-- harr-mcp:einherjar:start -->
+When the optional Einherjar worker is enabled, normal backend-neutral implementation delegation uses the separately installed `$einherjar-worker` skill. Load `references/einherjar.md` for bridge/backend setup and diagnostics; use `docs/EINHERJAR_BRIDGE_CONTRACT.md` when implementing another CLI adapter.
+<!-- harr-mcp:einherjar:end -->
 
 Kubernetes is intentionally not an MCP component. `harr kube configure` captures the user's working kubectl configuration into Harr-owned private state, and `harr kubectl ...` executes the real kubectl with that managed config so isolated agent hosts do not need direct access to the original kubeconfig. Load `references/kubernetes.md` only for Kubernetes bridge setup/diagnostics.
 

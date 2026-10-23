@@ -45,6 +45,16 @@ case "$command" in
   kube) cmd_kube "$@" ;;
   kubectl) cmd_kubectl "$@" ;;
   mcp) cmd_mcp "$@" ;;
+  ein)
+    if [[ "${1:-}" == apply ]]; then
+      [[ $# -eq 1 ]] || die 'usage: harr ein apply'
+      cmd_leanctx_apply
+      cmd_agents_apply all
+      python3 "${HARR_COMMON_DIR}/hosts/codex-config.py" apply-ein-panels
+    else
+      python3 "${HARR_COMMON_DIR}/mcp/ein_instances.py" "$@"
+    fi
+    ;;
   status) cmd_status "$@" ;;
   uninstall) cmd_uninstall "$@" ;;
   version|--version|-V) printf 'Harr %s\n' "$HARR_VERSION" ;;

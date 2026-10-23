@@ -127,6 +127,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
         assert ("delegated scope is frozen for the parent" in policy) == ("gigacode" in expected)
         assert ("contract acceptance from the structured self-verification handoff" in policy) == ("gigacode" in expected)
+        assert ("use the installed `$einherjar-worker` skill" in policy) == ("einherjar" in expected)
+        assert ("einherjar::worker" in policy) == ("einherjar" in expected)
+        assert ("Vendor session ids are private to the bridge" in policy) == ("einherjar" in expected)
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -188,6 +191,13 @@ def check(spec: str, expected: list[str]) -> None:
             assert "wait` polls only inside the MCP bridge" in gigacode_text
             assert "do not return GigaCode event history" in gigacode_text
             assert "second full parent code review" in gigacode_text
+        einherjar_ref = filtered_skill / "references" / "einherjar.md"
+        assert einherjar_ref.exists() == ("einherjar" in expected)
+        if einherjar_ref.exists():
+            einherjar_text = einherjar_ref.read_text(encoding="utf-8")
+            assert "einherjar::worker" in einherjar_text
+            assert "`gigacode`" in einherjar_text and "`opencode`" in einherjar_text and "`codex`" in einherjar_text
+            assert "EINHERJAR_BRIDGE_CONTRACT.md" in einherjar_text
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -199,12 +209,14 @@ assert servers["grafana"]["required"] is False
 assert servers["jira"]["required"] is False
 assert servers["kibana"]["required"] is False
 assert servers["gigacode"]["required"] is False
+assert servers["einherjar"]["required"] is False
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
 check("gigacode", ["codegraph", "gigacode"])
+check("einherjar", ["codegraph", "einherjar"])
 check("kibana", ["codegraph", "kibana"])
-check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "jira"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira"])
 
 # Normal reinstall/update without an explicit selection must reuse the saved
 # optional set instead of resetting to required-only or all.
@@ -267,7 +279,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     assert names(effective) == ["codegraph"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "jira"]
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira"]
 
     failed = subprocess.run(
         [
