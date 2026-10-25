@@ -29,6 +29,8 @@ def tools():
  {"name":"show_gigacode_live","description":"Read-only: display the existing GigaCode session in an HTML panel; no job is started or modified. The transcript is app-only and is not returned to the model.","annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Existing GigaCode session UUID to display."}},"required":["session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_gigacode_ui","description":"App-only list of displayed GigaCode sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"release_done_notification_ui","description":"UI-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"claim_done_notification_ui","description":"UI-only: claim one completion notification for an active invocation.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"poll_gigacode_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(sid):
  with REGISTRY_LOCK:
@@ -137,6 +139,30 @@ def dispatch(req):
     ids=restored_sessions()
     record("restored_list",sessions=len(ids))
     result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
+   elif name=="release_done_notification_ui":
+    args=p.get("arguments") or {};sid=args.get("session_id","");scope_id=args.get("scope_id","")
+    if not isinstance(sid,str) or not gc._validate_session_id(sid) or lookup_scope(scope_id,sid) is None:
+     raise ValueError("unrecognized invocation scope")
+    claim=STATE/"delivered-completions"/(sid+".claimed")
+    with REGISTRY_LOCK:
+     if claim.is_file() and claim.read_text()==scope_id:claim.unlink()
+    result(id,{"content":[{"type":"text","text":"claim released"}],"structuredContent":{"ok":True}})
+   elif name=="claim_done_notification_ui":
+    args=p.get("arguments") or {};sid=args.get("session_id","")
+    if not isinstance(sid,str) or not gc._validate_session_id(sid) or lookup_scope(args.get("scope_id"),sid) is None:
+     raise ValueError("unrecognized invocation scope")
+    handoff=unbox(gc.status_tool({"session_id":sid}))
+    current=handoff.get("status")
+    claimed=False
+    if current in TERMINAL:
+     claim_dir=STATE/"delivered-completions";claim_dir.mkdir(exist_ok=True)
+     # File creation is atomic across MCP server instances/panels.
+     try:
+      fd=os.open(claim_dir/(sid+".claimed"),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+      with os.fdopen(fd,"w") as f:f.write(args["scope_id"])
+      claimed=True
+     except FileExistsError:pass
+    result(id,{"content":[{"type":"text","text":"notification claim"}],"structuredContent":{"claimed":claimed,"status":current,"handoff":handoff if claimed else None}})
    elif name=="poll_gigacode_ui":
     args=p.get("arguments") or {}
     sid=args.get("session_id","")

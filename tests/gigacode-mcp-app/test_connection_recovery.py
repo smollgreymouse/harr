@@ -20,8 +20,10 @@ def call(p,id,after):
 p=server()
 try:
  first=call(p,1,0)
- assert first["messages"],first
+ # A restored/terminal invocation may legitimately have no visible chat text:
+ # the structured handoff is protocol data and is intentionally not a panel message.
  cursor=first["revision"]
+ assert cursor >= int(info.get("initial_revision", 0)), first
  print("before crash: messages",len(first["messages"]),"cursor",cursor)
  # Kill server while an MCP request is still outstanding.
  p.stdin.write(json.dumps({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"poll_gigacode_ui","arguments":{"session_id":sid,"scope_id":scope_id,"after_revision":999999,"wait_ms":15000}}})+"\n");p.stdin.flush()

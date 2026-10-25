@@ -189,6 +189,7 @@ chat_path = Path(_sandbox.name) / "chat.jsonl"
 chat_rows = [
     {"timestamp": "t0", "type": "system", "systemPayload": {"uiEvent": {"event.name": "gigacode.tool_call"}}},
     {"timestamp": "t1", "type": "assistant", "message": {"parts": [
+        {"text": "Hidden model reasoning.", "thought": True},
         {"text": "First visible message."},
         {"functionCall": {"name": "read_file", "args": {"path": "x"}}},
     ]}},
@@ -203,6 +204,17 @@ chat_rows = [
     ]}},
     {"timestamp": "t5", "type": "assistant", "message": {"parts": [
         {"text": "Third visible message."},
+    ]}},
+    {"timestamp": "t6", "type": "assistant", "message": {"parts": [
+        {"text": json.dumps({
+            "status": "DONE",
+            "summary": "protocol-only handoff",
+            "changed": [],
+            "verified": [],
+            "self_review": {"criteria_complete": True, "diff_scope_clean": True, "unverified": []},
+            "escalation": None,
+            "blockers": [],
+        })},
     ]}},
 ]
 chat_path.write_text("\n".join(json.dumps(row) for row in chat_rows) + "\n", encoding="utf-8")
@@ -223,6 +235,8 @@ with patch.object(server, "_find_chat_path", return_value=chat_path):
     assert latest_data["has_more"] is False
     assert "secret tool output" not in latest["content"][0]["text"]
     assert "read_file" not in latest["content"][0]["text"]
+    assert "Hidden model reasoning." not in latest["content"][0]["text"]
+    assert "protocol-only handoff" not in latest["content"][0]["text"]
 
     incremental = server.messages_tool({
         "session_id": fake_sid,
@@ -256,6 +270,7 @@ old_prefix = (
 ).encode("utf-8")
 live_rows = [
     {"timestamp": "live1", "type": "assistant", "message": {"parts": [
+        {"text": "Hidden live reasoning.", "thought": True},
         {"text": "Working on the current turn."},
         {"functionCall": {"name": "read_file", "args": {"path": "x"}}},
     ]}},
@@ -314,6 +329,7 @@ assert [item["params"]["progress"] for item in progress_notifications] == [1.0, 
 assert all(item["params"]["progressToken"] == "ui-progress-1" for item in progress_notifications)
 assert "Old message" not in json.dumps(progress_notifications)
 assert "tool noise" not in json.dumps(progress_notifications)
+assert "Hidden live reasoning." not in json.dumps(progress_notifications)
 assert '"status": "DONE"' not in json.dumps(progress_notifications)
 
 # Cursor persists per job: a second wait emits nothing until more transcript is appended.
