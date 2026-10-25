@@ -71,6 +71,8 @@ def tools():
  {"name":"show_ein_live","description":"Read-only: display an existing Ein session in an HTML panel; no job is started or modified. The transcript is app-only and is not returned to the model.","annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"inputSchema":{"type":"object","properties":{"instance":{"type":"string","description":"User-configured Ein MCP name."},"session_id":{"type":"string","description":"Existing Ein session UUID to display."}},"required":["instance","session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_ein_ui","description":"App-only list of displayed Ein sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"claim_done_notification_ui","description":"App-only: claim a terminal completion notification once.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"release_done_notification_ui","description":"App-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"poll_ein_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(instance,sid):
  with REGISTRY_LOCK:
@@ -171,6 +173,31 @@ def dispatch(req):
     ids=restored_sessions()
     record("restored_list",sessions=len(ids))
     result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
+   elif name in ("claim_done_notification_ui","release_done_notification_ui"):
+    args=p.get("arguments") or {}
+    instance=instance_id(args.get("instance"));sid=args.get("session_id")
+    scope_id=args.get("scope_id")
+    if not isinstance(sid,str) or lookup_scope(scope_id,instance,sid) is None:
+     raise ValueError("unrecognized invocation scope")
+    mod,state=session_state(instance,sid)
+    claim_dir=STATE/"delivered-completions"/instance;claim_dir.mkdir(exist_ok=True,parents=True)
+    claim=claim_dir/(sid+".claimed")
+    if name=="release_done_notification_ui":
+     with REGISTRY_LOCK:
+      if claim.is_file() and claim.read_text()==scope_id:claim.unlink()
+     visible={"ok":True}
+    else:
+     handoff=unbox(mod.status_tool({"session_id":sid}))
+     current=handoff.get("status")
+     claimed=False
+     if current in TERMINAL:
+      try:
+       fd=os.open(claim,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+       with os.fdopen(fd,"w") as out:out.write(scope_id)
+       claimed=True
+      except FileExistsError:pass
+     visible={"claimed":claimed,"status":current,"handoff":handoff if claimed else None}
+    result(id,{"content":[{"type":"text","text":"UI only"}],"structuredContent":visible})
    elif name=="poll_ein_ui":
     args=p.get("arguments") or {}
     sid=args.get("session_id","")

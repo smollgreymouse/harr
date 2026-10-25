@@ -120,7 +120,7 @@ The server checks that the session belongs to the requested instance before
 opening a panel, pins the instance into each invocation scope, and blocks
 cross-instance reads. `poll_ein_ui`, `list_ein_ui` and lifecycle hooks remain
 app-only. Restoration records the pair `(instance, session_id)`; a single UI
-registration serves any number of CLI adapters, without additional model calls.
+registration serves any number of CLI adapters, without additional model calls. When a session started in the panel reaches a terminal state, the shared panel retains the installed GigaCode `ui/message` completion behavior, using an atomic app-only per-instance claim/release to avoid duplicates. It formats summary, terminal status, blockers, changed/verified evidence, UUID, job ID, elapsed time and exit code for the chat instead of dumping the JSON handoff. A failed delivery releases its claim.
 
 The source integration is installed by `common/hosts/codex-config.py` on normal
 host apply or by `harr ein apply`; the old per-instance app tables are removed in favor of one shared app.

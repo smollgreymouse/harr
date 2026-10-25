@@ -67,9 +67,9 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
         try:
             response=rpc(p,1,'tools/list')['result']['tools']
             tools={t['name']:t for t in response}
-            assert {'show_ein_live','panel_event_ui','list_ein_ui','poll_ein_ui'}==set(tools)
+            assert {'show_ein_live','panel_event_ui','list_ein_ui','poll_ein_ui','claim_done_notification_ui','release_done_notification_ui'}==set(tools)
             assert tools['show_ein_live']['_meta']['ui']['visibility']==['model','app']
-            for hidden in ('panel_event_ui','list_ein_ui','poll_ein_ui'):
+            for hidden in ('panel_event_ui','list_ein_ui','poll_ein_ui','claim_done_notification_ui','release_done_notification_ui'):
                 assert tools[hidden]['_meta']['ui']['visibility']==['app']
             uri=tools['show_ein_live']['_meta']['ui']['resourceUri']
             assert uri=='ui://harr-ein-ui/live.html'
@@ -117,6 +117,18 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
             assert 'error' in denied, denied
             listed=rpc(app,52,'tools/call',{'name':'list_ein_ui','arguments':{}})['result']['structuredContent']
             assert {'instance':'fake-panel','session_id':sid} in listed['sessions']
+            args={'instance':'fake-panel','session_id':sid,'scope_id':attached['scope_id']}
+            claim=rpc(app,55,'tools/call',{'name':'claim_done_notification_ui','arguments':args})['result']['structuredContent']
+            assert claim['claimed'] and claim['handoff']['status']=='DONE'
+            again=rpc(app,56,'tools/call',{'name':'claim_done_notification_ui','arguments':args})['result']['structuredContent']
+            assert not again['claimed']
+            wrong=rpc(app,57,'tools/call',{'name':'release_done_notification_ui','arguments':{**args,'instance':'open-review'}})
+            assert 'error' in wrong
+            release=rpc(app,58,'tools/call',{'name':'release_done_notification_ui','arguments':args})['result']['structuredContent']
+            assert release['ok']
+            reclaimed=rpc(app,59,'tools/call',{'name':'claim_done_notification_ui','arguments':args})['result']['structuredContent']
+            assert reclaimed['claimed']
+
             print('fake-panel detached lifecycle + UI restore PASS')
         finally:
             app.terminate();app.communicate(timeout=5)

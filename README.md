@@ -53,7 +53,7 @@ The old static GigaCode MCP remains selectable until an instance named
 All named instances share **one read-only Codex Desktop MCP App**,
 `harr-ein-ui::show_ein_live`. The call supplies the user-chosen MCP instance
 name and an existing Ein session UUID (it never launches a new model run), keeps `poll_ein_ui` and
-`list_ein_ui` app-only, and uses per-instance session/history files. This direct
+`list_ein_ui` app-only, and uses per-instance session/history files. It also delivers a concise terminal `ui/message` once per running session, with the final handoff status and diagnostics; it does not send the raw JSON envelope into chat. This direct
 MCP registration is distinct from the LeanCTX execution gateway.
 
 No running global Harr or Codex installation is modified by this source PR.

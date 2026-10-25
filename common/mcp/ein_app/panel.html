@@ -15,13 +15,43 @@ const panelId='panel-'+Math.random().toString(36).slice(2)+'-'+Date.now().toStri
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
 const colors={31:'red',32:'green',33:'yellow',34:'blue',35:'magenta',36:'cyan',91:'red',92:'green',93:'yellow',94:'blue',95:'magenta',96:'cyan'};
 function render(s){let out='',kind='',pos=0;for(const m of String(s).matchAll(/\x1b\[([0-9;]*)m/g)){let part=esc(s.slice(pos,m.index));out+=kind?'<span class="ansi-'+kind+'">'+part+'</span>':part;const cs=m[1].split(';').map(Number);if(cs.includes(0)||cs.includes(39))kind='';for(const c of cs)if(colors[c])kind=colors[c];pos=m.index+m[0].length;}const tail=esc(s.slice(pos));return out+(kind?'<span class="ansi-'+kind+'">'+tail+'</span>':tail)}
-let instance='',counter=1,pending=new Map(),sid='',scopeId='',revision=0,running=false,finished=false,initialized=false,stopped=false;
+let instance='',counter=1,pending=new Map(),sid='',scopeId='',revision=0,running=false,finished=false,initialized=false,stopped=false,notifyEligible=false;
 function request(method,params){const n=counter++;return new Promise((resolve,reject)=>{pending.set(n,{resolve,reject});parent.postMessage({jsonrpc:'2.0',id:n,method,params},'*');setTimeout(()=>{if(pending.has(n)){pending.delete(n);reject(new Error('timeout '+method))}},20000)})}
 async function appTool(name,args){const r=await request('tools/call',{name,arguments:args});if(r.isError)throw Error(JSON.stringify(r.content));return r.structuredContent||{}}
 function lifecycle(event){if(initialized)appTool('panel_event_ui',{panel_id:panelId,event,instance,session_id:sid}).catch(()=>{})}
 function append(text,kind=''){const row=document.createElement('div');row.className='line '+kind;row.innerHTML=render(text);lines.append(row);lines.scrollTop=lines.scrollHeight}
-function attach(data){if(!data?.scope_id||!data?.session_id)return;if(scopeId&&scopeId!==data.scope_id)return;instance=data.instance;sid=data.session_id;scopeId=data.scope_id;revision=data.initial_revision||0;append('Вызов: '+scopeId.slice(0,8)+' · '+instance+' '+sid.slice(0,8),'dim');lifecycle('subscribe');poll()}
-async function poll(){if(running||finished||!scopeId||stopped)return;running=true;try{const d=await appTool('poll_ein_ui',{instance,session_id:sid,scope_id:scopeId,after_revision:revision,wait_ms:10000});for(const m of d.messages||[])append(m.text||'');revision=d.revision??revision;status.textContent=d.status||'RUNNING';finished=['DONE','FAILED','CANCELLED','ESCALATE','TIMEOUT'].includes(d.status);if(finished){append('— '+d.status+' —',d.status==='DONE'?'ok':'error');lifecycle('completed')}}catch(e){status.textContent='RECONNECTING';lifecycle('poll_error')}finally{running=false;if(!finished&&!stopped)setTimeout(poll,300)}}
+function briefHandoff(h){
+ const label={DONE:'готово',FAILED:'ошибка',ESCALATE:'требуется решение',CANCELLED:'отменено',TIMEOUT:'тайм-аут'}[h.status]||h.status;
+ const lines=['**'+instance+' — '+label+'**'];
+ const disconnected=h.status==='FAILED'&&h.blockers?.some(b=>String(b.evidence||'').includes('owning MCP process exited'));
+ if(disconnected)lines.push('Исполнитель остановлен: закрылся управляющий MCP-процесс. Результат работы не получен.');
+ else if(h.summary)lines.push(h.summary);
+ if(disconnected&&h.summary)lines.push('Диагностика: '+h.summary);
+ const r=h.runtime||{};
+ const meta=[h.session_id&&'сессия '+h.session_id,r.job_id&&'задание '+r.job_id,r.elapsed_sec!=null&&'время '+r.elapsed_sec+' с',r.exit_code!=null&&'код '+r.exit_code].filter(Boolean);
+ if(meta.length)lines.push(meta.join(' · '));
+ if(h.changed?.length)lines.push('Изменено: '+h.changed.map(x=>typeof x==='string'?x:JSON.stringify(x)).join('; '));
+ if(h.verified?.length)lines.push('Проверено: '+h.verified.map(x=>typeof x==='string'?x:JSON.stringify(x)).join('; '));
+ if(h.blockers?.length)lines.push('Причина: '+h.blockers.map(x=>[x.kind,x.detail,x.evidence].filter(Boolean).join(' — ')).join('; '));
+ if(h.escalation)lines.push('Нужно решение: '+(typeof h.escalation==='string'?h.escalation:JSON.stringify(h.escalation)));
+ if(h.runtime?.phase&&h.runtime.phase!=='finished')lines.push('Фаза: '+h.runtime.phase);
+ return lines.join('\n');
+}
+async function announceDone(){
+ if(!notifyEligible)return;
+ notifyEligible=false;
+ try{
+  const args={instance,session_id:sid,scope_id:scopeId};
+  const claim=await appTool('claim_done_notification_ui',args);
+  if(!claim.claimed)return;
+  if(!claim.handoff||claim.handoff.status!==claim.status)throw Error('missing handoff');
+  const text=briefHandoff(claim.handoff)+'\n\nРезультат уже получен. Не запрашивай повторно status/messages/wait и не перезапускай исполнителя; оцени итог.';
+  try{await request('ui/message',{role:'user',content:[{type:'text',text}]});lifecycle('completion_message_sent')}
+  catch(e){await appTool('release_done_notification_ui',args).catch(()=>{});throw e}
+ }catch(e){lifecycle('completion_message_unavailable')}
+}
+function attach(data){if(!data?.scope_id||!data?.session_id)return;if(scopeId&&scopeId!==data.scope_id)return;instance=data.instance;sid=data.session_id;scopeId=data.scope_id;revision=data.initial_revision||0;notifyEligible=!['DONE','FAILED','CANCELLED','ESCALATE','TIMEOUT'].includes(data.status);append('Вызов: '+scopeId.slice(0,8)+' · '+instance+' '+sid.slice(0,8),'dim');lifecycle('subscribe');poll()}
+async function poll(){if(running||finished||!scopeId||stopped)return;running=true;try{const d=await appTool('poll_ein_ui',{instance,session_id:sid,scope_id:scopeId,after_revision:revision,wait_ms:10000});for(const m of d.messages||[])append(m.text||'');revision=d.revision??revision;status.textContent=d.status||'RUNNING';finished=['DONE','FAILED','CANCELLED','ESCALATE','TIMEOUT'].includes(d.status);if(finished){append('— '+d.status+' —',d.status==='DONE'?'ok':'error');lifecycle('completed');await announceDone()}}catch(e){status.textContent='RECONNECTING';lifecycle('poll_error')}finally{running=false;if(!finished&&!stopped)setTimeout(poll,300)}}
 window.addEventListener('message',ev=>{const o=ev.data||{};if(o.id!==undefined&&pending.has(o.id)){const p=pending.get(o.id);pending.delete(o.id);o.error?p.reject(Error(JSON.stringify(o.error))):p.resolve(o.result);return}if(o.method==='ui/notifications/tool-result'||o.method==='ui/notifications/tool-input'){let d=o.params?.result?.structuredContent||o.params?.structuredContent||o.params?.result?.content?.[0]?.text;if(typeof d==='string'){try{d=JSON.parse(d)}catch{}}attach(d)}});
 window.addEventListener('pagehide',()=>{stopped=true;lifecycle('pagehide')});document.addEventListener('visibilitychange',()=>lifecycle(document.hidden?'hidden':'visible'));
 (async()=>{try{await request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'harr-ein-ui',version:'0.4'},capabilities:{},appCapabilities:{}});parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');initialized=true;lifecycle('created');status.textContent='Ожидание вызова Ein'}catch(e){status.textContent='Init: '+e.message}})();
