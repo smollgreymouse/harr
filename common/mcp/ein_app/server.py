@@ -57,8 +57,25 @@ TERMINAL={"DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"}
 MAX_RESTORED_ACTIVE=8
 MAX_RESTORED_FINISHED=3
 LOG=STATE/"server.jsonl"
+# Registry bounds: the app server is long-lived; without these the scope
+# registry, claim directories, and event log grow for the life of the process.
+SCOPE_TTL_SEC=24*3600
+MAX_SCOPES=64
+MAX_CLAIM_FILES=128
+LOG_ROTATE_BYTES=5*1024*1024
+POLL_LOCK=threading.Lock()
+# (instance,sid) -> [byte offset, revision] into the append-only chat
+# transcript; lets the panel long-poll read only the tail instead of
+# re-parsing the whole JSONL on every 0.75s poll step. Only backends that
+# expose an offset reader (gigacode adapter) use the fast path.
+_TRANSCRIPT_CURSOR={}
 
 def record(event,**data):
+ with REGISTRY_LOCK:
+  try:
+   if LOG.exists() and LOG.stat().st_size>LOG_ROTATE_BYTES:
+    LOG.replace(LOG.with_name(LOG.name+".1"))
+  except OSError:pass
  with LOG.open("a") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
 def result(id,obj):
  with OUTPUT_LOCK: print(json.dumps({"jsonrpc":"2.0","id":id,"result":obj},ensure_ascii=False),flush=True)
@@ -89,12 +106,32 @@ def register(instance,sid):
 
 def register_scope(instance,session_id,after_revision):
  scope_id=str(uuid.uuid4())
+ now=time.time()
  with REGISTRY_LOCK:
   try: scopes=json.loads(SCOPES.read_text())
   except (OSError,ValueError):scopes={}
-  scopes[scope_id]={"instance":instance,"session_id":session_id,"initial_revision":after_revision}
+  if not isinstance(scopes,dict):scopes={}
+  # Drop scopes past their TTL; entries without a timestamp (older server
+  # versions) survive the TTL sweep but are evicted first by the cap.
+  scopes={k:v for k,v in scopes.items()
+          if isinstance(v,dict) and now-float(v.get("created") or now)<=SCOPE_TTL_SEC}
+  while len(scopes)>=MAX_SCOPES:
+   scopes.pop(next(iter(scopes)))
+  scopes[scope_id]={"instance":instance,"session_id":session_id,"initial_revision":after_revision,"created":now}
   temp=SCOPES.with_suffix(".tmp");temp.write_text(json.dumps(scopes));temp.replace(SCOPES)
  return scope_id
+
+def prune_claims(instance):
+ """Bound the per-instance delivered-completions directory."""
+ claim_dir=STATE/"delivered-completions"/instance
+ try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file()]
+ except OSError:return
+ if len(files)<=MAX_CLAIM_FILES:return
+ try: files.sort(key=lambda p:p.stat().st_mtime)
+ except OSError:return
+ for path in files[:len(files)-MAX_CLAIM_FILES]:
+  try: path.unlink()
+  except OSError:pass
 
 def lookup_scope(scope_id,instance,sid):
  with REGISTRY_LOCK:
@@ -121,11 +158,48 @@ def restored_sessions():
  active.sort(key=lambda x:x[0],reverse=True);finished.sort(key=lambda x:x[0],reverse=True)
  return [v for _,v in active[:MAX_RESTORED_ACTIVE]+finished[:MAX_RESTORED_FINISHED]]
 
+def _anchor_transcript_cursor(mod,instance,sid):
+ """Full-parse anchor for the incremental poll cursor (gigacode adapter)."""
+ offset,messages=mod._assistant_messages_after_offset(sid,0)
+ revision=len(messages)
+ with POLL_LOCK:
+  _TRANSCRIPT_CURSOR[(instance,sid)]=[offset,revision]
+ return revision
+
+def _messages_paged(mod,instance,sid,revision):
+ """messages_tool(after_revision=revision) with an incremental fast path.
+
+ Only backends exposing a byte-offset transcript reader (gigacode adapter)
+ take the fast path; response shape is identical to messages_tool either way.
+ """
+ incremental=hasattr(mod,"_assistant_messages_after_offset")
+ with POLL_LOCK:
+  cursor=_TRANSCRIPT_CURSOR.get((instance,sid)) if incremental else None
+ if incremental and cursor is None:
+  latest=_anchor_transcript_cursor(mod,instance,sid)
+  with POLL_LOCK: cursor=_TRANSCRIPT_CURSOR.get((instance,sid))
+  if cursor is None: cursor=[0,latest]
+ if incremental and revision==cursor[1]:
+  offset,new_messages=mod._assistant_messages_after_offset(sid,cursor[0])
+  if offset>=cursor[0]:
+   new_revision=cursor[1]+len(new_messages)
+   with POLL_LOCK:
+    known=_TRANSCRIPT_CURSOR.get((instance,sid))
+    if known is None or known[0]<=offset:
+     _TRANSCRIPT_CURSOR[(instance,sid)]=[offset,new_revision]
+   selected=new_messages[:50]
+   next_revision=cursor[1]+len(selected) if selected else cursor[1]
+   return {"revision":next_revision,"latest_revision":new_revision,
+           "has_more":new_revision>next_revision,"messages":selected}
+  # Transcript was truncated or replaced; drop the stale cursor.
+  with POLL_LOCK: _TRANSCRIPT_CURSOR.pop((instance,sid),None)
+ return unbox(mod.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
+
 def wait_events(instance,sid,revision,wait_ms):
  mod=backend(instance)
  deadline=time.monotonic()+wait_ms/1000
  while True:
-  msg=unbox(mod.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
+  msg=_messages_paged(mod,instance,sid,revision)
   status=unbox(mod.status_tool({"session_id":sid}))
   value=status.get("status","UNKNOWN")
   data={"messages":msg.get("messages",[]),"revision":msg.get("revision",revision),
@@ -181,6 +255,7 @@ def dispatch(req):
      raise ValueError("unrecognized invocation scope")
     mod,state=session_state(instance,sid)
     claim_dir=STATE/"delivered-completions"/instance;claim_dir.mkdir(exist_ok=True,parents=True)
+    prune_claims(instance)
     claim=claim_dir/(sid+".claimed")
     if name=="release_done_notification_ui":
      with REGISTRY_LOCK:

@@ -19,7 +19,7 @@ jobs:
           bash -n linux/files/mcp/harr-mcp-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
           for f in linux/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/mcp/gigacode_server.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py
+        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/mcp/gigacode_server.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py
       - name: MCP registry contract
         run: |
           python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
@@ -36,6 +36,15 @@ jobs:
         run: |
           python3 tests/gigacode-bridge.py
           python3 tests/gigacode-mcp-app/test_done_message.py
+      - name: Worker lifecycle reliability
+        run: |
+          python3 tests/gigacode-lifetime.py
+          python3 tests/worker-reliability.py
+      - name: Worker panel leak bounds
+        run: |
+          python3 tests/gigacode-mcp-app/test_unit.py
+          python3 tests/gigacode-mcp-app/test_owner_lifecycle.py
+          python3 tests/gigacode-mcp-app/test_leaks.py
       - name: Einherjar generic worker contract
         run: python3 tests/einherjar-bridge.py
       - name: Windows compatibility HTTPS Git transport contract
@@ -62,7 +71,7 @@ jobs:
           bash -n macos/files/mcp/harr-mcp-run macos/files/mcp/codegraph-cli macos/files/leanctx/lean-ctx-wrapper
           for f in macos/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/mcp/gigacode_server.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py
+        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/mcp/gigacode_server.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py
       - name: MCP registry contract
         shell: bash
         run: |
@@ -75,6 +84,15 @@ jobs:
         run: |
           python3 tests/gigacode-bridge.py
           python3 tests/gigacode-mcp-app/test_done_message.py
+      - name: Worker lifecycle reliability
+        run: |
+          python3 tests/gigacode-lifetime.py
+          python3 tests/worker-reliability.py
+      - name: Worker panel leak bounds
+        run: |
+          python3 tests/gigacode-mcp-app/test_unit.py
+          python3 tests/gigacode-mcp-app/test_owner_lifecycle.py
+          python3 tests/gigacode-mcp-app/test_leaks.py
       - name: Einherjar generic worker contract
         run: python3 tests/einherjar-bridge.py
       - name: Windows compatibility HTTPS Git transport contract
@@ -115,7 +133,7 @@ jobs:
           }
       - name: Python syntax
         shell: pwsh
-        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/mcp/gigacode_server.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py
+        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/mcp/gigacode_server.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py
       - name: MCP registry contract
         shell: pwsh
         run: |

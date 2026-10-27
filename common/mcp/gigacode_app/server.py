@@ -15,8 +15,24 @@ TERMINAL={"DONE","FAILED","CANCELLED","ESCALATE","TIMEOUT"}
 MAX_RESTORED_ACTIVE=8
 MAX_RESTORED_FINISHED=3
 LOG=STATE/"gigacode-ui-server.jsonl"
+# Registry bounds: the app server is long-lived; without these the scope
+# registry, claim directory, and event log grow for the life of the process.
+SCOPE_TTL_SEC=24*3600
+MAX_SCOPES=64
+MAX_CLAIM_FILES=128
+LOG_ROTATE_BYTES=5*1024*1024
+POLL_LOCK=threading.Lock()
+# sid -> [byte offset, revision] into the append-only chat transcript; lets
+# the panel long-poll read only the tail instead of re-parsing the whole
+# JSONL transcript on every 0.75s poll step.
+_TRANSCRIPT_CURSOR={}
 HTML=(pathlib.Path(__file__).with_name("panel.html")).read_text()
 def record(event,**data):
+ with REGISTRY_LOCK:
+  try:
+   if LOG.exists() and LOG.stat().st_size>LOG_ROTATE_BYTES:
+    LOG.replace(LOG.with_name(LOG.name+".1"))
+  except OSError:pass
  with LOG.open("a") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
 def result(id,obj):
  with OUTPUT_LOCK: print(json.dumps({"jsonrpc":"2.0","id":id,"result":obj},ensure_ascii=False),flush=True)
@@ -48,14 +64,34 @@ def register(sid):
 
 def register_scope(session_id, after_revision):
  scope_id=str(uuid.uuid4())
+ now=time.time()
  with REGISTRY_LOCK:
   try: scopes=json.loads(SCOPES.read_text())
   except (OSError,ValueError):scopes={}
-  scopes[scope_id]={"session_id":session_id,"initial_revision":after_revision}
+  if not isinstance(scopes,dict):scopes={}
+  # Drop scopes past their TTL; entries without a timestamp (older server
+  # versions) survive the TTL sweep but are evicted first by the cap.
+  scopes={k:v for k,v in scopes.items()
+          if isinstance(v,dict) and now-float(v.get("created") or now)<=SCOPE_TTL_SEC}
+  while len(scopes)>=MAX_SCOPES:
+   scopes.pop(next(iter(scopes)))
+  scopes[scope_id]={"session_id":session_id,"initial_revision":after_revision,"created":now}
   temp=SCOPES.with_suffix(".tmp")
   temp.write_text(json.dumps(scopes))
   temp.replace(SCOPES)
  return scope_id
+
+def prune_claims():
+ """Bound the delivered-completions directory; claims are diagnostic residue."""
+ claim_dir=STATE/"delivered-completions"
+ try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file()]
+ except OSError:return
+ if len(files)<=MAX_CLAIM_FILES:return
+ try: files.sort(key=lambda p:p.stat().st_mtime)
+ except OSError:return
+ for path in files[:len(files)-MAX_CLAIM_FILES]:
+  try: path.unlink()
+  except OSError:pass
 
 def lookup_scope(scope_id,session_id):
  with REGISTRY_LOCK:
@@ -89,11 +125,49 @@ def restored_sessions():
  return [sid for _,sid in active[:MAX_RESTORED_ACTIVE]+finished[:MAX_RESTORED_FINISHED]]
 
 
+def _anchor_transcript_cursor(sid):
+ """Full-parse anchor for the incremental poll cursor; one pass per session."""
+ offset,messages=gc._assistant_messages_after_offset(sid,0)
+ revision=len(messages)
+ with POLL_LOCK:
+  _TRANSCRIPT_CURSOR[sid]=[offset,revision]
+ return revision
+
+def _messages_paged(sid,revision):
+ """messages_tool(after_revision=revision) with an incremental fast path.
+
+ Full transcript re-parse on every poll step dominated panel CPU. When the
+ caller has caught up to the cursor, read only the appended tail; fall back
+ to the full parse while the caller pages from behind (attach/reconnect).
+ Response shape is identical to messages_tool.
+ """
+ with POLL_LOCK:
+  cursor=_TRANSCRIPT_CURSOR.get(sid)
+ if cursor is None:
+  latest=_anchor_transcript_cursor(sid)
+  with POLL_LOCK: cursor=_TRANSCRIPT_CURSOR.get(sid)
+  if cursor is None: cursor=[0,latest]
+ if revision==cursor[1]:
+  offset,new_messages=gc._assistant_messages_after_offset(sid,cursor[0])
+  if offset>=cursor[0]:
+   new_revision=cursor[1]+len(new_messages)
+   with POLL_LOCK:
+    known=_TRANSCRIPT_CURSOR.get(sid)
+    if known is None or known[0]<=offset:
+     _TRANSCRIPT_CURSOR[sid]=[offset,new_revision]
+   selected=new_messages[:50]
+   next_revision=cursor[1]+len(selected) if selected else cursor[1]
+   return {"revision":next_revision,"latest_revision":new_revision,
+           "has_more":new_revision>next_revision,"messages":selected}
+  # Transcript was truncated or replaced; drop the stale cursor.
+  with POLL_LOCK: _TRANSCRIPT_CURSOR.pop(sid,None)
+ return unbox(gc.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
+
 def wait_events(sid,revision,wait_ms):
  """Bounded server-side long poll. Independent cursor and deadline per panel."""
  deadline=time.monotonic()+wait_ms/1000
  while True:
-  msg=unbox(gc.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
+  msg=_messages_paged(sid,revision)
   status=unbox(gc.status_tool({"session_id":sid}))
   value=status.get("status","UNKNOWN")
   data={"messages":msg.get("messages",[]),"revision":msg.get("revision",revision),
@@ -156,6 +230,7 @@ def dispatch(req):
     claimed=False
     if current in TERMINAL:
      claim_dir=STATE/"delivered-completions";claim_dir.mkdir(exist_ok=True)
+     prune_claims()
      # File creation is atomic across MCP server instances/panels.
      try:
       fd=os.open(claim_dir/(sid+".claimed"),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
