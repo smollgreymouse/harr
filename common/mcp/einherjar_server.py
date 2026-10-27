@@ -37,6 +37,9 @@ DEFAULT_WAIT_TIMEOUT_SEC = 1500
 MAX_WAIT_TIMEOUT_SEC = 1500
 POLL_INTERVAL_SEC = 0.5
 STARTUP_WAIT_SEC = 3.0
+STATE_WRITE_HEARTBEAT_SEC = 5.0
+RSS_LOG_INTERVAL_SEC = 30.0
+DEFAULT_ARTIFACT_RETENTION_SEC = 14 * 86400
 INSTANCE_ID = os.environ.get("HARR_EIN_INSTANCE")
 if INSTANCE_ID and not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", INSTANCE_ID):
     raise SystemExit("invalid Ein MCP instance name")
@@ -131,15 +134,74 @@ def _write_state(session_id: str, state: dict) -> None:
 def _load_state(session_id: str) -> dict | None:
     try:
         value = json.loads(_state_path(session_id).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except json.JSONDecodeError as exc:
+        _log_event(session_id, "STATE_CORRUPT", path=str(_state_path(session_id)), error=str(exc))
         return None
-    return value if isinstance(value, dict) else None
+    except OSError:
+        return None
+    if not isinstance(value, dict):
+        _log_event(session_id, "STATE_CORRUPT", path=str(_state_path(session_id)), error="state is not a JSON object")
+        return None
+    return value
 
 
 def _append_log(session_id: str, message: str) -> None:
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with _runtime_log_path(session_id).open("a", encoding="utf-8") as handle:
         handle.write(f"{stamp} {message}\n")
+
+
+def _log_event(session_id: str, kind: str, **fields: object) -> None:
+    """Append a structured JSON event to the session runtime log."""
+    record = {"event": kind, "ts_epoch": round(time.time(), 3), "session_id": session_id}
+    record.update(fields)
+    try:
+        _append_log(session_id, json.dumps(record, sort_keys=True, ensure_ascii=False))
+    except OSError:
+        pass
+
+
+def _artifact_retention_sec() -> float:
+    raw = os.environ.get("HARR_WORKER_RETENTION_SEC")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return DEFAULT_ARTIFACT_RETENTION_SEC
+
+
+# Per-turn CLI output, worker process logs, and append-only runtime logs are
+# safe to age out; state/job/control files are lifecycle data and stay.
+_PRUNABLE_SUFFIXES = (".stdout", ".stderr", ".worker.log", ".runtime.log")
+
+
+def _prune_worker_artifacts() -> int:
+    """Remove stale worker artifacts from CACHE_ROOT (see gigacode_server).
+
+    Runs once per job launch; retention defaults to 14 days and is overridden
+    by HARR_WORKER_RETENTION_SEC (0 disables pruning).
+    """
+    retention = _artifact_retention_sec()
+    if retention <= 0:
+        return 0
+    now = time.time()
+    removed = 0
+    try:
+        entries = list(CACHE_ROOT.iterdir())
+    except OSError:
+        return 0
+    for item in entries:
+        if not item.is_file() or not item.name.endswith(_PRUNABLE_SUFFIXES):
+            continue
+        try:
+            if now - item.stat().st_mtime <= retention:
+                continue
+            item.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def _pid_alive(pid: object) -> bool:
@@ -222,6 +284,38 @@ def _owner_alive(owner: dict | None) -> bool:
     return identity is not None and identity == owner.get("start_ticks")
 
 
+def _pid_matches(pid: object, expected_start_ticks: object) -> bool:
+    """True when pid is alive and, when a start time was recorded, still the
+    same process. Guards status and launch gating against PID reuse."""
+    if not _pid_alive(pid):
+        return False
+    if expected_start_ticks is None:
+        return True
+    return _owner_identity(pid) == expected_start_ticks
+
+
+def _recorded_pid_running(state: dict) -> bool:
+    return _pid_matches(state.get("pid"), state.get("pid_start_ticks")) or _pid_matches(
+        state.get("worker_pid"), state.get("worker_pid_start_ticks")
+    )
+
+
+def _process_rss_kb(pid: object) -> int | None:
+    """Resident set size of a process in KiB; Linux only, None otherwise."""
+    if not sys.platform.startswith("linux") or not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+_FAILED_EVIDENCE_LOGGED: set[str] = set()
+
+
 def _request_cancel(session_id: str, job_id: str) -> None:
     target = _control_path(session_id, job_id)
     tmp = target.with_suffix(".tmp")
@@ -296,8 +390,20 @@ def status_tool(arguments: dict) -> dict:
                 "resumable": bool(state.get("vendor_session_id")),
             },
         })
-    running = _pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))
+    running = _recorded_pid_running(state)
     if state.get("phase") in {"queued", "running"} and not running:
+        failed_key = f"{session_id}:{state.get('job_id')}:{state.get('phase')}"
+        if failed_key not in _FAILED_EVIDENCE_LOGGED:
+            if len(_FAILED_EVIDENCE_LOGGED) > 256:
+                _FAILED_EVIDENCE_LOGGED.clear()
+            _FAILED_EVIDENCE_LOGGED.add(failed_key)
+            _log_event(
+                session_id, "FAILED_EVIDENCE",
+                phase=state.get("phase"), job_id=state.get("job_id"),
+                pid=state.get("pid"), worker_pid=state.get("worker_pid"),
+                worker_log=state.get("worker_log"),
+                stdout_path=state.get("stdout_path"), stderr_path=state.get("stderr_path"),
+            )
         return text_result({
             "session_id": session_id, "backend": state.get("backend"), "status": "FAILED",
             "summary": "Detached external worker stopped without a final handoff.",
@@ -383,7 +489,7 @@ def cancel_tool(arguments: dict) -> dict:
     job_id = state.get("job_id")
     if not isinstance(job_id, str) or not job_id:
         return text_result({"session_id": session_id, "status": "FAILED", "summary": "Session has no active job."}, is_error=True)
-    if not (_pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))):
+    if not _recorded_pid_running(state):
         return text_result({"session_id": session_id, "status": "ALREADY_STOPPED", "summary": "Worker is not running."})
     _request_cancel(session_id, job_id)
     _append_log(session_id, f"CANCEL_REQUEST job={job_id}")
@@ -465,12 +571,18 @@ def _run_turn(spec: dict) -> int:
                 "backend": backend, "backend_config": backend_config, "pid": process.pid,
                 "worker_pid": os.getpid(), "cwd": str(ROOT), "started_epoch": started_epoch,
                 "elapsed_sec": 0.0, "timeout_sec": timeout_sec,
+                "pid_start_ticks": _owner_identity(process.pid),
+                "worker_pid_start_ticks": _owner_identity(os.getpid()),
                 "stdout_path": str(stdout_path), "stderr_path": str(stderr_path),
             "startup_confirmed": False,
             }
             _write_state(session_id, state)
             _append_log(session_id, f"START backend={backend} mode={mode} job={job_id} pid={process.pid}")
+            _log_event(session_id, "START", backend=backend, mode=mode, job_id=job_id, pid=process.pid)
             terminal_reason = None
+            last_state_write = started
+            last_state_payload_key: str | None = None
+            last_rss_log: float | None = None
             while process.poll() is None:
                 elapsed = time.monotonic() - started
                 state["elapsed_sec"] = round(elapsed, 1)
@@ -485,18 +597,55 @@ def _run_turn(spec: dict) -> int:
                                 state["startup_confirmed"] = True
                     except OSError:
                         pass
-                _write_state(session_id, state)
+                # The 0.5s monitor loop used to rewrite the state file on every
+                # iteration; write only on real change or the heartbeat instead.
+                state_payload_key = json.dumps(
+                    {k: v for k, v in state.items() if k != "elapsed_sec"},
+                    sort_keys=True, ensure_ascii=False,
+                )
+                now_monotonic = time.monotonic()
+                if (
+                    state_payload_key != last_state_payload_key
+                    or now_monotonic - last_state_write >= STATE_WRITE_HEARTBEAT_SEC
+                ):
+                    _write_state(session_id, state)
+                    last_state_payload_key = state_payload_key
+                    last_state_write = now_monotonic
+                if last_rss_log is None or now_monotonic - last_rss_log >= RSS_LOG_INTERVAL_SEC:
+                    rss_kb = _process_rss_kb(process.pid)
+                    if rss_kb is not None:
+                        _log_event(session_id, "RSS", pid=process.pid, rss_kb=rss_kb,
+                                   elapsed_sec=round(elapsed, 1))
+                    last_rss_log = now_monotonic
                 if not _owner_alive(owner):
                     terminal_reason = "owner_disconnected"
+                    observed_start = _owner_identity(owner["pid"]) if owner else None
+                    evidence = {
+                        "event": "MCP_OWNER_LOST",
+                        "classification": "owner_disappeared_possible_bridge_restart",
+                        "timestamp_epoch": time.time(),
+                        "session_id": session_id,
+                        "job_id": job_id,
+                        "owner_pid": owner["pid"] if owner else None,
+                        "owner_start_ticks": owner["start_ticks"] if owner else None,
+                        "observed_start_ticks": observed_start,
+                        "backend_pid": process.pid,
+                        "reason": "owner_pid_missing" if observed_start is None else "owner_pid_reused",
+                    }
+                    # Persist before termination: this record survives a worker crash.
                     _append_log(session_id, f"OWNER_LOST job={job_id} pid={process.pid}")
+                    _log_event(session_id, "OWNER_LOST",
+                               **{k: v for k, v in evidence.items() if k != "session_id"})
                     _terminate_process_tree(process)
                     break
                 if _cancel_requested(session_id, job_id):
                     terminal_reason = "cancelled"
+                    _log_event(session_id, "CANCEL", job_id=job_id, pid=process.pid)
                     _terminate_process_tree(process)
                     break
                 if timeout_sec > 0 and elapsed >= timeout_sec:
                     terminal_reason = "timed_out"
+                    _log_event(session_id, "TIMEOUT", job_id=job_id, elapsed_sec=round(elapsed, 1), pid=process.pid)
                     _terminate_process_tree(process)
                     break
                 time.sleep(POLL_INTERVAL_SEC)
@@ -521,11 +670,27 @@ def _run_turn(spec: dict) -> int:
             final = adapter.final_output(stdout, stderr)
             handoff, _ = parse_worker_handoff(final, int(exit_code), stderr)
         elapsed = round(time.monotonic() - started, 1)
-        _write_state(session_id, {
+        final_state = {
             **state, "phase": "finished", "elapsed_sec": elapsed, "exit_code": exit_code,
             "vendor_session_id": vendor_session_id, "handoff": handoff,
-        })
+        }
+        if terminal_reason == "owner_disconnected":
+            final_state["cancel_reason"] = "owner_disconnected"
+            final_state["owner_loss"] = {
+                "event": "MCP_OWNER_LOST",
+                "classification": "owner_disappeared_possible_bridge_restart",
+                "timestamp_epoch": time.time(),
+                "session_id": session_id,
+                "job_id": job_id,
+                "owner_pid": owner["pid"] if owner else None,
+                "owner_start_ticks": owner["start_ticks"] if owner else None,
+                "backend_pid": state.get("pid"),
+                "reason": "owner_pid_reused" if _owner_identity((owner or {}).get("pid")) is not None else "owner_pid_missing",
+            }
+        _write_state(session_id, final_state)
         _append_log(session_id, f"END backend={backend} job={job_id} exit={exit_code} status={handoff.get('status')}")
+        _log_event(session_id, "END", backend=backend, job_id=job_id, exit_code=exit_code,
+                   status=handoff.get("status"), terminal_reason=terminal_reason)
     finally:
         adapter.cleanup()
         _cleanup_control(session_id, job_id)
@@ -538,10 +703,9 @@ def _run_turn(spec: dict) -> int:
 
 def launch_job(session_id: str, backend: str, backend_config: dict | None, prompt: str, timeout_sec: int, mode: str, vendor_session_id: str | None = None) -> dict:
     existing = _load_state(session_id)
-    if existing and existing.get("phase") in {"queued", "running"} and (
-        _pid_alive(existing.get("pid")) or _pid_alive(existing.get("worker_pid"))
-    ):
+    if existing and existing.get("phase") in {"queued", "running"} and _recorded_pid_running(existing):
         raise ValueError("session already has a running Einherjar job")
+    removed = _prune_worker_artifacts()
     job_id = uuid.uuid4().hex[:12]
     job_path = _job_path(session_id, job_id)
     spec = {
@@ -573,6 +737,10 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
     state["worker_pid"] = worker.pid
     state["worker_log"] = str(worker_log)
     _write_state(session_id, state)
+    _append_log(session_id, f"DETACHED job={job_id} worker_pid={worker.pid} timeout_sec={timeout_sec}")
+    _log_event(session_id, "DETACHED", job_id=job_id, worker_pid=worker.pid, timeout_sec=timeout_sec)
+    if removed:
+        _log_event(session_id, "PRUNE", removed=removed)
 
     deadline = time.monotonic() + STARTUP_WAIT_SEC
     while time.monotonic() < deadline:

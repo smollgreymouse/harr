@@ -39,6 +39,9 @@ MAX_PROGRESS_MESSAGE_CHARS = 8000
 STARTUP_CONFIRM_TIMEOUT_SEC = 20.0
 STARTUP_CONFIRM_POLL_SEC = 0.25
 POLL_INTERVAL_SEC = 5.0
+STATE_WRITE_HEARTBEAT_SEC = 5.0
+RSS_LOG_INTERVAL_SEC = 30.0
+DEFAULT_ARTIFACT_RETENTION_SEC = 14 * 86400
 WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
 CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / ("harr/einherjar/" + SERVER_NAME if os.environ.get("HARR_EIN_INSTANCE") else "gigacode-mcp") / WORKSPACE_KEY
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -280,6 +283,96 @@ def _append_runtime_log(session_id: str, message: str) -> None:
         handle.write(f"{stamp} {message}\n")
 
 
+def _log_event(session_id: str, kind: str, **fields: object) -> None:
+    """Append a structured JSON event to the session runtime log.
+
+    Human-readable lines stay alongside; every machine-readable record is one
+    JSON line so operators and tooling can filter by "event".
+    """
+    record = {"event": kind, "ts_epoch": round(time.time(), 3), "session_id": session_id}
+    record.update(fields)
+    try:
+        _append_runtime_log(session_id, json.dumps(record, sort_keys=True, ensure_ascii=False))
+    except OSError:
+        pass
+
+
+def _artifact_retention_sec() -> float:
+    raw = os.environ.get("HARR_WORKER_RETENTION_SEC")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return DEFAULT_ARTIFACT_RETENTION_SEC
+
+
+# Artifacts whose loss never affects the state machine: per-turn CLI output,
+# worker process logs, stream cursors, and append-only runtime logs of
+# whatever sessions they belong to. State/job/control files are lifecycle
+# data and are never pruned here.
+_PRUNABLE_SUFFIXES = (".stdout", ".stderr", ".worker.log", ".progress.cursor", ".runtime.log")
+_CHAT_PATH_CACHE: dict[str, Path] = {}
+_CHAT_PATH_CACHE_LIMIT = 512
+
+
+def _find_chat_path(session_id: str) -> Path | None:
+    """Locate the recorded GigaCode chat transcript for a session.
+
+    The chat path never changes for a session, but the projects tree can hold
+    thousands of entries; every poll used to re-glob it. Cache the resolved
+    path per session and only fall back to a fresh glob while it is unknown.
+    """
+    cached = _CHAT_PATH_CACHE.get(session_id)
+    if cached is not None:
+        try:
+            if cached.is_file():
+                return cached
+        except OSError:
+            pass
+        _CHAT_PATH_CACHE.pop(session_id, None)
+    base = Path.home() / ".gigacode" / "projects"
+    if not base.is_dir():
+        return None
+    for candidate in base.glob(f"*/chats/{session_id}.jsonl"):
+        if candidate.is_file():
+            if len(_CHAT_PATH_CACHE) >= _CHAT_PATH_CACHE_LIMIT:
+                _CHAT_PATH_CACHE.clear()
+            _CHAT_PATH_CACHE[session_id] = candidate
+            return candidate
+    return None
+
+
+def _prune_worker_artifacts() -> int:
+    """Remove stale worker artifacts from CACHE_ROOT.
+
+    Runs once per job launch. Files untouched for longer than the retention
+    window (default 14 days, HARR_WORKER_RETENTION_SEC override, 0 disables)
+    are deleted; active sessions rewrite these files continuously, so nothing
+    live is affected.
+    """
+    retention = _artifact_retention_sec()
+    if retention <= 0:
+        return 0
+    now = time.time()
+    removed = 0
+    try:
+        entries = list(CACHE_ROOT.iterdir())
+    except OSError:
+        return 0
+    for item in entries:
+        if not item.is_file() or not item.name.endswith(_PRUNABLE_SUFFIXES):
+            continue
+        try:
+            if now - item.stat().st_mtime <= retention:
+                continue
+            item.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def _write_state(session_id: str, payload: dict) -> None:
     target = _state_path(session_id)
     tmp = target.with_suffix(".tmp")
@@ -296,19 +389,60 @@ def _load_state(session_id: str) -> dict | None:
         return None
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        # Corrupt state must be distinguishable from a missing session in the
+        # operator-facing log even though status stays UNKNOWN for both.
+        _log_event(session_id, "STATE_CORRUPT", path=str(path), error=str(exc))
         return None
-    return value if isinstance(value, dict) else None
+    if not isinstance(value, dict):
+        _log_event(session_id, "STATE_CORRUPT", path=str(path), error="state is not a JSON object")
+        return None
+    return value
 
 
-def _find_chat_path(session_id: str) -> Path | None:
-    base = Path.home() / ".gigacode" / "projects"
-    if not base.is_dir():
+def _pid_start_ticks(pid: object) -> str | None:
+    """Linux process start time; None when unavailable (non-Linux or gone)."""
+    if not sys.platform.startswith("linux"):
         return None
-    for candidate in base.glob(f"*/chats/{session_id}.jsonl"):
-        if candidate.is_file():
-            return candidate
+    if not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+        return stat.rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _pid_matches(pid: object, expected_start_ticks: object) -> bool:
+    """True when pid is alive and, when a start time was recorded, still the
+    same process. Guards status and launch gating against PID reuse."""
+    if not _pid_alive(pid):
+        return False
+    if expected_start_ticks is None:
+        return True
+    return _pid_start_ticks(pid) == expected_start_ticks
+
+
+def _recorded_pid_running(state: dict) -> bool:
+    return _pid_matches(state.get("pid"), state.get("pid_start_ticks")) or _pid_matches(
+        state.get("worker_pid"), state.get("worker_pid_start_ticks")
+    )
+
+
+def _process_rss_kb(pid: object) -> int | None:
+    """Resident set size of a process in KiB; Linux only, None otherwise."""
+    if not sys.platform.startswith("linux") or not isinstance(pid, int) or pid <= 0:
+        return None
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
     return None
+
+
+_FAILED_EVIDENCE_LOGGED: set[str] = set()
 
 
 def _chat_size(session_id: str) -> int:
@@ -672,10 +806,26 @@ def status_tool(arguments: dict) -> dict:
             "summary": "No detached runtime state exists for this session.",
         })
 
-    process_running = _pid_alive(state.get("pid")) or _pid_alive(state.get("worker_pid"))
+    process_running = _recorded_pid_running(state)
     phase = state.get("phase", "unknown")
 
     if phase in {"queued", "running", "completed", "cancelled"} and not process_running:
+        failed_key = f"{session_id}:{state.get('job_id')}:{phase}"
+        if failed_key not in _FAILED_EVIDENCE_LOGGED:
+            if len(_FAILED_EVIDENCE_LOGGED) > 256:
+                _FAILED_EVIDENCE_LOGGED.clear()
+            _FAILED_EVIDENCE_LOGGED.add(failed_key)
+            _log_event(
+                session_id,
+                "FAILED_EVIDENCE",
+                phase=phase,
+                job_id=state.get("job_id"),
+                pid=state.get("pid"),
+                worker_pid=state.get("worker_pid"),
+                worker_log=state.get("worker_log"),
+                stdout_path=state.get("stdout_path"),
+                stderr_path=state.get("stderr_path"),
+            )
         payload = {
             "session_id": session_id,
             "status": "FAILED",
@@ -894,6 +1044,7 @@ def run_gigacode(
         session_id,
         f"START turn={turn_key} timeout_sec={timeout_sec} cwd={ROOT}",
     )
+    _log_event(session_id, "START", turn=turn_key, timeout_sec=timeout_sec, cwd=str(ROOT))
 
     with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open(
         "w", encoding="utf-8"
@@ -910,6 +1061,9 @@ def run_gigacode(
 
         last_logged_chat_size = -1
         last_progress_monotonic = started_monotonic
+        last_state_write = started_monotonic - STATE_WRITE_HEARTBEAT_SEC
+        last_state_payload_key: str | None = None
+        last_rss_log: float | None = None
         while process.poll() is None:
             elapsed = time.monotonic() - started_monotonic
             chat_path = _find_chat_path(session_id)
@@ -930,6 +1084,8 @@ def run_gigacode(
                 "turn": turn_key,
                 "pid": process.pid,
                 "worker_pid": os.getpid(),
+                "pid_start_ticks": _pid_start_ticks(process.pid),
+                "worker_pid_start_ticks": _pid_start_ticks(os.getpid()),
                 "cwd": str(ROOT),
                 "started_epoch": started_epoch,
                 "elapsed_sec": round(elapsed, 1),
@@ -954,7 +1110,37 @@ def run_gigacode(
             state["stall_elapsed_sec"] = round(stall_elapsed, 1)
             state["stall_timeout_sec"] = DEFAULT_STALL_TIMEOUT_SEC
             state["hard_timeout_sec"] = timeout_sec
-            _write_state(session_id, state)
+
+            # Rewrite state only when something besides the progress counters
+            # moved, or on a fixed heartbeat, so fast poll loops stop paying a
+            # full atomic write every iteration.
+            state_payload_key = json.dumps(
+                {k: v for k, v in state.items() if k not in ("elapsed_sec", "stall_elapsed_sec")},
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            now_monotonic = time.monotonic()
+            if (
+                state_payload_key != last_state_payload_key
+                or now_monotonic - last_state_write >= STATE_WRITE_HEARTBEAT_SEC
+            ):
+                _write_state(session_id, state)
+                last_state_payload_key = state_payload_key
+                last_state_write = now_monotonic
+
+            # Memory of the agent CLI becomes observable; RSS growth/leaks
+            # surface in the runtime log instead of being invisible.
+            if last_rss_log is None or now_monotonic - last_rss_log >= RSS_LOG_INTERVAL_SEC:
+                rss_kb = _process_rss_kb(process.pid)
+                if rss_kb is not None:
+                    _log_event(
+                        session_id,
+                        "RSS",
+                        pid=process.pid,
+                        rss_kb=rss_kb,
+                        elapsed_sec=round(elapsed, 1),
+                    )
+                last_rss_log = now_monotonic
 
             # Log informative stall message but never kill for inactivity
             if DEFAULT_STALL_TIMEOUT_SEC > 0 and stall_elapsed >= DEFAULT_STALL_TIMEOUT_SEC:
@@ -995,6 +1181,7 @@ def run_gigacode(
                     session_id,
                     f"CANCEL turn={turn_key} job={job_id} pid={process.pid}",
                 )
+                _log_event(session_id, "CANCEL", turn=turn_key, job_id=job_id, pid=process.pid)
                 _terminate_process_tree(process)
                 stdout_handle.flush()
                 stderr_handle.flush()
@@ -1024,6 +1211,7 @@ def run_gigacode(
                     session_id,
                     f"TIMEOUT turn={turn_key} elapsed={elapsed:.1f}s pid={process.pid}",
                 )
+                _log_event(session_id, "TIMEOUT", turn=turn_key, elapsed_sec=round(elapsed, 1), pid=process.pid)
                 _terminate_process_tree(process)
 
                 stdout_handle.flush()
@@ -1080,6 +1268,7 @@ def run_gigacode(
         session_id,
         f"END turn={turn_key} exit_code={exit_code} elapsed={elapsed:.1f}s",
     )
+    _log_event(session_id, "END", turn=turn_key, exit_code=exit_code, elapsed_sec=round(elapsed, 1))
     return exit_code, output, stderr
 
 
@@ -1224,9 +1413,10 @@ def launch_detached_job(
 ) -> dict:
     existing = _load_state(session_id)
     if existing and existing.get("phase") in {"queued", "running", "completed"}:
-        if _pid_alive(existing.get("pid")) or _pid_alive(existing.get("worker_pid")):
+        if _recorded_pid_running(existing):
             raise ValueError("session already has a running GigaCode job")
 
+    removed = _prune_worker_artifacts()
     baseline_chat_size = _chat_size(session_id)
     job_id = uuid.uuid4().hex[:12]
     spec = {
@@ -1283,6 +1473,9 @@ def launch_detached_job(
         session_id,
         f"DETACHED job={job_id} worker_pid={worker.pid} timeout_sec={timeout_sec}",
     )
+    _log_event(session_id, "DETACHED", job_id=job_id, worker_pid=worker.pid, timeout_sec=timeout_sec)
+    if removed:
+        _log_event(session_id, "PRUNE", removed=removed)
 
     confirm_deadline = time.monotonic() + (
         STARTUP_CONFIRM_TIMEOUT_SEC
@@ -1391,6 +1584,7 @@ def run_detached_job(job_path_arg: str) -> int:
             "session_id": session_id,
             "job_id": job_id,
             "worker_pid": os.getpid(),
+            "worker_pid_start_ticks": _pid_start_ticks(os.getpid()),
             "started_epoch": initial.get("started_epoch", time.time()),
             "elapsed_sec": 0.0,
             "timeout_sec": timeout_sec,
@@ -1423,6 +1617,7 @@ def run_detached_job(job_path_arg: str) -> int:
         session_id,
         f"HANDOFF job={job_id} status={handoff.get('status')} exit_code={exit_code}",
     )
+    _log_event(session_id, "HANDOFF", job_id=job_id, status=handoff.get("status"), exit_code=exit_code)
     try:
         job_path.unlink()
     except OSError:
