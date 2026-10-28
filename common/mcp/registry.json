@@ -228,6 +228,40 @@
         }
       ],
       "trust_store": "system"
+    },
+    {
+      "name": "redash",
+      "label": "Redash",
+      "description": "metadata-only Redash queries, dashboards and schemas (no SQL execution or writes)",
+      "required": false,
+      "transport": "stdio",
+      "lifecycle": "on-demand",
+      "runtime": {
+        "kind": "npm",
+        "package": "@suthio/redash-mcp",
+        "version": "0.1.1",
+        "command": "redash-mcp",
+        "args": [],
+        "readonly_proxy": "redash_readonly_proxy.py",
+        "env": {
+          "MCP_TRANSPORT": "stdio",
+          "OTEL_SDK_DISABLED": "true"
+        }
+      },
+      "env_template": "redash.env.example",
+      "skill_reference": "redash.md",
+      "secrets": [
+        {
+          "name": "redash",
+          "file": "redash-api-key",
+          "prompt": "Redash API key",
+          "memento_id": "mcp/redash/default",
+          "target": {
+            "kind": "env",
+            "name": "REDASH_API_KEY"
+          }
+        }
+      ]
     }
   ]
 }

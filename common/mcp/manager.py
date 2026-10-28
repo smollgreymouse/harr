@@ -310,6 +310,11 @@ def runtime_command(server: dict) -> list[str]:
     if runtime.get("kind") == "bundled-python":
         script = DEFAULT_TEMPLATE_DIR / str(runtime["script"])
         return [executable, str(script), *args]
+    if runtime.get("readonly_proxy"):
+        proxy = DEFAULT_TEMPLATE_DIR / str(runtime["readonly_proxy"])
+        if not proxy.is_file() or proxy.parent != DEFAULT_TEMPLATE_DIR:
+            raise SystemExit(f"MCP {server['name']} read-only proxy missing")
+        return [sys.executable, str(proxy), executable, *args]
     return [executable, *args]
 
 

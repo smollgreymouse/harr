@@ -216,7 +216,7 @@ check("gitlab", ["codegraph", "gitlab"])
 check("gigacode", ["codegraph", "gigacode"])
 check("einherjar", ["codegraph", "einherjar"])
 check("kibana", ["codegraph", "kibana"])
-check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira", "redash"])
 
 # Normal reinstall/update without an explicit selection must reuse the saved
 # optional set instead of resetting to required-only or all.
@@ -279,7 +279,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     assert names(effective) == ["codegraph"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira"]
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira", "redash"]
 
     failed = subprocess.run(
         [
