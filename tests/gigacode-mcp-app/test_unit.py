@@ -1,6 +1,7 @@
 """Deterministic unit tests: no real GigaCode or Codex required."""
 import importlib.util
 import json
+import os
 import pathlib
 import tempfile
 import threading
@@ -9,9 +10,18 @@ import unittest
 from unittest.mock import patch
 
 MODULE=pathlib.Path(__file__).with_name("server.py")
-spec=importlib.util.spec_from_file_location("harr_live_panel_test",MODULE)
-srv=importlib.util.module_from_spec(spec)
-spec.loader.exec_module(srv)
+_sandbox=tempfile.TemporaryDirectory(prefix="harr-panel-unit-")
+_home=pathlib.Path(_sandbox.name)
+(_home/"codex-desktop-test/workspace").mkdir(parents=True)
+_cwd=os.getcwd()
+try:
+ with patch.dict(os.environ,{"HOME":str(_home),"USERPROFILE":str(_home)}):
+  spec=importlib.util.spec_from_file_location("harr_live_panel_test",MODULE)
+  srv=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(srv)
+finally:
+ os.chdir(_cwd)
+unittest.addModuleCleanup(_sandbox.cleanup)
 
 def boxed(d):return {"content":[{"type":"text","text":json.dumps(d)}]}
 
