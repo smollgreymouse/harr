@@ -45,6 +45,7 @@ jobs:
           python3 tests/gigacode-mcp-app/test_unit.py
           python3 tests/gigacode-mcp-app/test_owner_lifecycle.py
           python3 tests/gigacode-mcp-app/test_leaks.py
+          node tests/gigacode-mcp-app/test_panel_scripts.js
       - name: Einherjar generic worker contract
         run: python3 tests/einherjar-bridge.py
       - name: Windows compatibility HTTPS Git transport contract
@@ -93,6 +94,7 @@ jobs:
           python3 tests/gigacode-mcp-app/test_unit.py
           python3 tests/gigacode-mcp-app/test_owner_lifecycle.py
           python3 tests/gigacode-mcp-app/test_leaks.py
+          node tests/gigacode-mcp-app/test_panel_scripts.js
       - name: Einherjar generic worker contract
         run: python3 tests/einherjar-bridge.py
       - name: Windows compatibility HTTPS Git transport contract
@@ -147,6 +149,9 @@ jobs:
       - name: GigaCode black-box bridge contract
         shell: pwsh
         run: python tests/gigacode-bridge.py
+      - name: MCP App panel retry contract
+        shell: pwsh
+        run: node tests/gigacode-mcp-app/test_panel_scripts.js
       - name: Einherjar generic worker contract
         shell: pwsh
         run: python tests/einherjar-bridge.py

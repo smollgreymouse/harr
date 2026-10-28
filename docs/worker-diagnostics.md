@@ -24,6 +24,19 @@ restart therefore never loses state.
 | `~/.local/state/harr/gigacode-app/` | gigacode panel | `gigacode-ui-sessions.json` (ACTIVE), `gigacode-ui-invocations.json` (SCOPES), `gigacode-ui-server.jsonl` (+`.1` after rotation), `delivered-completions/` |
 | `~/.local/state/harr/ein-ui/` | ein panel | Same set per instance |
 
+The live-panel servers retain at most 256 in-memory transcript cursors each.
+Least-recently-used entries are discarded; a panel whose cursor was evicted
+falls back to the normal full transcript parse, so its revision and message
+results are unchanged. Ein keys cursors by both instance and session.
+
+Terminal completion notifications use a per-panel owner token for bounded
+retries (three attempts). A repeated claim from that same panel recovers a
+claim whose response was lost; a competing panel cannot take the claim. A
+panel teardown cancels retry timers and pending request timers. If `ui/message`
+delivered a message but its acknowledgement was lost, a retry can deliver a
+duplicate: the UI protocol provides no idempotency key, so exactly-once
+delivery cannot be guaranteed in that case.
+
 ## State phases (gigacode)
 
 `queued → running → (cancelling) → cancelled | timed_out | completed → finished`

@@ -63,12 +63,29 @@ SCOPE_TTL_SEC=24*3600
 MAX_SCOPES=64
 MAX_CLAIM_FILES=128
 LOG_ROTATE_BYTES=5*1024*1024
+MAX_TRANSCRIPT_CURSORS=256
 POLL_LOCK=threading.Lock()
 # (instance,sid) -> [byte offset, revision] into the append-only chat
 # transcript; lets the panel long-poll read only the tail instead of
 # re-parsing the whole JSONL on every 0.75s poll step. Only backends that
 # expose an offset reader (gigacode adapter) use the fast path.
 _TRANSCRIPT_CURSOR={}
+
+def _get_transcript_cursor(key):
+ with POLL_LOCK:
+  cursor=_TRANSCRIPT_CURSOR.pop(key,None)
+  if cursor is not None:_TRANSCRIPT_CURSOR[key]=cursor
+  return cursor
+
+def _remember_transcript_cursor(key,cursor):
+ with POLL_LOCK:
+  _TRANSCRIPT_CURSOR.pop(key,None)
+  _TRANSCRIPT_CURSOR[key]=cursor
+  while len(_TRANSCRIPT_CURSOR)>MAX_TRANSCRIPT_CURSORS:
+   _TRANSCRIPT_CURSOR.pop(next(iter(_TRANSCRIPT_CURSOR)))
+
+def _forget_transcript_cursor(key):
+ with POLL_LOCK:_TRANSCRIPT_CURSOR.pop(key,None)
 
 def record(event,**data):
  with REGISTRY_LOCK:
@@ -88,8 +105,8 @@ def tools():
  {"name":"show_ein_live","description":"Read-only: display an existing Ein session in an HTML panel; no job is started or modified. The transcript is app-only and is not returned to the model.","annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"inputSchema":{"type":"object","properties":{"instance":{"type":"string","description":"User-configured Ein MCP name."},"session_id":{"type":"string","description":"Existing Ein session UUID to display."}},"required":["instance","session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_ein_ui","description":"App-only list of displayed Ein sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
- {"name":"claim_done_notification_ui","description":"App-only: claim a terminal completion notification once.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
- {"name":"release_done_notification_ui","description":"App-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
+  {"name":"claim_done_notification_ui","description":"App-only: claim a terminal completion notification; owner_token makes retries idempotent.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"},"owner_token":{"type":"string","maxLength":128}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
+  {"name":"release_done_notification_ui","description":"App-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"},"owner_token":{"type":"string","maxLength":128}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"poll_ein_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(instance,sid):
  with REGISTRY_LOCK:
@@ -121,10 +138,10 @@ def register_scope(instance,session_id,after_revision):
   temp=SCOPES.with_suffix(".tmp");temp.write_text(json.dumps(scopes));temp.replace(SCOPES)
  return scope_id
 
-def prune_claims(instance):
+def prune_claims(instance,exclude=None):
  """Bound the per-instance delivered-completions directory."""
  claim_dir=STATE/"delivered-completions"/instance
- try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file()]
+ try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file() and p!=exclude]
  except OSError:return
  if len(files)<=MAX_CLAIM_FILES:return
  try: files.sort(key=lambda p:p.stat().st_mtime)
@@ -132,6 +149,43 @@ def prune_claims(instance):
  for path in files[:len(files)-MAX_CLAIM_FILES]:
   try: path.unlink()
   except OSError:pass
+
+def _claim_owner_token(args):
+ token=args.get("owner_token")
+ if token is not None and (not isinstance(token,str) or not token or len(token)>128 or any(ord(c)<32 for c in token)):
+  raise ValueError("invalid notification owner_token")
+ return token
+
+def _claim_is_owned(path,scope_id,owner_token):
+ if owner_token is None:return False
+ try:value=json.loads(path.read_text())
+ except (OSError,ValueError):return False
+ return isinstance(value,dict) and value.get("schema")==1 and value.get("scope_id")==scope_id and value.get("owner_token")==owner_token
+
+def claim_notification(path,scope_id,owner_token):
+ """Atomically claim once; same-owner retries recover a lost response."""
+ with REGISTRY_LOCK:
+  if path.exists():return _claim_is_owned(path,scope_id,owner_token)
+  try:fd=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
+  except FileExistsError:return _claim_is_owned(path,scope_id,owner_token)
+  try:
+   value=scope_id if owner_token is None else json.dumps({"schema":1,"scope_id":scope_id,"owner_token":owner_token,"created":time.time()})
+   with os.fdopen(fd,"w") as handle:handle.write(value)
+  except Exception:
+   try:path.unlink()
+   except OSError:pass
+   raise
+  return True
+
+def release_notification(path,scope_id,owner_token):
+ with REGISTRY_LOCK:
+  try:
+   if owner_token is None:
+    if path.read_text()!=scope_id:return False
+   elif not _claim_is_owned(path,scope_id,owner_token):return False
+   path.unlink()
+   return True
+  except OSError:return False
 
 def lookup_scope(scope_id,instance,sid):
  with REGISTRY_LOCK:
@@ -162,8 +216,7 @@ def _anchor_transcript_cursor(mod,instance,sid):
  """Full-parse anchor for the incremental poll cursor (gigacode adapter)."""
  offset,messages=mod._assistant_messages_after_offset(sid,0)
  revision=len(messages)
- with POLL_LOCK:
-  _TRANSCRIPT_CURSOR[(instance,sid)]=[offset,revision]
+ _remember_transcript_cursor((instance,sid),[offset,revision])
  return revision
 
 def _messages_paged(mod,instance,sid,revision):
@@ -173,11 +226,10 @@ def _messages_paged(mod,instance,sid,revision):
  take the fast path; response shape is identical to messages_tool either way.
  """
  incremental=hasattr(mod,"_assistant_messages_after_offset")
- with POLL_LOCK:
-  cursor=_TRANSCRIPT_CURSOR.get((instance,sid)) if incremental else None
+ cursor=_get_transcript_cursor((instance,sid)) if incremental else None
  if incremental and cursor is None:
   latest=_anchor_transcript_cursor(mod,instance,sid)
-  with POLL_LOCK: cursor=_TRANSCRIPT_CURSOR.get((instance,sid))
+  cursor=_get_transcript_cursor((instance,sid))
   if cursor is None: cursor=[0,latest]
  if incremental and revision==cursor[1]:
   offset,new_messages=mod._assistant_messages_after_offset(sid,cursor[0])
@@ -186,13 +238,16 @@ def _messages_paged(mod,instance,sid,revision):
    with POLL_LOCK:
     known=_TRANSCRIPT_CURSOR.get((instance,sid))
     if known is None or known[0]<=offset:
+     _TRANSCRIPT_CURSOR.pop((instance,sid),None)
      _TRANSCRIPT_CURSOR[(instance,sid)]=[offset,new_revision]
+     while len(_TRANSCRIPT_CURSOR)>MAX_TRANSCRIPT_CURSORS:
+      _TRANSCRIPT_CURSOR.pop(next(iter(_TRANSCRIPT_CURSOR)))
    selected=new_messages[:50]
    next_revision=cursor[1]+len(selected) if selected else cursor[1]
    return {"revision":next_revision,"latest_revision":new_revision,
            "has_more":new_revision>next_revision,"messages":selected}
   # Transcript was truncated or replaced; drop the stale cursor.
-  with POLL_LOCK: _TRANSCRIPT_CURSOR.pop((instance,sid),None)
+  _forget_transcript_cursor((instance,sid))
  return unbox(mod.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
 
 def wait_events(instance,sid,revision,wait_ms):
@@ -255,22 +310,18 @@ def dispatch(req):
      raise ValueError("unrecognized invocation scope")
     mod,state=session_state(instance,sid)
     claim_dir=STATE/"delivered-completions"/instance;claim_dir.mkdir(exist_ok=True,parents=True)
-    prune_claims(instance)
     claim=claim_dir/(sid+".claimed")
+    owner_token=_claim_owner_token(args)
     if name=="release_done_notification_ui":
-     with REGISTRY_LOCK:
-      if claim.is_file() and claim.read_text()==scope_id:claim.unlink()
+     release_notification(claim,scope_id,owner_token)
      visible={"ok":True}
     else:
      handoff=unbox(mod.status_tool({"session_id":sid}))
      current=handoff.get("status")
      claimed=False
      if current in TERMINAL:
-      try:
-       fd=os.open(claim,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-       with os.fdopen(fd,"w") as out:out.write(scope_id)
-       claimed=True
-      except FileExistsError:pass
+      prune_claims(instance,exclude=claim)
+      claimed=claim_notification(claim,scope_id,owner_token)
      visible={"claimed":claimed,"status":current,"handoff":handoff if claimed else None}
     result(id,{"content":[{"type":"text","text":"UI only"}],"structuredContent":visible})
    elif name=="poll_ein_ui":

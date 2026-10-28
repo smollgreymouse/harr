@@ -173,6 +173,37 @@ class GigacodePanelLeaks(unittest.TestCase):
    fresh=srv._messages_paged(SID,0)
    self.assertEqual([m["text"] for m in fresh["messages"]],["reset"])
 
+ def test_cursor_lru_eviction_falls_back_without_changing_page(self):
+  with patch.object(srv,"MAX_TRANSCRIPT_CURSORS",2),patch.dict(srv._TRANSCRIPT_CURSOR,{},clear=True), \
+       patch.object(srv.gc,"_assistant_messages_after_offset",return_value=(10,[{"text":"one"},{"text":"two"},{"text":"three"}])), \
+       patch.object(srv.gc,"messages_tool",return_value=boxed({"revision":3,"latest_revision":3,"has_more":False,"messages":[{"text":"one"},{"text":"two"},{"text":"three"}]})) as full:
+   for sid in (SID,SID2,"33333333-3333-3333-3333-333333333333"):
+    srv._remember_transcript_cursor(sid,[10,3])
+   self.assertEqual(len(srv._TRANSCRIPT_CURSOR),2)
+   self.assertNotIn(SID,srv._TRANSCRIPT_CURSOR)
+   page=srv._messages_paged(SID,0)
+   self.assertEqual(page["messages"],[{"text":"one"},{"text":"two"},{"text":"three"}])
+   self.assertEqual(page["revision"],3)
+   full.assert_called_once_with({"session_id":SID,"after_revision":0,"message_limit":50})
+
+ def test_owner_claim_retry_and_release_are_idempotent_and_isolated(self):
+  path=srv.STATE/"done.claimed"
+  self.assertTrue(srv.claim_notification(path,"scope", "panel-a"))
+  self.assertTrue(srv.claim_notification(path,"scope", "panel-a"))  # lost response retry
+  self.assertFalse(srv.claim_notification(path,"scope", "panel-b"))
+  self.assertFalse(srv.release_notification(path,"scope","panel-b"))
+  self.assertTrue(path.exists())
+  srv.release_notification(path,"scope","panel-a")
+  self.assertFalse(path.exists())
+  path.unlink(missing_ok=True)
+  path.write_text("legacy-scope")
+  self.assertFalse(srv.claim_notification(path,"legacy-scope","panel-a"))
+  self.assertFalse(srv.claim_notification(path,"legacy-scope",None))
+  self.assertFalse(srv.release_notification(path,"legacy-scope","panel-a"))
+  srv.release_notification(path,"legacy-scope",None)
+  self.assertFalse(path.exists())
+  self.assertTrue(srv.claim_notification(path,"legacy-scope",None))
+
 class EinPanelLeaks(unittest.TestCase):
  def setUp(self):
   self.t=tempfile.TemporaryDirectory();self.addCleanup(self.t.cleanup)
@@ -215,5 +246,34 @@ class EinPanelLeaks(unittest.TestCase):
    for i in range(50):
     ein_srv.record("app_poll",session_id=SID,padding="x"*60,count=i)
   self.assertTrue(log.with_name(log.name+".1").exists())
+
+ def test_cursor_lru_keeps_instances_independent_and_eviction_falls_back(self):
+  with patch.object(ein_srv,"MAX_TRANSCRIPT_CURSORS",2),patch.dict(ein_srv._TRANSCRIPT_CURSOR,{},clear=True), \
+       patch.object(ein_srv,"unbox",return_value={"revision":3,"latest_revision":3,"has_more":False,"messages":[{"text":"one"}]}), \
+       patch.object(ein_srv,"backend") as backend:
+   mod=type("Backend",(),{"_assistant_messages_after_offset":lambda self,sid,offset:(10,[{"text":"one"},{"text":"two"},{"text":"three"}]),"messages_tool":lambda self,args:boxed({"revision":3,"latest_revision":3,"has_more":False,"messages":[{"text":"one"}]})})()
+   backend.return_value=mod
+   ein_srv._remember_transcript_cursor(("alpha",SID),[10,3])
+   ein_srv._remember_transcript_cursor(("beta",SID),[10,3])
+   self.assertIsNotNone(ein_srv._get_transcript_cursor(("alpha",SID)))
+   ein_srv._remember_transcript_cursor(("gamma",SID),[10,3])
+   self.assertNotIn(("beta",SID),ein_srv._TRANSCRIPT_CURSOR)
+   page=ein_srv._messages_paged(mod,"beta",SID,0)
+   self.assertEqual(page["revision"],3)
+   self.assertEqual(len(ein_srv._TRANSCRIPT_CURSOR),2)
+
+ def test_owner_claim_retry_and_legacy_claim_compatibility(self):
+  path=ein_srv.STATE/"done.claimed"
+  self.assertTrue(ein_srv.claim_notification(path,"scope", "panel-a"))
+  self.assertTrue(ein_srv.claim_notification(path,"scope", "panel-a"))
+  self.assertFalse(ein_srv.claim_notification(path,"scope", "panel-b"))
+  self.assertFalse(ein_srv.release_notification(path,"scope","panel-b"))
+  self.assertTrue(ein_srv.release_notification(path,"scope","panel-a"))
+  path.unlink(missing_ok=True)
+  path.write_text("legacy-scope")
+  self.assertFalse(ein_srv.claim_notification(path,"legacy-scope",None))
+  self.assertFalse(ein_srv.release_notification(path,"legacy-scope","panel-a"))
+  self.assertTrue(ein_srv.release_notification(path,"legacy-scope",None))
+  self.assertTrue(ein_srv.claim_notification(path,"legacy-scope",None))
 
 if __name__=="__main__":unittest.main(verbosity=2)

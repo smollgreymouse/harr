@@ -21,6 +21,7 @@ SCOPE_TTL_SEC=24*3600
 MAX_SCOPES=64
 MAX_CLAIM_FILES=128
 LOG_ROTATE_BYTES=5*1024*1024
+MAX_TRANSCRIPT_CURSORS=256
 POLL_LOCK=threading.Lock()
 # sid -> [byte offset, revision] into the append-only chat transcript; lets
 # the panel long-poll read only the tail instead of re-parsing the whole
@@ -45,8 +46,8 @@ def tools():
  {"name":"show_gigacode_live","description":"Read-only: display the existing GigaCode session in an HTML panel; no job is started or modified. The transcript is app-only and is not returned to the model.","annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"inputSchema":{"type":"object","properties":{"session_id":{"type":"string","description":"Existing GigaCode session UUID to display."}},"required":["session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_gigacode_ui","description":"App-only list of displayed GigaCode sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
- {"name":"release_done_notification_ui","description":"UI-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
- {"name":"claim_done_notification_ui","description":"UI-only: claim one completion notification for an active invocation.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"scope_id":{"type":"string"}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"release_done_notification_ui","description":"UI-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"scope_id":{"type":"string"},"owner_token":{"type":"string","maxLength":128}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"claim_done_notification_ui","description":"UI-only: claim one completion notification for an active invocation; owner_token makes retries idempotent.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"scope_id":{"type":"string"},"owner_token":{"type":"string","maxLength":128}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"poll_gigacode_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(sid):
  with REGISTRY_LOCK:
@@ -81,10 +82,10 @@ def register_scope(session_id, after_revision):
   temp.replace(SCOPES)
  return scope_id
 
-def prune_claims():
+def prune_claims(exclude=None):
  """Bound the delivered-completions directory; claims are diagnostic residue."""
  claim_dir=STATE/"delivered-completions"
- try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file()]
+ try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file() and p!=exclude]
  except OSError:return
  if len(files)<=MAX_CLAIM_FILES:return
  try: files.sort(key=lambda p:p.stat().st_mtime)
@@ -92,6 +93,47 @@ def prune_claims():
  for path in files[:len(files)-MAX_CLAIM_FILES]:
   try: path.unlink()
   except OSError:pass
+
+def _claim_owner_token(args):
+ token=args.get("owner_token")
+ if token is not None and (not isinstance(token,str) or not token or len(token)>128 or any(ord(c)<32 for c in token)):
+  raise ValueError("invalid notification owner token")
+ return token
+
+def _claim_is_owned(path,scope_id,owner_token):
+ if owner_token is None:return False
+ try: value=json.loads(path.read_text())
+ except (OSError,ValueError):return False
+ return (isinstance(value,dict) and value.get("schema")==1 and
+         value.get("scope_id")==scope_id and value.get("owner_token")==owner_token)
+
+def claim_notification(path,scope_id,owner_token):
+ """Create a claim or idempotently recover the same panel's lost response.
+
+ Legacy callers without an owner token keep the original text-file behavior.
+ """
+ with REGISTRY_LOCK:
+  if path.exists():return _claim_is_owned(path,scope_id,owner_token)
+  try:fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+  except FileExistsError:return _claim_is_owned(path,scope_id,owner_token)
+  try:
+   with os.fdopen(fd,"w") as out:
+    if owner_token is None:out.write(scope_id)
+    else:json.dump({"schema":1,"scope_id":scope_id,"owner_token":owner_token,"created":time.time()},out)
+   return True
+  except Exception:
+   try:path.unlink()
+   except OSError:pass
+   raise
+
+def release_notification(path,scope_id,owner_token):
+ with REGISTRY_LOCK:
+  if not path.is_file():return
+  if owner_token is None:
+   # Compatibility for panels from before owner tokens existed.
+   if path.read_text()==scope_id:path.unlink()
+  elif _claim_is_owned(path,scope_id,owner_token):
+   path.unlink()
 
 def lookup_scope(scope_id,session_id):
  with REGISTRY_LOCK:
@@ -129,9 +171,24 @@ def _anchor_transcript_cursor(sid):
  """Full-parse anchor for the incremental poll cursor; one pass per session."""
  offset,messages=gc._assistant_messages_after_offset(sid,0)
  revision=len(messages)
- with POLL_LOCK:
-  _TRANSCRIPT_CURSOR[sid]=[offset,revision]
+ _remember_transcript_cursor(sid,[offset,revision])
  return revision
+
+def _get_transcript_cursor(sid):
+ with POLL_LOCK:
+  value=_TRANSCRIPT_CURSOR.pop(sid,None)
+  if value is not None:_TRANSCRIPT_CURSOR[sid]=value
+  return value
+
+def _remember_transcript_cursor(sid,cursor):
+ with POLL_LOCK:
+  _TRANSCRIPT_CURSOR.pop(sid,None)
+  _TRANSCRIPT_CURSOR[sid]=cursor
+  while len(_TRANSCRIPT_CURSOR)>MAX_TRANSCRIPT_CURSORS:
+   _TRANSCRIPT_CURSOR.pop(next(iter(_TRANSCRIPT_CURSOR)))
+
+def _forget_transcript_cursor(sid):
+ with POLL_LOCK:_TRANSCRIPT_CURSOR.pop(sid,None)
 
 def _messages_paged(sid,revision):
  """messages_tool(after_revision=revision) with an incremental fast path.
@@ -141,26 +198,24 @@ def _messages_paged(sid,revision):
  to the full parse while the caller pages from behind (attach/reconnect).
  Response shape is identical to messages_tool.
  """
- with POLL_LOCK:
-  cursor=_TRANSCRIPT_CURSOR.get(sid)
+ cursor=_get_transcript_cursor(sid)
  if cursor is None:
   latest=_anchor_transcript_cursor(sid)
-  with POLL_LOCK: cursor=_TRANSCRIPT_CURSOR.get(sid)
+  cursor=_get_transcript_cursor(sid)
   if cursor is None: cursor=[0,latest]
  if revision==cursor[1]:
   offset,new_messages=gc._assistant_messages_after_offset(sid,cursor[0])
   if offset>=cursor[0]:
    new_revision=cursor[1]+len(new_messages)
-   with POLL_LOCK:
-    known=_TRANSCRIPT_CURSOR.get(sid)
-    if known is None or known[0]<=offset:
-     _TRANSCRIPT_CURSOR[sid]=[offset,new_revision]
+   known=_get_transcript_cursor(sid)
+   if known is None or known[0]<=offset:
+    _remember_transcript_cursor(sid,[offset,new_revision])
    selected=new_messages[:50]
    next_revision=cursor[1]+len(selected) if selected else cursor[1]
    return {"revision":next_revision,"latest_revision":new_revision,
            "has_more":new_revision>next_revision,"messages":selected}
   # Transcript was truncated or replaced; drop the stale cursor.
-  with POLL_LOCK: _TRANSCRIPT_CURSOR.pop(sid,None)
+  _forget_transcript_cursor(sid)
  return unbox(gc.messages_tool({"session_id":sid,"after_revision":revision,"message_limit":50}))
 
 def wait_events(sid,revision,wait_ms):
@@ -215,14 +270,15 @@ def dispatch(req):
     result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
    elif name=="release_done_notification_ui":
     args=p.get("arguments") or {};sid=args.get("session_id","");scope_id=args.get("scope_id","")
+    owner_token=_claim_owner_token(args)
     if not isinstance(sid,str) or not gc._validate_session_id(sid) or lookup_scope(scope_id,sid) is None:
      raise ValueError("unrecognized invocation scope")
     claim=STATE/"delivered-completions"/(sid+".claimed")
-    with REGISTRY_LOCK:
-     if claim.is_file() and claim.read_text()==scope_id:claim.unlink()
+    release_notification(claim,scope_id,owner_token)
     result(id,{"content":[{"type":"text","text":"claim released"}],"structuredContent":{"ok":True}})
    elif name=="claim_done_notification_ui":
     args=p.get("arguments") or {};sid=args.get("session_id","")
+    owner_token=_claim_owner_token(args)
     if not isinstance(sid,str) or not gc._validate_session_id(sid) or lookup_scope(args.get("scope_id"),sid) is None:
      raise ValueError("unrecognized invocation scope")
     handoff=unbox(gc.status_tool({"session_id":sid}))
@@ -230,13 +286,9 @@ def dispatch(req):
     claimed=False
     if current in TERMINAL:
      claim_dir=STATE/"delivered-completions";claim_dir.mkdir(exist_ok=True)
-     prune_claims()
-     # File creation is atomic across MCP server instances/panels.
-     try:
-      fd=os.open(claim_dir/(sid+".claimed"),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-      with os.fdopen(fd,"w") as f:f.write(args["scope_id"])
-      claimed=True
-     except FileExistsError:pass
+     claim=claim_dir/(sid+".claimed")
+     prune_claims(exclude=claim)
+     claimed=claim_notification(claim,args["scope_id"],owner_token)
     result(id,{"content":[{"type":"text","text":"notification claim"}],"structuredContent":{"claimed":claimed,"status":current,"handoff":handoff if claimed else None}})
    elif name=="poll_gigacode_ui":
     args=p.get("arguments") or {}
