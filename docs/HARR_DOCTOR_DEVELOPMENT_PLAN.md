@@ -1,6 +1,6 @@
 # Harr Doctor — detailed development and safe-repair plan
 
-Status: design only; **not implemented yet**  
+Status: **v1 implemented on `feature/harr-doctor`**. Read-only local/E2E diagnosis, registry-declared safe probes, install provenance, JSON/strict modes, and deterministic R1 repair with snapshot/rollback are implemented. R2 targeted runtime repair and R3 automatic stale-child refresh intentionally remain **BLOCKED/fail-closed** until Harr has a per-server install primitive and verified host respawn proof.
 Primary command: `harr doctor`  
 Scope: Harr installation integrity, LeanCTX runtime, selected MCPs, host routing, live-process health, and conservative recovery.
 
@@ -596,7 +596,7 @@ A second `harr doctor --repair` on a healthy system must perform no mutations.
 
 ## 12. Harr skill integration
 
-When `harr doctor` is implemented, the Harr diagnostic skill must be updated in the same change. Do **not** advertise a nonexistent command before implementation lands.
+The Harr diagnostic skill is updated in the same change as the v1 command. Keep this atomic: do **not** advertise doctor/repair behavior that the installed implementation cannot perform.
 
 The skill should teach the model a strict escalation policy.
 
@@ -1220,7 +1220,7 @@ Linux:
 
 Then macOS/Windows.
 
-### Phase 7 — repair planner, dry-run only
+### Phase 7 — repair planner, dry-run only — implemented
 
 Implement:
 
@@ -1233,19 +1233,19 @@ harr doctor --repair --dry-run
 - show rollback plan;
 - no mutation.
 
-### Phase 8 — R1 repairs
+### Phase 8 — R1 repairs — implemented
 
 Enable deterministic Harr-owned file/config restoration with safety snapshots and rollback.
 
 Must include raw-ELF-over-wrapper regression.
 
-### Phase 9 — R2 runtime repairs
+### Phase 9 — R2 runtime repairs — intentionally blocked in v1
 
 Targeted managed component reinstall/prefetch only.
 
 No broad “install everything” fallback.
 
-### Phase 10 — R3 stale child refresh
+### Phase 10 — R3 stale child refresh — intentionally blocked in v1
 
 Safely refresh only stale proven Harr LeanCTX children.
 

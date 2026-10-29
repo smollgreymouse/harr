@@ -10,6 +10,10 @@ Use this skill only when installing, checking, or repairing the harness.
 
 ```text
 harr status
+harr doctor
+harr doctor NAME
+harr doctor [NAME] --repair
+harr doctor [NAME] --repair --dry-run
 harr install all
 harr agents status
 harr agents apply
@@ -39,6 +43,10 @@ harr secret set kibana
 ```
 
 LeanCTX and CodeGraph are the required Harr baseline. Optional MCPs are selected globally with `harr mcp configure`; generated policy, skills, gateway, runtime and service lifecycle follow that selection.
+
+For Harr installation/runtime/MCP failures, prefer `harr doctor` as the end-to-end diagnostic. Use `harr doctor NAME` when the user names one component. `harr status` remains the cheap configured/installed snapshot; doctor additionally starts fresh diagnostic processes, validates downstream catalogs, and uses only registry-declared read-only probes.
+
+Never run `harr doctor --repair` merely because doctor reports a failure. Repair mutates Harr-owned runtime state, so run it only when the user explicitly asks to repair, restore, fix, recover, or otherwise authorizes mutation. In v1, targeted runtime reinstall (R2) and stale-child refresh (R3) fail closed as `BLOCKED`; doctor does not terminate stale LeanCTX children automatically. Prefer `harr doctor NAME --repair` over manual Harr file replacement when doctor offers a repair. Never copy/rotate secrets, remove user-owned shadow registrations, kill the host application, or bypass Harr with upstream LeanCTX installers. If repair is BLOCKED or ROLLED_BACK, stop and report the evidence instead of attempting a speculative second repair path.
 
 Executor use through a named Ein instance requires a direct user instruction to delegate. A configured instance, including a sole instance, is not authorization. Never select an executor or backend automatically. When delegation is authorized, use the user's named `<instance>::ein` and the shared `$einherjar-worker` contract.
 

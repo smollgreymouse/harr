@@ -19,6 +19,7 @@ function Show-Help {
 Harr Windows CLI
 
   harr status
+  harr doctor [NAME] [--local|--json|--verbose|--strict] [--repair [--dry-run]]
   harr install [all|leanctx|mcp]
   harr agents apply [all|codex|opencode]
   harr agents status
@@ -118,6 +119,18 @@ switch ($command) {
             Mcp-Logs $name
         }
         else { throw 'usage: harr mcp list|available|configure|add|remove|start|stop|restart|status|logs' }
+    }
+    'doctor' {
+        $env:HARR_PLATFORM = 'windows'
+        $env:HARR_VERSION = $HarrVersion
+        $env:HARR_LEANCTX_VERSION = $LeanVersion
+        $env:HARR_LEANCTX_BUILD = $LeanBuild
+        $env:HARR_LIBEXEC_DIR = $LibExecDir
+        $env:HARR_COMMON_DIR = $CommonDir
+        $env:HARR_COMMAND = Join-Path $BinDir 'harr.cmd'
+        [string[]]$doctorArgs = @((Join-Path $CommonDir 'doctor.py')) + @($rest)
+        $code = Invoke-Python -CommandArgs $doctorArgs -AllowFailure
+        exit $code
     }
     'status' {
         Write-Host '== MCP selection =='; Mcp-Available; Write-Host ''

@@ -13,6 +13,7 @@ CLI:
   harr setup [--clean] [--start] [--all|--mcp SPEC] [--configure-mcp] [--harr-only]
   harr install [all|leanctx|mcp]
   harr status
+  harr doctor [NAME] [--local|--json|--verbose|--strict] [--repair [--dry-run]]
   harr hosts apply
   harr hosts status
   harr agents apply [all|codex|opencode]

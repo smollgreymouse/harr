@@ -19,7 +19,7 @@ jobs:
           bash -n linux/files/mcp/harr-mcp-run linux/files/mcp/codegraph-cli linux/files/leanctx/lean-ctx-wrapper
           for f in linux/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/executor/gigacode_runtime.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py tests/ein-named-instances.py tests/ein-instruction-matrix.py tests/mcp-icon.py tests/ein-app-panel.py
+        run: python3 -m py_compile common/doctor.py common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/executor/gigacode_runtime.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py tests/ein-named-instances.py tests/ein-instruction-matrix.py tests/mcp-icon.py tests/ein-app-panel.py
       - name: MCP registry contract
         run: |
           python3 common/mcp/manager.py npm-package-json >/tmp/harr-package.json
@@ -30,6 +30,8 @@ jobs:
               tomllib.load(f)
           PY
           python3 tests/mcp-registry.py
+      - name: Harr doctor contract
+        run: python3 tests/harr-doctor.py
       - name: MCP selection and policy contract
         run: python3 tests/mcp-selection.py
       - name: Named Ein migration and icon contracts
@@ -78,13 +80,15 @@ jobs:
           bash -n macos/files/mcp/harr-mcp-run macos/files/mcp/codegraph-cli macos/files/leanctx/lean-ctx-wrapper
           for f in macos/files/harr-cli/*.sh common/shell/*.sh; do bash -n "$f"; done
       - name: Python syntax
-        run: python3 -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/executor/gigacode_runtime.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py tests/ein-named-instances.py tests/ein-instruction-matrix.py tests/mcp-icon.py tests/ein-app-panel.py
+        run: python3 -m py_compile common/doctor.py common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/executor/gigacode_runtime.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-host.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py tests/ein-named-instances.py tests/ein-instruction-matrix.py tests/mcp-icon.py tests/ein-app-panel.py
       - name: MCP registry contract
         shell: bash
         run: |
           python3 common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output "$RUNNER_TEMP/harr-leanctx.toml" --platform macos
           python3 -c 'import os,tomllib; tomllib.load(open(os.environ["RUNNER_TEMP"]+"/harr-leanctx.toml","rb"))'
           python3 tests/mcp-registry.py
+      - name: Harr doctor contract
+        run: python3 tests/harr-doctor.py
       - name: MCP selection and policy contract
         run: python3 tests/mcp-selection.py
       - name: Named Ein migration and icon contracts
@@ -147,7 +151,7 @@ jobs:
           }
       - name: Python syntax
         shell: pwsh
-        run: python -m py_compile common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/executor/gigacode_runtime.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py tests/ein-named-instances.py tests/ein-instruction-matrix.py tests/mcp-icon.py
+        run: python -m py_compile common/doctor.py common/hosts/opencode-config.py common/hosts/codex-config.py common/mcp/manager.py common/mcp/selector.py common/mcp/assets.py common/executor/gigacode_runtime.py common/mcp/einherjar_server.py common/executor/backends.py common/executor/protocol.py common/executor/adapters/gigacode.py common/executor/adapters/opencode.py common/executor/adapters/codex.py common/executor/adapters/command_template.py common/git_host/git_host.py common/gitlab/git_https.py common/kubernetes/kubectl.py tests/git-mr-workflow.py tests/mcp-registry.py tests/mcp-selection.py tests/gitlab-git-https.py tests/kubectl-bridge.py tests/gigacode-bridge.py tests/worker-reliability.py tests/gigacode-lifetime.py tests/gigacode-mcp-app/test_leaks.py tests/ein-named-instances.py tests/ein-instruction-matrix.py tests/mcp-icon.py
       - name: MCP registry contract
         shell: pwsh
         run: |
@@ -155,6 +159,9 @@ jobs:
           python common/mcp/manager.py render-leanctx --base common/leanctx/config.base.toml --output $env:RUNNER_TEMP\harr-leanctx.toml --platform windows
           python -c "import tomllib, pathlib; tomllib.loads(pathlib.Path(r'$env:RUNNER_TEMP\harr-leanctx.toml').read_text())"
           python tests/mcp-registry.py
+      - name: Harr doctor contract
+        shell: pwsh
+        run: python tests/harr-doctor.py
       - name: MCP selection and policy contract
         shell: pwsh
         run: python tests/mcp-selection.py

@@ -17,6 +17,19 @@
           "serve",
           "--mcp"
         ]
+      },
+      "doctor": {
+        "required_tools": [
+          "codegraph_explore"
+        ],
+        "probe": {
+          "kind": "catalog-only",
+          "timeout_sec": 10
+        },
+        "repair": {
+          "runtime_reinstall": true,
+          "credential_auto_repair": false
+        }
       }
     },
     {
@@ -51,7 +64,29 @@
             "name": "GITLAB_PERSONAL_ACCESS_TOKEN"
           }
         }
-      ]
+      ],
+      "doctor": {
+        "required_tools": [
+          "health_check",
+          "get_merge_request"
+        ],
+        "probe": {
+          "kind": "tool",
+          "tool": "health_check",
+          "arguments": {},
+          "timeout_sec": 10,
+          "success": {
+            "json_content": {
+              "status": "ok",
+              "authenticated": true
+            }
+          }
+        },
+        "repair": {
+          "runtime_reinstall": true,
+          "credential_auto_repair": false
+        }
+      }
     },
     {
       "name": "grafana",
@@ -94,7 +129,23 @@
             "name": "GRAFANA_SERVICE_ACCOUNT_TOKEN"
           }
         }
-      ]
+      ],
+      "doctor": {
+        "required_tools": [
+          "user_info"
+        ],
+        "probe": {
+          "kind": "tool",
+          "tool": "user_info",
+          "arguments": {},
+          "timeout_sec": 10,
+          "success": {}
+        },
+        "repair": {
+          "runtime_reinstall": true,
+          "credential_auto_repair": false
+        }
+      }
     },
     {
       "name": "kibana",
@@ -143,7 +194,23 @@
             "name": "KIBANA_API_KEY"
           }
         }
-      ]
+      ],
+      "doctor": {
+        "required_tools": [
+          "list_data_views"
+        ],
+        "probe": {
+          "kind": "tool",
+          "tool": "list_data_views",
+          "arguments": {},
+          "timeout_sec": 12,
+          "success": {}
+        },
+        "repair": {
+          "runtime_reinstall": true,
+          "credential_auto_repair": false
+        }
+      }
     },
     {
       "name": "jira",
@@ -194,7 +261,23 @@
           }
         }
       ],
-      "trust_store": "system"
+      "trust_store": "system",
+      "doctor": {
+        "required_tools": [
+          "jira_get_all_projects"
+        ],
+        "probe": {
+          "kind": "tool",
+          "tool": "jira_get_all_projects",
+          "arguments": {},
+          "timeout_sec": 15,
+          "success": {}
+        },
+        "repair": {
+          "runtime_reinstall": true,
+          "credential_auto_repair": false
+        }
+      }
     },
     {
       "name": "redash",
@@ -228,7 +311,20 @@
             "name": "REDASH_API_KEY"
           }
         }
-      ]
+      ],
+      "doctor": {
+        "required_tools": [
+          "get_query"
+        ],
+        "probe": {
+          "kind": "catalog-only",
+          "timeout_sec": 10
+        },
+        "repair": {
+          "runtime_reinstall": true,
+          "credential_auto_repair": false
+        }
+      }
     }
   ]
 }
