@@ -62,7 +62,15 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     run('add','--id','fake-two','--adapter','custom','--definition-file',str(definition))
     run('add','--id','gigacode','--adapter','gigacode')
     fake_gigacode=work/'fake-gigacode'
-    fake_gigacode.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"status":"DONE","summary":"fake GigaCode completed","changed":["fake.py"],"verified":[{"criterion":"wire","check":"fake CLI","result":"PASS","evidence":"exit 0"}],"self_review":{"criteria_complete":true,"diff_scope_clean":true,"unverified":[]},"escalation":null,"blockers":[]}\'\n')
+    completion=work/'fake-gigacode-complete'
+    ready=work/'fake-gigacode-ready'
+    handoff={'status':'DONE','summary':'fake GigaCode completed','changed':['fake.py'],'verified':[{'criterion':'wire','check':'fake CLI','result':'PASS','evidence':'exit 0'}],'self_review':{'criteria_complete':True,'diff_scope_clean':True,'unverified':[]},'escalation':None,'blockers':[]}
+    fake_gigacode.write_text(
+        f'#!{PYTHON}\nimport json,time\nfrom pathlib import Path\n'
+        f'Path({str(ready)!r}).write_text("ready")\n'
+        f'while not Path({str(completion)!r}).exists(): time.sleep(0.02)\n'
+        f'print(json.dumps({handoff!r}))\n'
+    )
     fake_gigacode.chmod(0o755)
     run('edit','gigacode','--executable',str(fake_gigacode))
     codex_home=base/'profiles/codex'
@@ -130,6 +138,17 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
             started=call(3,'tools/call',{'name':'ein','arguments':{'action':'start','prompt':'fake task'}})['structuredContent']
             assert 'session_id' in started,(name,started)
             sid=started['session_id']
+            if name=='gigacode':
+                for _ in range(100):
+                    status=call(9,'tools/call',{'name':'ein','arguments':{'action':'status','session_id':sid}})['structuredContent']
+                    if status['status']=='RUNNING':break
+                    time.sleep(.02)
+                assert status['status']=='RUNNING',(name,status)
+                for _ in range(100):
+                    if ready.exists():break
+                    time.sleep(.02)
+                assert ready.exists(),'fake GigaCode CLI did not start'
+                completion.touch()
             for i in range(30):
                 status=call(10+i,'tools/call',{'name':'ein','arguments':{'action':'status','session_id':sid}})['structuredContent']
                 if status['status']!='RUNNING':break

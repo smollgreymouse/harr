@@ -329,7 +329,14 @@ def retire_gigacode_app() -> None:
     # The interpreter may change between installs (system Python, venv, etc.).
     # The Harr-owned namespace plus exact managed script path is sufficient
     # ownership evidence; keep a same-named user server with different args.
-    if isinstance(entry, dict) and entry.get("args") == [str(app)]:
+    args = entry.get("args") if isinstance(entry, dict) else None
+    managed_path = os.path.normcase(os.path.realpath(app))
+    configured_path = (
+        os.path.normcase(os.path.realpath(args[0]))
+        if isinstance(args, list) and len(args) == 1 and isinstance(args[0], str)
+        else None
+    )
+    if configured_path == managed_path:
         text = remove_exact_table(text, ["mcp_servers", "harr-gigacode-app"]).rstrip()
         write_config_text(text + "\n")
 

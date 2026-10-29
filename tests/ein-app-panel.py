@@ -51,6 +51,12 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
     host.CONFIG.write_text('[mcp_servers.harr-gigacode-app]\ncommand="custom"\nargs=["/user/app.py"]\n')
     host.retire_gigacode_app()
     assert 'harr-gigacode-app' in tomllib.loads(host.CONFIG.read_text())['mcp_servers']
+    alias_root=base/'repo-alias'
+    alias_root.symlink_to(ROOT,target_is_directory=True)
+    alias_app=alias_root/'common/mcp/gigacode_app/server.py'
+    host.CONFIG.write_text('[mcp_servers.harr-gigacode-app]\ncommand="/old/python"\nargs=["'+str(alias_app)+'"]\n')
+    host.retire_gigacode_app()
+    assert 'harr-gigacode-app' not in tomllib.loads(host.CONFIG.read_text()).get('mcp_servers',{})
     host.CONFIG.write_text('[mcp_servers.user-owned]\ncommand="untouched"\n')
     prior=os.environ.get('HARR_CONFIG_DIR')
     os.environ['HARR_CONFIG_DIR']=str(config_root)

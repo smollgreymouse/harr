@@ -109,7 +109,7 @@ $legacyGigaApp = Join-Path $LibExecDir 'common\mcp\gigacode_app'
 if (Test-Path -LiteralPath $legacyGigaApp) { Remove-Item -LiteralPath $legacyGigaApp -Recurse -Force }
 $mcpAssets = Join-Path $LibExecDir 'common\mcp\assets'
 New-Item -ItemType Directory -Force -Path $mcpAssets | Out-Null
-Copy-Item -LiteralPath (Join-Path $SourceDir 'harr.png') -Destination (Join-Path $mcpAssets 'harr.png') -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'harr.png') -Destination (Join-Path $mcpAssets 'harr.png') -Force
 Copy-TreeFresh $FilesSource (Join-Path $LibExecDir 'windows\files')
 Copy-Item -LiteralPath (Join-Path $SourceDir 'harr.ps1') -Destination (Join-Path $LibExecDir 'harr.ps1') -Force
 
