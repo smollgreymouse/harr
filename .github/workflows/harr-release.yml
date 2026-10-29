@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version to build (artifact-only manual runs)'
         required: true
-        default: '0.2.9'
+        default: '0.3.0'
 
 permissions:
   contents: write
@@ -152,4 +152,4 @@ jobs:
             dist/harr-codex-scheduler_*.deb \
             dist/SHA256SUMS \
             --title "Harr ${{ steps.version.outputs.version }}" \
-            --notes-file docs/releases/harr-v0.2.9.md
+            --notes-file "docs/releases/harr-v${{ steps.version.outputs.version }}.md"

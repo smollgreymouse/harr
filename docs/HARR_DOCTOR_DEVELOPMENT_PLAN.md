@@ -1,6 +1,6 @@
 # Harr Doctor — detailed development and safe-repair plan
 
-Status: **v1 implemented on `feature/harr-doctor`**. Read-only local/E2E diagnosis, registry-declared safe probes, install provenance, JSON/strict modes, and deterministic R1 repair with snapshot/rollback are implemented. R2 targeted runtime repair and R3 automatic stale-child refresh intentionally remain **BLOCKED/fail-closed** until Harr has a per-server install primitive and verified host respawn proof.
+Status: **v1 shipped for Harr 0.3.0**. Read-only local/E2E diagnosis, registry-declared safe probes, install provenance, JSON/strict modes, and deterministic R1 repair with snapshot/rollback are implemented. Broader R2/R3 repair work is intentionally deferred; see `docs/HARR_DOCTOR_DEFERRED.md`.
 Primary command: `harr doctor`  
 Scope: Harr installation integrity, LeanCTX runtime, selected MCPs, host routing, live-process health, and conservative recovery.
 
@@ -1239,15 +1239,13 @@ Enable deterministic Harr-owned file/config restoration with safety snapshots an
 
 Must include raw-ELF-over-wrapper regression.
 
-### Phase 9 — R2 runtime repairs — intentionally blocked in v1
+### Phase 9 — R2 runtime repairs — deferred
 
-Targeted managed component reinstall/prefetch only.
+Moved to `docs/HARR_DOCTOR_DEFERRED.md`. Harr 0.3.0 keeps this repair class fail-closed as `BLOCKED`.
 
-No broad “install everything” fallback.
+### Phase 10 — R3 stale child refresh — deferred
 
-### Phase 10 — R3 stale child refresh — intentionally blocked in v1
-
-Safely refresh only stale proven Harr LeanCTX children.
+Moved to `docs/HARR_DOCTOR_DEFERRED.md`. Harr 0.3.0 diagnoses stale children but does not terminate them automatically.
 
 ### Phase 11 — skill integration
 
