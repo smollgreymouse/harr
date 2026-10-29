@@ -39,21 +39,18 @@ def receive_rpc(proc: subprocess.Popen[bytes], selector: selectors.BaseSelector,
                 pending: bytearray, request_id: int, timeout: float) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        marker = pending.find(b"\r\n\r\n")
-        if marker >= 0:
-            header = bytes(pending[:marker]).decode("ascii", errors="strict")
-            length = next((int(line.split(":", 1)[1].strip())
-                           for line in header.split("\r\n")
-                           if line.lower().startswith("content-length:")), None)
-            if length is None or length < 0 or length > MAX_FRAME:
-                raise RuntimeError(f"invalid MCP frame length: {length}")
-            frame_end = marker + 4 + length
-            if len(pending) >= frame_end:
-                payload = json.loads(pending[marker + 4:frame_end])
-                del pending[:frame_end]
-                if payload.get("id") == request_id:
-                    return payload
+        newline = pending.find(b"\n")
+        if newline >= 0:
+            if newline > MAX_FRAME:
+                raise RuntimeError("LeanCTX MCP response line exceeded the bounded frame size")
+            line = bytes(pending[:newline]).rstrip(b"\r")
+            del pending[:newline + 1]
+            if not line:
                 continue
+            payload = json.loads(line)
+            if payload.get("id") == request_id:
+                return payload
+            continue
         remaining = deadline - time.monotonic()
         if not selector.select(remaining):
             break
@@ -61,7 +58,7 @@ def receive_rpc(proc: subprocess.Popen[bytes], selector: selectors.BaseSelector,
         if not chunk:
             raise RuntimeError("LeanCTX MCP exited before responding")
         pending.extend(chunk)
-        if len(pending) > MAX_FRAME + 4096:
+        if len(pending) > MAX_FRAME:
             raise RuntimeError("LeanCTX MCP response exceeded the bounded frame size")
     raise TimeoutError(f"LeanCTX MCP request {request_id} timed out")
 
@@ -70,7 +67,7 @@ def send_rpc(proc: subprocess.Popen[bytes], method: str, request_id: int,
              params: dict | None = None) -> None:
     message = json.dumps({"jsonrpc": "2.0", "id": request_id,
                           "method": method, "params": params or {}}).encode()
-    proc.stdin.write(f"Content-Length: {len(message)}\r\n\r\n".encode() + message)
+    proc.stdin.write(message + b"\n")
     proc.stdin.flush()
 
 
@@ -78,7 +75,7 @@ def send_notification(proc: subprocess.Popen[bytes], method: str,
                       params: dict | None = None) -> None:
     message = json.dumps({"jsonrpc": "2.0", "method": method,
                           "params": params or {}}).encode()
-    proc.stdin.write(f"Content-Length: {len(message)}\r\n\r\n".encode() + message)
+    proc.stdin.write(message + b"\n")
     proc.stdin.flush()
 
 
@@ -104,6 +101,10 @@ def main() -> int:
             "HOME": str(home), "XDG_CONFIG_HOME": str(config),
             "XDG_DATA_HOME": str(data), "XDG_STATE_HOME": str(state),
             "XDG_CACHE_HOME": str(base / "cache"),
+            "CODEX_HOME": str(base / "codex"),
+            "LEAN_CTX_DATA_DIR": str(data / "lean-ctx"),
+            "LEAN_CTX_STATE_DIR": str(state / "lean-ctx"),
+            "LEAN_CTX_HEADLESS": "1",
             "HARR_CONFIG_DIR": str(config / "harr"),
             "HARR_WORKSPACE_MODE": "legacy", "NO_COLOR": "1",
         }
@@ -112,8 +113,10 @@ def main() -> int:
         (config / "harr" / "mcp" / "config.json").write_text(
             '{"schema":1,"servers":[]}', encoding="utf-8")
         command = [sys.executable, str(Path(__file__).resolve()), "--manager-child", str(binary)]
+        stderr_log_path = base / "leanctx.stderr.log"
+        stderr_log = stderr_log_path.open("w+b")
         proc = subprocess.Popen(command, cwd=project, env=env, stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+                                stdout=subprocess.PIPE, stderr=stderr_log, bufsize=0)
         selector = selectors.DefaultSelector()
         selector.register(proc.stdout, selectors.EVENT_READ)
         pending = bytearray()
@@ -153,6 +156,15 @@ def main() -> int:
                 raise RuntimeError("large Harr icon data URI leaked into tool metadata")
             print(f"real LeanCTX MCP acceptance: PASS ({len(tools)} unique tools; exact Harr PNG; ctx_read schema)")
             return 0
+        except Exception:
+            stderr_log.flush()
+            stderr_log.seek(0, os.SEEK_END)
+            end = stderr_log.tell()
+            stderr_log.seek(max(0, end - 4096))
+            diagnostic = stderr_log.read(4096).decode("utf-8", errors="replace").strip()
+            if diagnostic:
+                print(f"LeanCTX stderr (last <=4096 bytes):\n{diagnostic}", file=sys.stderr)
+            raise
         finally:
             selector.close()
             if proc.poll() is None:
@@ -162,8 +174,7 @@ def main() -> int:
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=3)
-            if proc.stderr:
-                proc.stderr.close()
+            stderr_log.close()
 
 
 if __name__ == "__main__":
