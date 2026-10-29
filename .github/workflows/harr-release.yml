@@ -75,6 +75,9 @@ jobs:
           install -D -m 0755 "$work/lean-ctx" dist/vendor/lean-ctx
           sha256sum dist/vendor/lean-ctx > dist/leanctx.sha256
 
+      - name: Verify pinned LeanCTX MCP icon and tools over stdio
+        run: python3 tests/leanctx-icon-acceptance.py --binary "$GITHUB_WORKSPACE/dist/vendor/lean-ctx"
+
       - name: Build full Harr packages
         run: |
           arch=$(dpkg --print-architecture)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the packaged Harr icon reaches only the managed Ein server-info response."""
+"""Verify manager icon-path wiring and Harr Ein metadata (not the real LeanCTX binary)."""
 import base64
 import hashlib
 import importlib.util
