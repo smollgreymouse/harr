@@ -3,7 +3,7 @@ import pathlib, tempfile, sys, threading, time, os, unittest
 from unittest.mock import patch
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[2]))
 import importlib.util
-spec=importlib.util.spec_from_file_location("test_real_gigacode",pathlib.Path(__file__).resolve().parents[2]/"common/mcp/gigacode_server.py")
+spec=importlib.util.spec_from_file_location("test_real_gigacode",pathlib.Path(__file__).resolve().parents[2]/"common/executor/gigacode_runtime.py")
 gc=importlib.util.module_from_spec(spec);spec.loader.exec_module(gc)
 
 class OwnerTest(unittest.TestCase):

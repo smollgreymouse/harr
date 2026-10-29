@@ -6,7 +6,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 # Explicit external build; do not use or overwrite the production LeanCTX binary.
 binary=Path(os.environ.get("HARR_LEANCTX_TEST_BINARY", str(root/"_leanctx_fix/rust/target/debug/lean-ctx"))).resolve()
-bridge=root/"common/mcp/gigacode_server.py"
+bridge=root/"common/executor/gigacode_runtime.py"
 smoke=root/"tests/gigacode-live-stream-smoke.py"
 source=Path.home()/".config/lean-ctx/config.toml"
 if not binary.is_file() or not bridge.is_file() or not source.is_file():

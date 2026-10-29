@@ -4,7 +4,7 @@ import sys, json, os, pathlib, importlib.util, traceback, threading, time, uuid
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 WORK=pathlib.Path.home()/"codex-desktop-test/workspace"
 os.chdir(WORK)
-spec=importlib.util.spec_from_file_location("harr_test_gigacode",str(ROOT/"common/mcp/gigacode_server.py"))
+spec=importlib.util.spec_from_file_location("harr_test_gigacode",str(ROOT/"common/executor/gigacode_runtime.py"))
 gc=importlib.util.module_from_spec(spec);spec.loader.exec_module(gc)
 URI="ui://harr-gigacode/live.html"
 STATIC_URI="ui://harr-gigacode/static-ab.html"

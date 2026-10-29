@@ -1,9 +1,9 @@
 # Harr component installation and version status.
 
 readonly HARR_LEANCTX_VERSION="3.11.0"
-readonly HARR_LEANCTX_BUILD="3.11.0-harr-workspace.4"
-readonly HARR_LEANCTX_ID="harr-v3.11.0-workspace.4@865740ae5dfe"
-readonly HARR_LEANCTX_RELEASE_TAG="harr-v3.11.0-workspace.4"
+readonly HARR_LEANCTX_BUILD="3.11.0-harr-unified.2"
+readonly HARR_LEANCTX_ID="harr-v3.11.0-unified.2@6d033320d263"
+readonly HARR_LEANCTX_RELEASE_TAG="harr-v3.11.0-unified.2"
 readonly HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"
 
 write_runtime_env() {

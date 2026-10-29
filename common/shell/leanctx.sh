@@ -21,11 +21,11 @@ cmd_leanctx_apply() {
   if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
     allow_args+=(--allow-path "${codex_skills}/harr-workspace")
   fi
-  allow_args+=(--allow-path "${codex_skills}/lean-ctx" --allow-path "${codex_skills}/gigacode-executor" --allow-path "${opencode_skills}/harr")
+  allow_args+=(--allow-path "${codex_skills}/lean-ctx" --allow-path "${codex_skills}/einherjar-worker" --allow-path "${opencode_skills}/harr")
   if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
     allow_args+=(--allow-path "${opencode_skills}/harr-workspace")
   fi
-  allow_args+=(--allow-path "${opencode_skills}/lean-ctx" --allow-path "${opencode_skills}/gigacode-executor")
+  allow_args+=(--allow-path "${opencode_skills}/lean-ctx" --allow-path "${opencode_skills}/einherjar-worker")
   mcp_manager render-leanctx \
     --base "$src" \
     --output "$HARR_LEANCTX_CONFIG" \

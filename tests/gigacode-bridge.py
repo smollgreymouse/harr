@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Black-box structural tests for the GigaCode MCP bridge.
+"""Structural tests for the private GigaCode runtime behind named Ein.
 
 Tests schema, constants, validation, and helper functions in isolation.
 Never spawns real subprocesses or touches real CACHE_ROOT.
@@ -15,7 +15,7 @@ import tempfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER_PATH = ROOT / "common" / "mcp" / "gigacode_server.py"
+SERVER_PATH = ROOT / "common" / "executor" / "gigacode_runtime.py"
 
 spec = importlib.util.spec_from_file_location("harr_gigacode_server", SERVER_PATH)
 assert spec and spec.loader
@@ -33,18 +33,17 @@ assert server.MAX_WAIT_TIMEOUT_SEC == 1500
 assert server.STARTUP_CONFIRM_TIMEOUT_SEC == 20.0
 
 # -------------------------------------------------------------------
-# 2. Tool schema
+# 2. Public API boundary: shared named-Ein schema, no legacy MCP endpoint.
 # -------------------------------------------------------------------
-assert len(server.TOOLS) == 1
-tool = server.TOOLS[0]
-assert tool["name"] == "gigacode"
-assert tool["inputSchema"]["properties"]["action"]["enum"] == ["start", "resume", "status", "messages", "wait", "cancel"]
-assert tool["inputSchema"]["properties"]["after_revision"]["minimum"] == 0
-assert tool["inputSchema"]["properties"]["message_limit"]["maximum"] == 50
-assert tool["inputSchema"]["properties"]["wait_timeout_sec"]["maximum"] == 1500
-assert tool["inputSchema"]["properties"]["timeout_sec"]["minimum"] == 0
-assert "cancel" in tool["description"]
-assert "unlimited" in tool["description"] or "0=unlimited" in tool["description"]
+schema = json.loads((ROOT / "common" / "mcp" / "ein_tool_schema.json").read_text())
+assert schema["name"] == "ein"
+assert schema["inputSchema"]["properties"]["action"]["enum"] == ["start", "resume", "status", "messages", "wait", "cancel"]
+assert schema["inputSchema"]["properties"]["after_revision"]["minimum"] == 0
+assert schema["inputSchema"]["properties"]["message_limit"]["maximum"] == 50
+assert schema["inputSchema"]["properties"]["wait_timeout_sec"]["maximum"] == 1500
+assert schema["inputSchema"]["properties"]["timeout_sec"]["minimum"] == 0
+assert not hasattr(server, "TOOLS")
+assert callable(server._dispatch_ein_tool)
 
 # -------------------------------------------------------------------
 # 3. _validate_session_id
@@ -90,11 +89,17 @@ assert "The bridge does not prescribe or" in server.WORKER_CONTRACT
 assert "internal tools, MCP servers, shell implementation, or editor" in server.WORKER_CONTRACT
 
 # -------------------------------------------------------------------
-# 6. tools/list
+# 6. Private adapter boundary: no standalone MCP methods/schema remain.
 # -------------------------------------------------------------------
-listed = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
-assert listed is not None
-assert [item["name"] for item in listed["result"]["tools"]] == ["gigacode"]
+assert not hasattr(server, "handle")
+assert not hasattr(server, "tools")
+
+def call_backend(arguments: dict, progress_token=None) -> dict:
+    """Exercise the adapter hook behind the shared named-Ein frontdoor."""
+    try:
+        return {"result": server._dispatch_ein_tool(arguments, progress_token)}
+    except Exception as exc:
+        return {"result": server.text_result({"error": str(exc)}, is_error=True)}
 
 # -------------------------------------------------------------------
 # 7. extract_json_object / parse_worker_handoff
@@ -189,6 +194,7 @@ chat_path = Path(_sandbox.name) / "chat.jsonl"
 chat_rows = [
     {"timestamp": "t0", "type": "system", "systemPayload": {"uiEvent": {"event.name": "gigacode.tool_call"}}},
     {"timestamp": "t1", "type": "assistant", "message": {"parts": [
+        {"text": "Hidden model reasoning.", "thought": True},
         {"text": "First visible message."},
         {"functionCall": {"name": "read_file", "args": {"path": "x"}}},
     ]}},
@@ -203,6 +209,17 @@ chat_rows = [
     ]}},
     {"timestamp": "t5", "type": "assistant", "message": {"parts": [
         {"text": "Third visible message."},
+    ]}},
+    {"timestamp": "t6", "type": "assistant", "message": {"parts": [
+        {"text": json.dumps({
+            "status": "DONE",
+            "summary": "protocol-only handoff",
+            "changed": [],
+            "verified": [],
+            "self_review": {"criteria_complete": True, "diff_scope_clean": True, "unverified": []},
+            "escalation": None,
+            "blockers": [],
+        })},
     ]}},
 ]
 chat_path.write_text("\n".join(json.dumps(row) for row in chat_rows) + "\n", encoding="utf-8")
@@ -223,6 +240,8 @@ with patch.object(server, "_find_chat_path", return_value=chat_path):
     assert latest_data["has_more"] is False
     assert "secret tool output" not in latest["content"][0]["text"]
     assert "read_file" not in latest["content"][0]["text"]
+    assert "Hidden model reasoning." not in latest["content"][0]["text"]
+    assert "protocol-only handoff" not in latest["content"][0]["text"]
 
     incremental = server.messages_tool({
         "session_id": fake_sid,
@@ -256,6 +275,7 @@ old_prefix = (
 ).encode("utf-8")
 live_rows = [
     {"timestamp": "live1", "type": "assistant", "message": {"parts": [
+        {"text": "Hidden live reasoning.", "thought": True},
         {"text": "Working on the current turn."},
         {"functionCall": {"name": "read_file", "args": {"path": "x"}}},
     ]}},
@@ -314,6 +334,7 @@ assert [item["params"]["progress"] for item in progress_notifications] == [1.0, 
 assert all(item["params"]["progressToken"] == "ui-progress-1" for item in progress_notifications)
 assert "Old message" not in json.dumps(progress_notifications)
 assert "tool noise" not in json.dumps(progress_notifications)
+assert "Hidden live reasoning." not in json.dumps(progress_notifications)
 assert '"status": "DONE"' not in json.dumps(progress_notifications)
 
 # Cursor persists per job: a second wait emits nothing until more transcript is appended.
@@ -333,20 +354,10 @@ server.wait_tool = lambda arguments, progress_token=None: (
     captured_progress_tokens.append(progress_token)
     or server.text_result({"session_id": arguments["session_id"], "status": "DONE", "summary": "mock"})
 )
-wait_via_handle = server.handle({
-    "jsonrpc": "2.0",
-    "id": 19,
-    "method": "tools/call",
-    "params": {
-        "name": "gigacode",
-        "_meta": {"progressToken": "client-progress-token"},
-        "arguments": {
-            "action": "wait",
-            "session_id": fake_sid,
-            "wait_timeout_sec": 1,
-        },
-    },
-})
+wait_via_handle = call_backend(
+    {"action": "wait", "session_id": fake_sid, "wait_timeout_sec": 1},
+    "client-progress-token",
+)
 server.wait_tool = original_wait_tool
 assert wait_via_handle is not None
 assert captured_progress_tokens == ["client-progress-token"]
@@ -380,50 +391,32 @@ original_start_tool = server.start_tool
 server.start_tool = _fake_start_result
 
 # Rejects boolean
-bad_bool = server.handle({
-    "jsonrpc": "2.0", "id": 10, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "start", "prompt": "x", "timeout_sec": True}},
-})
+bad_bool = call_backend({"action": "start", "prompt": "x", "timeout_sec": True})
 assert bad_bool is not None
 assert bad_bool.get("result", {}).get("isError") is True
 
 # Rejects negative
-bad_neg = server.handle({
-    "jsonrpc": "2.0", "id": 11, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "start", "prompt": "x", "timeout_sec": -1}},
-})
+bad_neg = call_backend({"action": "start", "prompt": "x", "timeout_sec": -1})
 assert bad_neg is not None
 assert bad_neg.get("result", {}).get("isError") is True
 
 # Accepts 0
-ok_zero = server.handle({
-    "jsonrpc": "2.0", "id": 12, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "start", "prompt": "x", "timeout_sec": 0}},
-})
+ok_zero = call_backend({"action": "start", "prompt": "x", "timeout_sec": 0})
 assert ok_zero is not None
 result_text = json.loads(ok_zero["result"]["content"][0]["text"])
 assert result_text["status"] == "MOCKED"
 
 # Accepts large positive
-ok_large = server.handle({
-    "jsonrpc": "2.0", "id": 13, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "start", "prompt": "x", "timeout_sec": 9999}},
-})
+ok_large = call_backend({"action": "start", "prompt": "x", "timeout_sec": 9999})
 assert ok_large is not None
 
 # Rejects float
-bad_float = server.handle({
-    "jsonrpc": "2.0", "id": 14, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "start", "prompt": "x", "timeout_sec": 10.5}},
-})
+bad_float = call_backend({"action": "start", "prompt": "x", "timeout_sec": 10.5})
 assert bad_float is not None
 assert bad_float.get("result", {}).get("isError") is True
 
 # Rejects string
-bad_str = server.handle({
-    "jsonrpc": "2.0", "id": 15, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "start", "prompt": "x", "timeout_sec": "30"}},
-})
+bad_str = call_backend({"action": "start", "prompt": "x", "timeout_sec": "30"})
 assert bad_str is not None
 assert bad_str.get("result", {}).get("isError") is True
 
@@ -433,10 +426,7 @@ server.start_tool = original_start_tool
 # -------------------------------------------------------------------
 # 11. status_tool with bad session_id
 # -------------------------------------------------------------------
-bad_status = server.handle({
-    "jsonrpc": "2.0", "id": 16, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "status", "session_id": "../etc"}},
-})
+bad_status = call_backend({"action": "status", "session_id": "../etc"})
 assert bad_status is not None
 result_text = json.loads(bad_status["result"]["content"][0]["text"])
 assert result_text["status"] == "FAILED"
@@ -444,31 +434,18 @@ assert result_text["status"] == "FAILED"
 # -------------------------------------------------------------------
 # 12. messages dispatch validates cursor and limit
 # -------------------------------------------------------------------
-bad_messages_cursor = server.handle({
-    "jsonrpc": "2.0", "id": 17, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {
-        "action": "messages", "session_id": fake_sid, "after_revision": True,
-    }},
-})
+bad_messages_cursor = call_backend({"action": "messages", "session_id": fake_sid, "after_revision": True})
 assert bad_messages_cursor is not None
 assert bad_messages_cursor.get("result", {}).get("isError") is True
 
-bad_messages_limit = server.handle({
-    "jsonrpc": "2.0", "id": 18, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {
-        "action": "messages", "session_id": fake_sid, "message_limit": 51,
-    }},
-})
+bad_messages_limit = call_backend({"action": "messages", "session_id": fake_sid, "message_limit": 51})
 assert bad_messages_limit is not None
 assert bad_messages_limit.get("result", {}).get("isError") is True
 
 # -------------------------------------------------------------------
 # 13. cancel dispatch also rejects non-UUID
 # -------------------------------------------------------------------
-bad_cancel = server.handle({
-    "jsonrpc": "2.0", "id": 17, "method": "tools/call",
-    "params": {"name": "gigacode", "arguments": {"action": "cancel", "session_id": "simple"}},
-})
+bad_cancel = call_backend({"action": "cancel", "session_id": "simple"})
 assert bad_cancel is not None
 result_text = json.loads(bad_cancel["result"]["content"][0]["text"])
 assert result_text["status"] == "FAILED"

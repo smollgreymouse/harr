@@ -31,7 +31,7 @@ Required-only install without prompts:
 Exact optional set:
 
 ```bash
-./install.sh --clean --mcp gitlab,grafana,gigacode
+./install.sh --clean --mcp gitlab,grafana
 ```
 
 Normal updates reuse the saved selection without prompting. Use `--configure-mcp` to show the checklist again during installation, or change it later with:

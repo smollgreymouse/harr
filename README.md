@@ -12,6 +12,55 @@
 
 A global harness for token-efficient MCP infrastructure.
 
+## Named Ein CLI workers (PR #39)
+
+Harr manages any number of **user-named Ein MCP instances**. Every instance has a
+fixed adapter (`gigacode`, `opencode`, `codex`, or a custom command-template)
+with its own runtime state and configuration. Each publishes the **same**
+`<mcp-name>::ein` tool and shared `$einherjar-worker` skill, preserving the
+legacy GigaCode action and argument schema. The GigaCode adapter reuses its
+established bridge for startup confirmation, lifecycle and Desktop progress.
+
+At first interactive `harr setup`, choose **Configure named Ein workers**,
+or manage them later:
+
+```bash
+harr ein configure
+harr ein add --id opencode-builder --adapter opencode
+harr ein add --id opencode-reviewer --adapter opencode
+harr ein add --id gigacode --adapter gigacode
+harr ein list
+harr ein edit opencode-reviewer --display-name "Review worker"
+harr ein test opencode-builder       # checks executable availability, no model calls
+harr ein apply                       # publish gateway, skill/policy, named Desktop panels
+```
+
+`gigacode::ein`, `opencode-builder::ein` and `opencode-reviewer::ein`
+are **distinct MCP servers**, not aliases to one global backend selector.
+MCP names are entered explicitly at creation time and checked for collisions.
+Use `harr ein disable NAME`, `enable NAME` or `remove NAME` to manage instances.
+
+For an arbitrary CLI, use
+`harr ein add --id NAME --adapter custom --definition-file custom.json`;
+its `start`/`resume` commands must be JSON argv arrays (no shell expansion).
+Optional `--executable PATH` overrides a built-in executable and
+`--secret-env ENV=SECRET_FILE` references a file in Harr's private `secrets/`
+directory without putting its contents into the instances config.
+Configurations live under `~/.config/harr/einherjar/instances.json`.
+
+The standalone GigaCode MCP is retired. Upgrades remove its managed host
+registration and runtime app while preserving named instance configuration and
+session files. An instance explicitly named `gigacode` keeps the old session
+cache namespace and is exposed only as `gigacode::ein`.
+All named instances share **one read-only Codex Desktop MCP App**,
+`harr-ein-ui::show_ein_live`. The call supplies the user-chosen MCP instance
+name and an existing Ein session UUID (it never launches a new model run), keeps `poll_ein_ui` and
+`list_ein_ui` app-only, and uses per-instance session/history files. It also delivers a concise terminal `ui/message` once per running session, with the final handoff status and diagnostics; it does not send the raw JSON envelope into chat. This direct
+MCP registration is distinct from the LeanCTX execution gateway.
+
+No running global Harr or Codex installation is modified by this source PR.
+See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for migration and validation.
+
 ## Design
 
 Harr is not merged into another global harness. On first installation it takes **clean ownership of its global layer**, after saving an exact rollback snapshot. Project-level configuration is deliberately out of scope.
@@ -129,7 +178,7 @@ harr setup --clean
 
 The first interactive setup offers the optional MCP checklist. For automation,
 use `harr setup --clean --all`, `harr setup --clean --mcp none`, or
-`harr setup --clean --mcp gitlab,grafana,kibana,gigacode`. The selection is saved and can be
+`harr setup --clean --mcp gitlab,grafana,kibana`. The selection is saved and can be
 changed later with `harr mcp configure`.
 
 After a later Debian package upgrade, run `harr setup` to apply the new Harr
@@ -151,7 +200,6 @@ Harr components
   [ ] Grafana      optional  Grafana dashboards and datasources
   [ ] Jira         optional  Jira Server/Data Center issues and JQL via local REST MCP
   [ ] Kibana       optional  read-only logs/search through Kibana
-  [ ] GigaCode     optional  persistent external executor for planner-to-builder delegation
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -186,12 +234,12 @@ For an exact optional set, list only the optional MCP names; required components
 
 ```bash
 # Linux / macOS
-./install.sh --clean --mcp gitlab,grafana,kibana,gigacode
+./install.sh --clean --mcp gitlab,grafana,kibana
 ```
 
 ```powershell
 # Windows
-.\install.ps1 -Clean -Mcp gitlab,grafana,kibana,gigacode
+.\install.ps1 -Clean -Mcp gitlab,grafana,kibana
 ```
 
 If local PowerShell policy blocks scripts, use a process-local bypass rather than changing the machine policy:
@@ -721,32 +769,58 @@ See common/skills/harr/references/kibana.md for pinned-runtime and routing detai
 
 
 
-### GigaCode executor
+### Einherjar generic CLI worker
 
-GigaCode is **optional** and exposed behind LeanCTX as one downstream tool:
-
-```text
-gigacode::gigacode
-```
-
-That one schema carries `action=start|resume|status|messages|wait|cancel`; enabling GigaCode does not add separate permanent executor tools to the parent model. When GigaCode is selected, Harr also installs the `$gigacode-executor` skill for Codex/OpenCode. Harr adds only its own managed global skill directories to LeanCTX `allow_paths`, so PathJail remains enabled while those skills can be read from projects outside the home config tree. A normal delegated flow is:
+Einherjar is an **optional, backend-neutral** external worker bridge. Enable it with:
 
 ```text
-parent: architecture + execution contract
-  -> ctx_tools(... gigacode::gigacode, action=start ...)
-  -> RUNNING + session_id
-  -> independent planner work OR one MCP-local wait (no delegated-source reads/review/test loops)
-  -> DONE + criterion evidence + final diff/scope self-review
-  -> parent contract acceptance
+harr mcp add einherjar
+harr install mcp
 ```
 
-Harr ships only the bridge. The external `gigacode` CLI must already be installed and authenticated. The bridge deliberately treats it as a black box: it does not configure, inspect, or depend on GigaCode's own tool names, shell implementation, editor, extensions, or MCP servers.
+It appears behind LeanCTX as one downstream tool:
 
-Normal RUNNING status is intentionally compact and does not expose GigaCode event history, internal logs, model text, or tool traces. `status` remains nonblocking; `wait` blocks inside the bridge for up to 1500 seconds so the parent model does not spend turns polling. With Harr's progress-aware LeanCTX fork, request-scoped GigaCode assistant prose is forwarded as MCP progress notifications for client UI display while the terminal tool result stays compact. Explicit `messages` calls can fetch only GigaCode assistant prose with a revision cursor, but because that is a normal MCP result it enters the parent tool context and is not used for automatic monitoring. Before a worker handoff is accepted as `DONE`, the bridge requires criterion-by-criterion PASS evidence, no unresolved blockers, and a successful final diff/scope self-review. Missing evidence is returned to the same GigaCode session with `resume`; the expensive parent does not repeat the executor's code reading and test loop by default.
+```text
+einherjar::worker
+```
 
-The bridge keeps a persistent GigaCode session, performs a bounded startup handshake, and runs execution detached. Hard timeout defaults to unlimited; cancellation is explicit unless the caller supplies a positive `timeout_sec`. One `wait` call is bounded to 1500 seconds; Harr configures the LeanCTX downstream timeout to 1800 seconds and Codex/OpenCode host-side LeanCTX timeouts to 1900 seconds so the blocking wait completes without forcing model-level polling.
+The single schema carries `action=start|resume|status|messages|wait|cancel|backends`. The planner owns architecture and the execution contract; Einherjar owns detached process/session lifecycle and maps the Harr session to the selected CLI's private session. Built-in adapters are `gigacode`, `opencode`, and `codex`; the configured default is used unless `start` explicitly names a backend.
 
-The saved Harr MCP selection controls whether the GigaCode route, routing policy, reference material, and `$gigacode-executor` skill exist. Normal later setup/update runs reuse that selection; use `harr mcp add/remove` for incremental changes or `harr mcp configure` for full replacement.
+Harr does not own agent-provider authentication. Each CLI must already be installed/authenticated in its normal way; provider tokens are not stored in Einherjar config. `action=backends` reports only safe capability/discovery information.
+
+Configuration lives at `~/.config/harr/einherjar.json` (or the Harr/XDG config root). Example:
+
+```json
+{
+  "schema": 1,
+  "default_backend": "gigacode",
+  "backends": {
+    "my-agent": {
+      "adapter": "command-template",
+      "start": ["my-agent", "run", "--prompt-file", "{prompt_file}"],
+      "resume": ["my-agent", "resume", "{session_id}", "--prompt-file", "{prompt_file}"],
+      "session_id": {"source": "stdout-json", "keys": ["session_id", "sessionId"]},
+      "events": {"mode": "jsonl"}
+    }
+  }
+}
+```
+
+Command-template commands are argv arrays, never shell strings. Supported placeholders are `{prompt}`, `{prompt_file}`, `{session_id}`, and `{workspace}`; prompt transport may also use `"stdin": true`. More complex CLIs should get a dedicated adapter rather than leaking vendor behavior into the core.
+
+The stable adapter specification is [`docs/EINHERJAR_BRIDGE_CONTRACT.md`](docs/EINHERJAR_BRIDGE_CONTRACT.md). It defines the core↔adapter boundary, capabilities, session identity, start/resume/cancel semantics, event normalization, final handoff rules, conformance tests, and the checklist for wrapping another agent CLI.
+
+The `gigacode::gigacode` route is retired. Configure a named Ein instance
+explicitly with `harr ein configure`; Harr never selects an instance or backend
+automatically. Existing named instance IDs and their session history remain
+available after upgrade.
+
+### GigaCode backend
+
+GigaCode remains an optional backend for explicitly configured named Ein
+instances. It is not a separate MCP server, catalog entry, or skill. Use
+`harr ein configure` to create or update instance names; the shared public tool
+is `<instance-name>::ein`, and users must select the instance explicitly.
 
 ### Jira (Server/Data Center, local MCP)
 
@@ -799,7 +873,7 @@ The permanent policy always keeps the core token-saving rules:
 - no duplicate gateway/direct investigation;
 - build/test only on explicit request.
 
-Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, Kibana investigation guidance does not exist when Kibana is disabled, and the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected.
+Optional routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, Kibana investigation guidance does not exist when Kibana is disabled, the GigaCode planner/executor contract is absent unless the GigaCode MCP is selected, and Einherjar routing is absent unless the Einherjar MCP is selected.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
 

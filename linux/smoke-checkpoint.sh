@@ -43,6 +43,7 @@ codex-skill-harr|${CODEX_HOME_REAL}/skills/harr
 codex-skill-workspace|${CODEX_HOME_REAL}/skills/harr-workspace
 codex-skill-leanctx|${CODEX_HOME_REAL}/skills/lean-ctx
 codex-skill-gigacode|${CODEX_HOME_REAL}/skills/gigacode-executor
+codex-skill-einherjar|${CODEX_HOME_REAL}/skills/einherjar-worker
 opencode-agents|${XDG_CONFIG_HOME_REAL}/opencode/AGENTS.md
 opencode-jsonc|${XDG_CONFIG_HOME_REAL}/opencode/opencode.jsonc
 opencode-json|${XDG_CONFIG_HOME_REAL}/opencode/opencode.json
@@ -50,6 +51,7 @@ opencode-skill-harr|${XDG_CONFIG_HOME_REAL}/opencode/skills/harr
 opencode-skill-workspace|${XDG_CONFIG_HOME_REAL}/opencode/skills/harr-workspace
 opencode-skill-leanctx|${XDG_CONFIG_HOME_REAL}/opencode/skills/lean-ctx
 opencode-skill-gigacode|${XDG_CONFIG_HOME_REAL}/opencode/skills/gigacode-executor
+opencode-skill-einherjar|${XDG_CONFIG_HOME_REAL}/opencode/skills/einherjar-worker
 opencode-leanctx|${XDG_CONFIG_HOME_REAL}/opencode/lean-ctx
 opencode-desktop-leanctx|${XDG_CONFIG_HOME_REAL}/ai.opencode.desktop/lean-ctx
 harr-share|${HOME}/.local/share/harr

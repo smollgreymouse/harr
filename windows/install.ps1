@@ -90,10 +90,26 @@ if ($All) { $selectorArgs += @('--spec', 'all') }
 elseif ($explicitMcp) { $selectorArgs += @('--spec', $Mcp) }
 elseif ($ConfigureMcp -or $firstInstall) { $selectorArgs += '--configure' }
 Invoke-Selector $selectorArgs
+if (($firstInstall -or $ConfigureMcp) -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    $answer = Read-Host 'Configure named Ein CLI workers now? [y/N]'
+    if ($answer -match '^(?i:y|yes)$') {
+        [string[]]$cmd = @(Resolve-Python)
+        $pyexe = $cmd[0]
+        [string[]]$prefix = @()
+        if ($cmd.Count -gt 1) { $prefix = @($cmd[1..($cmd.Count - 1)]) }
+        & $pyexe @prefix (Join-Path $CommonSource 'mcp\ein_instances.py') configure
+        if ($LASTEXITCODE -ne 0) { throw 'Ein instance setup failed' }
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $BinDir, $LibExecDir, $StateRoot | Out-Null
 Copy-Item -LiteralPath $StateHelperSource -Destination $StateHelper -Force
 Copy-TreeFresh $CommonSource (Join-Path $LibExecDir 'common')
+$legacyGigaApp = Join-Path $LibExecDir 'common\mcp\gigacode_app'
+if (Test-Path -LiteralPath $legacyGigaApp) { Remove-Item -LiteralPath $legacyGigaApp -Recurse -Force }
+$mcpAssets = Join-Path $LibExecDir 'common\mcp\assets'
+New-Item -ItemType Directory -Force -Path $mcpAssets | Out-Null
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'harr.png') -Destination (Join-Path $mcpAssets 'harr.png') -Force
 Copy-TreeFresh $FilesSource (Join-Path $LibExecDir 'windows\files')
 Copy-Item -LiteralPath (Join-Path $SourceDir 'harr.ps1') -Destination (Join-Path $LibExecDir 'harr.ps1') -Force
 

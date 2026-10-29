@@ -49,7 +49,7 @@ Harr Linux setup
 Usage after package installation:
   harr setup --clean [--start]
   harr setup --clean --all [--start]
-  harr setup --clean --mcp gitlab,grafana,gigacode [--start]
+  harr setup --clean --mcp gitlab,grafana [--start]
   harr setup [--start] [--harr-only] [--configure-mcp]
 
 From a source checkout, ./install.sh accepts the same options.
@@ -121,6 +121,9 @@ install_runtime_files() {
   install -d -m 0700 "$SECRETS_DIR"
   rm -rf -- "$COMMON_LIB_DIR"
   cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
+  rm -rf -- "${COMMON_LIB_DIR}/mcp/gigacode_app"
+  install -d -m 0755 "${COMMON_LIB_DIR}/mcp/assets"
+  install -m 0644 "${SOURCE_DIR}/../harr.png" "${COMMON_LIB_DIR}/mcp/assets/harr.png"
   find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
   find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
   chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"
@@ -191,6 +194,13 @@ main() {
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for Harr host configuration management'
   prepare_clean_ownership
   select_mcp_set
+  if [[ -t 0 && -t 1 && ( "$first_install" == 1 || "$configure_mcp" == 1 ) ]]; then
+    local configure_ein=''
+    read -r -p 'Configure named Ein CLI workers now? [y/N]: ' configure_ein
+    case "$configure_ein" in
+      y|Y|yes|YES|Yes) python3 "${COMMON_DIR}/mcp/ein_instances.py" configure ;;
+    esac
+  fi
   install_runtime_files
   install_mcp_configs
   configure_systemd

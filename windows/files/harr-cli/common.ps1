@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 
 $script:HarrVersion = '1.0.0'
 $script:LeanVersion = '3.11.0'
-$script:LeanBuild = '3.11.0-harr-progress.1'
-$script:LeanReleaseTag = 'harr-v3.11.0-progress.1'
+$script:LeanBuild = '3.11.0-harr-unified.2'
+$script:LeanReleaseTag = 'harr-v3.11.0-unified.2'
 $script:LeanRepo = 'smollgreymouse/lean-ctx'
 $script:UserHome = if ($env:HARR_HOME) { $env:HARR_HOME } elseif ($env:USERPROFILE) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
 $script:LocalRoot = if ($env:HARR_LOCALAPPDATA) { $env:HARR_LOCALAPPDATA } elseif ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $UserHome 'AppData\Local' }
@@ -163,7 +163,12 @@ function Install-HarrSkill([string]$Target) {
 function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
-    [bool]$gigacodeEnabled = @(Active-McpNames) -contains 'gigacode'
+    [bool]$einherjarEnabled = $false
+    if (Test-Path -LiteralPath $McpEffective) {
+        $registry = Get-Content -Raw -LiteralPath $McpEffective | ConvertFrom-Json
+        $named = @($registry.servers | Where-Object { $_.PSObject.Properties['ein_instance'] -and $_.ein_instance })
+        if ($named.Count -gt 0) { $einherjarEnabled = $true }
+    }
     foreach ($agent in $agents) {
         $policy = Agent-PolicyPath $agent
         $skillRoot = Agent-SkillRoot $agent
@@ -171,10 +176,15 @@ function Apply-Agents([string]$Requested = 'all') {
         Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path $skillRoot 'lean-ctx')
         Install-HarrSkill (Join-Path $skillRoot 'harr')
         $gigaSkill = Join-Path $skillRoot 'gigacode-executor'
-        if ($gigacodeEnabled) {
-            Copy-TreeFresh (Join-Path $CommonDir 'skills\gigacode-executor') $gigaSkill
-        } elseif (Test-Path -LiteralPath $gigaSkill) {
+        $gigaSkillFile = Join-Path $gigaSkill 'SKILL.md'
+        if ((Test-Path -LiteralPath $gigaSkillFile) -and (Select-String -LiteralPath $gigaSkillFile -SimpleMatch '<!-- harr-managed-skill-v1 -->' -Quiet)) {
             Remove-Item -LiteralPath $gigaSkill -Recurse -Force
+        }
+        $einherjarSkill = Join-Path $skillRoot 'einherjar-worker'
+        if ($einherjarEnabled) {
+            Copy-TreeFresh (Join-Path $CommonDir 'skills\einherjar-worker') $einherjarSkill
+        } elseif (Test-Path -LiteralPath $einherjarSkill) {
+            Remove-Item -LiteralPath $einherjarSkill -Recurse -Force
         }
         Write-Host "Applied Harr-owned global policy for ${agent}: $policy"
     }
