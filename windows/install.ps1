@@ -103,6 +103,8 @@ if (($firstInstall -or $ConfigureMcp) -and [Environment]::UserInteractive -and -
 }
 
 New-Item -ItemType Directory -Force -Path $BinDir, $LibExecDir, $StateRoot | Out-Null
+$versionSource = Join-Path $RepoRoot 'VERSION'
+if (Test-Path -LiteralPath $versionSource) { Copy-Item -LiteralPath $versionSource -Destination (Join-Path $LibExecDir 'VERSION') -Force }
 Copy-Item -LiteralPath $StateHelperSource -Destination $StateHelper -Force
 Copy-TreeFresh $CommonSource (Join-Path $LibExecDir 'common')
 $legacyGigaApp = Join-Path $LibExecDir 'common\mcp\gigacode_app'
@@ -146,6 +148,8 @@ if ($HarrOnly) {
     & $installedHarr install all
 }
 
+& $installedHarr doctor --write-manifest --install-type source --source-root $RepoRoot
+if ($LASTEXITCODE -ne 0) { throw 'Failed to write Harr install provenance manifest' }
 if ($Start -and -not $HarrOnly) { & $installedHarr mcp restart all }
 
 Write-Host ''

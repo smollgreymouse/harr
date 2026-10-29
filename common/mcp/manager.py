@@ -26,6 +26,44 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict:
         if not isinstance(name, str) or not name or name in names:
             raise SystemExit(f"invalid or duplicate Harr MCP name: {name!r}")
         names.add(name)
+        doctor = server.get("doctor")
+        if doctor is not None:
+            if not isinstance(doctor, dict):
+                raise SystemExit(f"invalid doctor metadata for MCP {name}: doctor must be an object")
+            unknown = set(doctor).difference({"required_tools", "probe", "repair"})
+            if unknown:
+                raise SystemExit(f"invalid doctor metadata for MCP {name}: unknown fields {sorted(unknown)}")
+            required = doctor.get("required_tools", [])
+            if not isinstance(required, list) or not all(isinstance(item, str) and item for item in required):
+                raise SystemExit(f"invalid doctor metadata for MCP {name}: required_tools must be non-empty strings")
+            probe = doctor.get("probe")
+            if probe is not None:
+                if not isinstance(probe, dict):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: probe must be an object")
+                unknown_probe = set(probe).difference({"kind", "tool", "arguments", "timeout_sec", "success"})
+                if unknown_probe:
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: unknown probe fields {sorted(unknown_probe)}")
+                kind = probe.get("kind")
+                if kind not in {"catalog-only", "mcp-ping", "tool"}:
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: invalid probe kind {kind!r}")
+                if kind == "tool" and (not isinstance(probe.get("tool"), str) or not probe.get("tool")):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: tool probe requires a tool")
+                if "arguments" in probe and not isinstance(probe.get("arguments"), dict):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: probe arguments must be an object")
+                timeout = probe.get("timeout_sec", 10)
+                if not isinstance(timeout, int) or timeout < 1 or timeout > 30:
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: probe timeout must be 1..30")
+                success = probe.get("success", {})
+                if not isinstance(success, dict) or set(success).difference({"json_content"}):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: invalid probe success")
+                if "json_content" in success and not isinstance(success.get("json_content"), dict):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: success.json_content must be an object")
+            repair = doctor.get("repair")
+            if repair is not None:
+                if not isinstance(repair, dict) or set(repair).difference({"runtime_reinstall", "credential_auto_repair"}):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: invalid repair metadata")
+                if not all(isinstance(value, bool) for value in repair.values()):
+                    raise SystemExit(f"invalid doctor metadata for MCP {name}: repair fields must be booleans")
     return data
 
 
@@ -289,7 +327,23 @@ def path_runtime_executable(server: dict) -> str | None:
             raise SystemExit(f"MCP {server['name']} runtime is not installed: {candidate}")
         return str(candidate)
     if kind in {"path", "uvx"}:
-        return shutil.which(command)
+        found = shutil.which(command)
+        if found:
+            return found
+        candidates: list[Path] = []
+        if os.name == "nt":
+            candidates.extend([
+                Path.home() / ".local" / "bin" / f"{command}.exe",
+                Path.home() / ".local" / "bin" / f"{command}.cmd",
+            ])
+        else:
+            candidates.extend([
+                Path.home() / ".local" / "bin" / command,
+                Path.home() / ".cargo" / "bin" / command,
+                Path("/opt/homebrew/bin") / command,
+                Path("/usr/local/bin") / command,
+            ])
+        return next((str(candidate) for candidate in candidates if candidate.is_file()), None)
     raise SystemExit(f"unsupported runtime kind for MCP {server['name']}: {kind}")
 
 

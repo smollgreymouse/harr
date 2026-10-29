@@ -31,6 +31,7 @@ source "${HARR_COMMON_DIR}/shell/secret.sh"
 source "${HARR_COMMON_DIR}/shell/leanctx.sh"
 source "${HARR_COMMON_DIR}/shell/git.sh"
 source "${HARR_COMMON_DIR}/shell/kube.sh"
+source "${HARR_COMMON_DIR}/shell/doctor.sh"
 source "${CLI_LIB_DIR}/mcp.sh"
 source "${CLI_LIB_DIR}/uninstall.sh"
 
@@ -40,14 +41,16 @@ shift || true
 case "$command" in
   setup)
     setup_script=''
+    setup_install_type=source
     if [[ -x "${SELF_DIR}/install.sh" && -d "${SELF_DIR}/files" ]]; then
       setup_script="${SELF_DIR}/install.sh"
     elif [[ -x /usr/lib/harr/linux/install.sh ]]; then
       setup_script=/usr/lib/harr/linux/install.sh
+      setup_install_type=package
     else
       die "harr setup requires an installed Harr package or a source checkout; from source use ./install.sh"
     fi
-    HARR_SETUP_COMMAND=1 exec "$setup_script" "$@"
+    HARR_SETUP_COMMAND=1 HARR_INSTALL_TYPE="$setup_install_type" exec "$setup_script" "$@"
     ;;
   install)
     install_target="${1:-all}"
@@ -74,6 +77,7 @@ case "$command" in
   git) cmd_git "$@" ;;
   kube) cmd_kube "$@" ;;
   kubectl) cmd_kubectl "$@" ;;
+  doctor) cmd_doctor "$@" ;;
   mcp) cmd_mcp "$@" ;;
   status) cmd_status "$@" ;;
   uninstall) cmd_uninstall "$@" ;;

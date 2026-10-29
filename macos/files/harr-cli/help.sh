@@ -9,6 +9,7 @@ First install / takeover:
 
 CLI:
   harr status
+  harr doctor [NAME] [--local|--json|--verbose|--strict] [--repair [--dry-run]]
   harr install [all|leanctx|mcp]
   harr hosts apply|status
   harr agents apply [all|codex|opencode]

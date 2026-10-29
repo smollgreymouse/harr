@@ -216,6 +216,9 @@ main() {
     "${BIN_DIR}/harr" agents apply all
     "${BIN_DIR}/harr" leanctx apply
   fi
+  local install_type="${HARR_INSTALL_TYPE:-source}"
+  case "$install_type" in package|source) ;; *) die "invalid HARR_INSTALL_TYPE: $install_type" ;; esac
+  "${BIN_DIR}/harr" doctor --write-manifest --install-type "$install_type" --source-root "${SOURCE_DIR}/.."
   if ((start_now)); then "${BIN_DIR}/harr" mcp restart all; fi
 
   printf '\nHarr setup complete in clean global-harness mode for Linux.\n'

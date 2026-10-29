@@ -1,7 +1,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:HarrVersion = '1.0.0'
+$script:HarrVersionFile = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\VERSION'))
+$script:HarrVersion = if (Test-Path -LiteralPath $HarrVersionFile) { (Get-Content -Raw -LiteralPath $HarrVersionFile).Trim() } else { 'unknown' }
 $script:LeanVersion = '3.11.0'
 $script:LeanBuild = '3.11.0-harr-unified.2'
 $script:LeanReleaseTag = 'harr-v3.11.0-unified.2'

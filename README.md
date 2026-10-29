@@ -546,10 +546,45 @@ The Windows installer adds `%LOCALAPPDATA%\Harr\bin` to the **user** `PATH`. Ena
 
 
 
+## Harr Doctor
+
+`harr status` is the fast configured/installed snapshot. `harr doctor` proves
+the managed route end to end: launcher/config ownership, host routing, secrets
+without revealing their values, runtime readiness, downstream MCP catalogs, a
+fresh isolated LeanCTX gateway, and only explicitly registry-declared read-only
+probes.
+
+Use a focused check when one component is suspect:
+
+```text
+harr doctor gitlab
+harr doctor redash
+```
+
+A disabled catalog component is reported as `SKIP`; doctor does not demand its
+configuration or credentials. `--local` skips downstream/API probes,
+`--json` emits the stable machine-readable report, and `--strict` makes WARN
+non-zero.
+
+Diagnosis never mutates. Repair requires an explicit `--repair`; inspect the
+same plan without changing state with `--repair --dry-run`. V1 performs only
+deterministic Harr-owned R1 repairs with a private safety snapshot and
+post-repair verification. Credential changes and user-owned shadow MCP cleanup
+are never automatic. Targeted R2 runtime repair and R3 stale-child termination
+fail closed as `BLOCKED` until Harr can prove a narrowly scoped install or host
+respawn path.
+
 ## Commands
 
 ```text
 harr status
+harr doctor
+harr doctor gitlab
+harr doctor --local
+harr doctor --json
+harr doctor --strict
+harr doctor --repair --dry-run
+harr doctor --repair
 harr hosts status
 harr agents status
 harr leanctx status

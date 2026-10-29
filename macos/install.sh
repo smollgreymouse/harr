@@ -102,6 +102,7 @@ select_mcp_set() {
 
 install_runtime_files() {
   install -d -m 0755 "$BIN_DIR" "$LIBEXEC_DIR" "$CLI_LIB_DIR" "$LEANCTX_LIB_DIR" "$STATE_LIB_DIR" "$MCP_CONFIG_DIR" "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
+  if [[ -r "${SOURCE_DIR}/../VERSION" ]]; then install -m 0644 "${SOURCE_DIR}/../VERSION" "${LIBEXEC_DIR}/VERSION"; fi
   install -d -m 0700 "$SECRETS_DIR"
   rm -rf -- "$COMMON_LIB_DIR"
   cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
@@ -249,6 +250,7 @@ main() {
     "${BIN_DIR}/harr" agents apply all
     "${BIN_DIR}/harr" leanctx apply
   fi
+  "${BIN_DIR}/harr" doctor --write-manifest --install-type source --source-root "${SOURCE_DIR}/.."
   if ((start_now)); then "${BIN_DIR}/harr" mcp restart all; fi
 
   printf '\nHarr installed in clean global-harness mode for macOS.\n'
