@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version to build (artifact-only manual runs)'
         required: true
-        default: '0.2.8'
+        default: '0.2.9'
 
 permissions:
   contents: write
@@ -120,6 +120,13 @@ jobs:
             exit 1
           fi
 
+      - name: Release checksums
+        shell: bash
+        run: |
+          cp tools/codex-scheduler/dist/harr-codex-scheduler_*.deb dist/
+          cp tools/codex-scheduler/dist/harr-codex-scheduler-*.tar.gz dist/
+          ( cd dist && sha256sum harr_*.deb harr-*.tar.gz harr-codex-scheduler_*.deb > SHA256SUMS )
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -127,8 +134,8 @@ jobs:
           path: |
             dist/harr_*.deb
             dist/harr-*.tar.gz
-            tools/codex-scheduler/dist/harr-codex-scheduler_*.deb
-            tools/codex-scheduler/dist/harr-codex-scheduler-*.tar.gz
+            dist/SHA256SUMS
+            dist/harr-codex-scheduler_*.deb
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -139,7 +146,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/harr_*.deb \
             dist/harr-*.tar.gz \
-            tools/codex-scheduler/dist/harr-codex-scheduler_*.deb \
-            tools/codex-scheduler/dist/harr-codex-scheduler-*.tar.gz \
+            dist/harr-codex-scheduler_*.deb \
+            dist/SHA256SUMS \
             --title "Harr ${{ steps.version.outputs.version }}" \
-            --generate-notes
+            --notes-file docs/releases/harr-v0.2.9.md

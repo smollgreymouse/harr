@@ -110,7 +110,7 @@ done
 [[ -s "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability" ]]
 python3 -c 'import os, stat, sys; assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600' "${XDG_CONFIG_HOME}/harr/secrets/git-host-capability"
 grep -q 'harr git <git-arguments>' "${HOME}/.local/bin/harr" "${HOME}/.local/libexec/harr/cli/help.sh"
-grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-progress.1"' "${ROOT}/macos/files/harr-cli/components.sh"
+grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-unified.2"' "${ROOT}/macos/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/macos/files/harr-cli/components.sh"
 grep -q '^call_timeout_secs = 1800$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
