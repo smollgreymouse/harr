@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real-subprocess reliability regression tests for the detached worker bridges.
 
-Covers the lifecycle contract shared by gigacode_server and einherjar_server:
+Covers the lifecycle contract shared by the private GigaCode runtime and Einherjar:
 hard timeout, cooperative cancel, SIGKILL escalation when a child ignores
 SIGTERM, owner-loss evidence persistence, dead-worker status, restart gating,
 and cache-root cleanup after terminal transitions.
@@ -60,7 +60,7 @@ def _load_server(rel_path: str, name: str):
     return module
 
 
-gc = _load_server("common/mcp/gigacode_server.py", "worker_rel_gigacode")
+gc = _load_server("common/executor/gigacode_runtime.py", "worker_rel_gigacode")
 ein = _load_server("common/mcp/einherjar_server.py", "worker_rel_einherjar")
 
 FAST_POLL = 0.05

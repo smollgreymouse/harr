@@ -43,7 +43,14 @@ STATE_WRITE_HEARTBEAT_SEC = 5.0
 RSS_LOG_INTERVAL_SEC = 30.0
 DEFAULT_ARTIFACT_RETENTION_SEC = 14 * 86400
 WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
-CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / ("harr/einherjar/" + SERVER_NAME if os.environ.get("HARR_EIN_INSTANCE") else "gigacode-mcp") / WORKSPACE_KEY
+if not os.environ.get("HARR_EIN_INSTANCE") or SERVER_NAME == "gigacode":
+    # The retired standalone GigaCode server stored session state here. A
+    # migrated named instance called "gigacode" keeps that exact namespace
+    # so existing sessions remain available for status/resume.
+    CACHE_NAMESPACE = "gigacode-mcp"
+else:
+    CACHE_NAMESPACE = f"harr/einherjar/{SERVER_NAME}"
+CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / CACHE_NAMESPACE / WORKSPACE_KEY
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 
 # Regex: canonical UUID hex format only

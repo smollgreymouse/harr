@@ -942,7 +942,7 @@ def main() -> int:
             return 2
         return _run_turn(spec)
     if not INSTANCE_ID:
-        sys.stderr.write("Einherjar requires a configured named instance. Run `harr configure ein` and use the instance's ein tool.\n")
+        sys.stderr.write("Einherjar requires a configured named instance. Run `harr ein configure` and use the instance's ein tool.\n")
         return 2
     for line in sys.stdin:
         try:

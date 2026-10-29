@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Named Ein CLI/registry/MCP flow without any real external models."""
 import json
+import hashlib
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 PYTHON=sys.executable
@@ -14,6 +17,35 @@ with tempfile.TemporaryDirectory(prefix='harr-ein-named-') as tmp:
     base=Path(tmp)
     env={**os.environ, 'HOME':str(base/'home'),'XDG_CONFIG_HOME':str(base/'home/.config'),'XDG_CACHE_HOME':str(base/'home/.cache'),'HARR_CONFIG_DIR':str(base/'home/.config/harr'),'PYTHONPATH':str(ROOT)}
     work=base/'workspace';work.mkdir()
+    # A migrated named instance named "gigacode" must keep reading its old
+    # standalone cache namespace; other ids receive isolated namespaces.
+    workspace_key=hashlib.sha256(str(work.resolve()).encode()).hexdigest()[:12]
+    legacy_cache=base/'home/.cache/gigacode-mcp'/workspace_key
+    legacy_cache.mkdir(parents=True)
+    legacy_sid='11111111-1111-4111-8111-111111111111'
+    legacy_handoff={'status':'DONE','summary':'existing history','changed':[],'verified':[{'criterion':'old','check':'state','result':'PASS','evidence':'preserved'}],'escalation':None,'blockers':[]}
+    (legacy_cache/f'{legacy_sid}.state.json').write_text(json.dumps({'phase':'finished','session_id':legacy_sid,'handoff':legacy_handoff}))
+    previous_cwd=Path.cwd()
+    previous_instance=os.environ.get('HARR_EIN_INSTANCE')
+    os.chdir(work)
+    try:
+        runtime_path=ROOT/'common/executor/gigacode_runtime.py'
+        with patch.dict(os.environ,env):
+            for instance_id in ('gigacode','fake-one','fake-two'):
+                os.environ['HARR_EIN_INSTANCE']=instance_id
+                runtime_spec=importlib.util.spec_from_file_location(f'ein_cache_{instance_id}',runtime_path)
+                runtime=importlib.util.module_from_spec(runtime_spec)
+                runtime_spec.loader.exec_module(runtime)
+                if instance_id=='gigacode':
+                    assert runtime.CACHE_ROOT==legacy_cache
+                    preserved=runtime.status_tool({'session_id':legacy_sid})['structuredContent']
+                    assert preserved['summary']=='existing history' and preserved['verified']==legacy_handoff['verified']
+                else:
+                    assert runtime.CACHE_ROOT==base/f'home/.cache/harr/einherjar/{instance_id}'/workspace_key
+    finally:
+        os.chdir(previous_cwd)
+        if previous_instance is None:os.environ.pop('HARR_EIN_INSTANCE',None)
+        else:os.environ['HARR_EIN_INSTANCE']=previous_instance
     fake=work/'fake.py'
     fake.write_text('''import json
 print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[],"verified":[{"criterion":"fake","check":"fake run","result":"PASS","evidence":"exit 0"}],"self_review":{"criteria_complete":True,"diff_scope_clean":True,"unverified":[]},"escalation":None,"blockers":[]}))

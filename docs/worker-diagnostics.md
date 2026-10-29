@@ -1,6 +1,6 @@
 # Worker diagnostics runbook
 
-Operator-facing map of the detached worker bridges (`common/mcp/gigacode_server.py`,
+Operator-facing map of the detached worker bridges (`common/executor/gigacode_runtime.py`,
 `common/mcp/einherjar_server.py`) and their on-disk diagnostics. Tool contracts
 are unchanged; everything here is read-only observation.
 

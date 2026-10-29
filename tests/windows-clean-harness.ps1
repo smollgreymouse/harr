@@ -81,6 +81,7 @@ enabled = false
     $effective = Get-Content -Raw $effectivePath | ConvertFrom-Json
     if (@($selection.enabled).Count -ne 1 -or $selection.enabled[0] -ne 'codegraph') { throw 'Windows required-only selection is wrong' }
     if (@($effective.servers).Count -ne 1 -or $effective.servers[0].name -ne 'codegraph') { throw 'Windows effective registry is wrong' }
+    if (@($effective.servers.name) -contains 'gigacode' -or @($effective.servers.name) -contains 'einherjar') { throw 'Retired standalone executor entered the clean registry' }
 
     $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
     if ($leanText -notmatch 'name = "codegraph"') { throw 'CodeGraph missing from LeanCTX gateway' }
@@ -121,16 +122,14 @@ enabled = false
     $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
     if (-not $leanText.Contains('call_timeout_secs = 1800')) { throw 'LeanCTX downstream timeout is too short for GigaCode wait' }
     if (-not $leanText.Contains('allow_paths = [')) { throw 'LeanCTX global skill allow_paths missing' }
-    $codexGigaSkillToml = (Join-Path $CodexDir 'skills\gigacode-executor').Replace('\', '\\')
-    $openGigaSkillToml = (Join-Path $OpenCodeDir 'skills\gigacode-executor').Replace('\', '\\')
-    $codexEinherjarSkillToml = (Join-Path $CodexDir 'skills\einherjar-worker').Replace('\', '\\')
-    $openEinherjarSkillToml = (Join-Path $OpenCodeDir 'skills\einherjar-worker').Replace('\', '\\')
-    if (-not $leanText.Contains($codexGigaSkillToml)) { throw 'Codex GigaCode skill path is not allowed by LeanCTX PathJail' }
-    if (-not $leanText.Contains($openGigaSkillToml)) { throw 'OpenCode GigaCode skill path is not allowed by LeanCTX PathJail' }
-    if (-not $leanText.Contains($codexEinherjarSkillToml)) { throw 'Codex Einherjar skill path is not allowed by LeanCTX PathJail' }
-    if (-not $leanText.Contains($openEinherjarSkillToml)) { throw 'OpenCode Einherjar skill path is not allowed by LeanCTX PathJail' }
-
-    if (-not (Test-Path (Join-Path $LocalDir 'Harr\libexec\common\mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
+    $runtimeCommon = Join-Path $LocalDir 'Harr\libexec\common'
+    if (-not (Test-Path (Join-Path $runtimeCommon 'mcp\registry.json'))) { throw 'Installed common MCP catalog missing' }
+    if (Test-Path (Join-Path $runtimeCommon 'mcp\gigacode_app')) { throw 'Retired GigaCode App survived clean install' }
+    $sourceIcon = Join-Path $Root 'harr.png'
+    $installedIcon = Join-Path $runtimeCommon 'mcp\assets\harr.png'
+    if ((Get-FileHash -Algorithm SHA256 $sourceIcon).Hash -ne (Get-FileHash -Algorithm SHA256 $installedIcon).Hash) { throw 'Installed Harr MCP icon differs from original asset' }
+    if ($codexText -match '\[mcp_servers\.harr-gigacode-app\]') { throw 'Retired standalone GigaCode App registration survived clean install' }
+    if ($codexText -match '\[mcp_servers\.harr-ein-ui\]') { throw 'Fresh install exposed Ein execution UI without named instances' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }
 
     & (Join-Path $Root 'uninstall.ps1')

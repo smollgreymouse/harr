@@ -49,7 +49,7 @@ Harr Linux setup
 Usage after package installation:
   harr setup --clean [--start]
   harr setup --clean --all [--start]
-  harr setup --clean --mcp gitlab,grafana,gigacode [--start]
+  harr setup --clean --mcp gitlab,grafana [--start]
   harr setup [--start] [--harr-only] [--configure-mcp]
 
 From a source checkout, ./install.sh accepts the same options.
@@ -121,6 +121,7 @@ install_runtime_files() {
   install -d -m 0700 "$SECRETS_DIR"
   rm -rf -- "$COMMON_LIB_DIR"
   cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
+  rm -rf -- "${COMMON_LIB_DIR}/mcp/gigacode_app"
   install -d -m 0755 "${COMMON_LIB_DIR}/mcp/assets"
   install -m 0644 "${SOURCE_DIR}/../harr.png" "${COMMON_LIB_DIR}/mcp/assets/harr.png"
   find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +

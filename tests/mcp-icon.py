@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify the packaged Harr icon reaches only the managed Ein server-info response."""
 import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 ICON = ROOT / "harr.png"
+assert hashlib.sha256(ICON.read_bytes()).hexdigest() == "0a601b2145d1bdbc9e987cb1da61663ce543e610e3d082ae5a1d1169ceaa007e"
 MANAGER_PATH = ROOT / "common/mcp/manager.py"
 SERVER_PATH = ROOT / "common/mcp/einherjar_server.py"
 
@@ -18,6 +20,10 @@ manager = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manager)
 
 captured = {}
+def capture_env(*args, **kwargs):
+    child_env = kwargs.get("env") or (args[-1] if args else {})
+    captured.update(child_env)
+
 with tempfile.TemporaryDirectory(prefix="harr-icon-runtime-") as tmp:
     runtime_mcp = Path(tmp) / "common/mcp"
     runtime_assets = runtime_mcp / "assets"
@@ -25,12 +31,14 @@ with tempfile.TemporaryDirectory(prefix="harr-icon-runtime-") as tmp:
     (runtime_assets / "harr.png").write_bytes(ICON.read_bytes())
     manager.HERE = runtime_mcp
     with patch.dict(os.environ, {"HARR_WORKSPACE_MODE": "legacy"}, clear=False), \
-         patch.object(manager.os, "execvpe", side_effect=lambda executable, command, env: captured.update(env)):
+         patch.object(manager.os, "execvpe", side_effect=capture_env), \
+         patch.object(manager.subprocess, "call", side_effect=capture_env):
         manager.exec_leanctx(type("Args", (), {"real": "/bin/true", "rest": ["mcp"]})(), {"servers": []})
     expected_icon = runtime_assets / "harr.png"
     assert captured.get("HARR_MCP_ICON_PATH") == str(expected_icon)
     captured.clear()
-    with patch.object(manager.os, "execvpe", side_effect=lambda executable, command, env: captured.update(env)):
+    with patch.object(manager.os, "execvpe", side_effect=capture_env), \
+         patch.object(manager.subprocess, "call", side_effect=capture_env):
         manager.exec_leanctx(type("Args", (), {"real": "/bin/true", "rest": ["status"]})(), {"servers": []})
     assert "HARR_MCP_ICON_PATH" not in captured
 

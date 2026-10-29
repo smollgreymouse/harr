@@ -4,6 +4,7 @@
 No Codex CLI, real host configuration, or model is invoked.
 """
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 SCRIPT=ROOT/'common/mcp/ein_app/server.py'
@@ -40,6 +42,16 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
     host.CONFIG=base/'codex-config.toml'
     host.CODEX_HOME=base
     host.CONFIG.write_text('[mcp_servers.user-owned]\ncommand="untouched"\n')
+    old_app=ROOT/'common/mcp/gigacode_app/server.py'
+    host.CONFIG.write_text('[mcp_servers.harr-gigacode-app]\ncommand="/old/python"\nargs=["'+str(old_app)+'"]\n\n[mcp_servers.keep-user-app]\ncommand="custom"\n')
+    host.retire_gigacode_app()
+    retired=tomllib.loads(host.CONFIG.read_text())['mcp_servers']
+    assert 'harr-gigacode-app' not in retired and 'keep-user-app' in retired
+    # Same name with a different script is user-owned and must survive.
+    host.CONFIG.write_text('[mcp_servers.harr-gigacode-app]\ncommand="custom"\nargs=["/user/app.py"]\n')
+    host.retire_gigacode_app()
+    assert 'harr-gigacode-app' in tomllib.loads(host.CONFIG.read_text())['mcp_servers']
+    host.CONFIG.write_text('[mcp_servers.user-owned]\ncommand="untouched"\n')
     prior=os.environ.get('HARR_CONFIG_DIR')
     os.environ['HARR_CONFIG_DIR']=str(config_root)
     try:
@@ -60,6 +72,18 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
     finally:
         if prior is None:os.environ.pop('HARR_CONFIG_DIR',None)
         else:os.environ['HARR_CONFIG_DIR']=prior
+
+    # Exercise the panel's actual lazy backend loader for the migrated
+    # GigaCode instance; it must bind the private runtime and preserve its
+    # configured instance cache namespace.
+    app_spec=importlib.util.spec_from_file_location('test_ein_app_backend',SCRIPT)
+    app_module=importlib.util.module_from_spec(app_spec)
+    with patch.dict(os.environ,env):
+        app_spec.loader.exec_module(app_module)
+        gigacode_backend=app_module.backend('gigacode')
+        assert callable(gigacode_backend._load_state)
+        workspace_key=hashlib.sha256(str(ROOT.resolve()).encode()).hexdigest()[:12]
+        assert gigacode_backend.CACHE_ROOT==base/'cache/gigacode-mcp'/workspace_key
 
     for instance in ('gigacode','open-review'):
         penv={**env}

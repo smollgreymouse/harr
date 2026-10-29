@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export HARR_TEST_ROOT="$ROOT"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -32,6 +33,14 @@ cat >"${CODEX_HOME}/config.toml" <<'EOF'
 model = "keep-model"
 [mcp_servers.external-mcp]
 url = "https://example.invalid/codex-mcp"
+enabled = true
+
+EOF
+cat >>"${CODEX_HOME}/config.toml" <<EOF
+
+[mcp_servers.harr-gigacode-app]
+command = "/old/python"
+args = ["${HOME}/.local/libexec/harr/common/mcp/gigacode_app/server.py"]
 enabled = true
 EOF
 printf 'OLD OPENCODE POLICY\n' >"${XDG_CONFIG_HOME}/opencode/AGENTS.md"
@@ -82,6 +91,10 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/einherjar-worker" ]]
 [[ ! -e "${CODEX_HOME}/skills/einherjar-worker" ]]
+[[ ! -e "${HOME}/.local/libexec/harr/common/mcp/gigacode_app" ]]
+cmp -s "${ROOT}/harr.png" "${HOME}/.local/libexec/harr/common/mcp/assets/harr.png"
+! grep -q '^\[mcp_servers\.harr-gigacode-app\]$' "${CODEX_HOME}/config.toml"
+! grep -q '^\[mcp_servers\.harr-ein-ui\]$' "${CODEX_HOME}/config.toml"
 [[ ! -e "${CODEX_HOME}/skills/harr-workspace" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace" ]]
 ! grep -q '\$gigacode-executor' "${CODEX_HOME}/AGENTS.md"
@@ -117,21 +130,23 @@ assert 'harr-workspace-app' not in codex['mcp_servers']
 opencode = json.loads((config / 'opencode/opencode.jsonc').read_text())
 assert opencode['mcp']['lean-ctx']['timeout'] == 1900000
 assert 'harr-workspace' not in opencode['mcp']
-lean = tomllib.loads((config / 'lean-ctx/config.toml').read_text())
+lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
 assert lean['allow_paths'] == [
     str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/lean-ctx'),
-    str(Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker'),
     str(config / 'opencode/skills/harr'),
     str(config / 'opencode/skills/lean-ctx'),
-    str(config / 'opencode/skills/gigacode-executor'),
     str(config / 'opencode/skills/einherjar-worker'),
 ]
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
 assert selection['enabled'] == ['codegraph']
 assert [item['name'] for item in effective['servers']] == ['codegraph']
+catalog = json.loads((Path(os.environ['HARR_TEST_ROOT']) / 'common/mcp/registry.json').read_text())
+assert not {'gigacode', 'einherjar'} & {item['name'] for item in catalog['servers']}
+saved = config / 'einherjar/instances.json'
+assert not saved.exists() or json.loads(saved.read_text())['instances'] == []
 with (home / 'Library/LaunchAgents/com.harr.git-host.plist').open('rb') as f:
     git_host = plistlib.load(f)
 assert git_host['Label'] == 'com.harr.git-host'
@@ -139,6 +154,42 @@ assert git_host['ProgramArguments'][1].endswith('/common/git_host/git_host.py')
 assert git_host['ProgramArguments'][2:] == [
     'serve', '--secret-file', str(config / 'harr/secrets/git-host-capability')
 ]
+PY
+
+# Two explicitly named instances may use the same backend and get separate public names.
+"${HOME}/.local/bin/harr" ein add --id giga-review --adapter gigacode
+"${HOME}/.local/bin/harr" ein add --id giga-builder --adapter gigacode
+"${HOME}/.local/bin/harr" ein apply
+python3 - <<'PY'
+import json, os, tomllib
+from pathlib import Path
+config = Path(os.environ['XDG_CONFIG_HOME']) / 'harr'
+instances = json.loads((config / 'einherjar/instances.json').read_text())['instances']
+assert [(item['id'], item['adapter']) for item in instances] == [
+    ('giga-review', 'gigacode'), ('giga-builder', 'gigacode')]
+effective = json.loads((config / 'mcp-registry.json').read_text())['servers']
+by_name = {item['name']: item for item in effective}
+assert by_name['giga-review']['ein_instance'] == 'giga-review'
+assert by_name['giga-builder']['ein_instance'] == 'giga-builder'
+assert not {'gigacode', 'einherjar'} & set(by_name)
+lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
+gateway_names = {server['name'] for server in lean['gateway']['servers']}
+assert {'giga-review', 'giga-builder'} <= gateway_names
+assert 'gigacode' not in gateway_names and 'einherjar' not in gateway_names
+codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text())
+assert set(codex['mcp_servers']) >= {'harr-ein-ui'}
+assert 'harr-gigacode-app' not in codex['mcp_servers']
+assert not (Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor').exists()
+assert (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker/SKILL.md').is_file()
+PY
+
+# A subsequent Harr refresh must preserve configured instance IDs.
+bash "${ROOT}/macos/install.sh" --harr-only --mcp none
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+config = Path(os.environ['XDG_CONFIG_HOME']) / 'harr/einherjar/instances.json'
+assert [item['id'] for item in json.loads(config.read_text())['instances']] == ['giga-review', 'giga-builder']
 PY
 
 "${HOME}/.local/bin/harr" status >/dev/null

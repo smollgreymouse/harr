@@ -326,7 +326,10 @@ def retire_gigacode_app() -> None:
     text = load_config_text()
     servers = parse_config(text).get("mcp_servers", {})
     entry = servers.get("harr-gigacode-app") if isinstance(servers, dict) else None
-    if isinstance(entry, dict) and entry.get("command") == sys.executable and entry.get("args") == [str(app)]:
+    # The interpreter may change between installs (system Python, venv, etc.).
+    # The Harr-owned namespace plus exact managed script path is sufficient
+    # ownership evidence; keep a same-named user server with different args.
+    if isinstance(entry, dict) and entry.get("args") == [str(app)]:
         text = remove_exact_table(text, ["mcp_servers", "harr-gigacode-app"]).rstrip()
         write_config_text(text + "\n")
 

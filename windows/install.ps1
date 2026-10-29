@@ -105,6 +105,8 @@ if (($firstInstall -or $ConfigureMcp) -and [Environment]::UserInteractive -and -
 New-Item -ItemType Directory -Force -Path $BinDir, $LibExecDir, $StateRoot | Out-Null
 Copy-Item -LiteralPath $StateHelperSource -Destination $StateHelper -Force
 Copy-TreeFresh $CommonSource (Join-Path $LibExecDir 'common')
+$legacyGigaApp = Join-Path $LibExecDir 'common\mcp\gigacode_app'
+if (Test-Path -LiteralPath $legacyGigaApp) { Remove-Item -LiteralPath $legacyGigaApp -Recurse -Force }
 $mcpAssets = Join-Path $LibExecDir 'common\mcp\assets'
 New-Item -ItemType Directory -Force -Path $mcpAssets | Out-Null
 Copy-Item -LiteralPath (Join-Path $SourceDir 'harr.png') -Destination (Join-Path $mcpAssets 'harr.png') -Force

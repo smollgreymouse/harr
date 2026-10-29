@@ -23,6 +23,15 @@ servers = {item["name"]: item for item in registry["servers"]}
 assert set(("codegraph", "gitlab", "grafana", "kibana")) <= set(servers)
 assert not {"gigacode", "einherjar"}.intersection(servers)
 
+# The compatibility app source remains available to tests/migration code, but
+# must never survive in the installed shared runtime on any supported OS.
+linux_install = (ROOT / "linux/install.sh").read_text(encoding="utf-8")
+macos_install = (ROOT / "macos/install.sh").read_text(encoding="utf-8")
+windows_install = (ROOT / "windows/install.ps1").read_text(encoding="utf-8")
+assert 'mcp/gigacode_app' in linux_install and 'rm -rf' in linux_install
+assert 'mcp/gigacode_app' in macos_install and 'rm -rf' in macos_install
+assert 'gigacode_app' in windows_install and 'Remove-Item' in windows_install
+
 grafana = servers["grafana"]
 assert grafana["transport"] == "stdio"
 assert grafana["lifecycle"] == "on-demand"

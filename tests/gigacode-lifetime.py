@@ -18,7 +18,7 @@ import threading
 from unittest.mock import patch, MagicMock
 
 ROOT = Path(__file__).resolve().parents[1]
-SERVER_PATH = ROOT / "common" / "mcp" / "gigacode_server.py"
+SERVER_PATH = ROOT / "common" / "executor" / "gigacode_runtime.py"
 
 spec = importlib.util.spec_from_file_location("harr_gigacode_server", SERVER_PATH)
 assert spec and spec.loader
