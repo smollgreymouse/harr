@@ -366,6 +366,22 @@ def _recorded_pid_running(state: dict) -> bool:
     )
 
 
+def _handoff_payload(session_id: str, state: dict, *, startup_confirmed: bool | None = None) -> dict:
+    payload = {
+        "session_id": session_id,
+        **state["handoff"],
+        "runtime": {
+            "phase": state.get("phase"),
+            "job_id": state.get("job_id"),
+            "elapsed_sec": state.get("elapsed_sec"),
+            "exit_code": state.get("exit_code"),
+        },
+    }
+    if startup_confirmed is not None:
+        payload["runtime"]["startup_confirmed"] = startup_confirmed
+    return payload
+
+
 def _process_rss_kb(pid: object) -> int | None:
     """Resident set size of a process in KiB; Linux only, None otherwise."""
     if not sys.platform.startswith("linux") or not isinstance(pid, int) or pid <= 0:
@@ -723,18 +739,7 @@ def status_tool(arguments: dict) -> dict:
     state = _load_state(session_id)
 
     if state and isinstance(state.get("handoff"), dict):
-        handoff = state["handoff"]
-        payload = {
-            "session_id": session_id,
-            **handoff,
-            "runtime": {
-                "phase": state.get("phase"),
-                "job_id": state.get("job_id"),
-                "elapsed_sec": state.get("elapsed_sec"),
-                "exit_code": state.get("exit_code"),
-            },
-        }
-        return text_result(payload)
+        return text_result(_handoff_payload(session_id, state))
 
     if state is None:
         return text_result({
@@ -747,6 +752,17 @@ def status_tool(arguments: dict) -> dict:
     phase = state.get("phase", "unknown")
 
     if phase in {"queued", "running", "completed", "cancelled"} and not process_running:
+        # State and process liveness are separate observations. A worker can
+        # atomically publish its final handoff and exit between these reads;
+        # re-read before classifying that normal completion as a crash.
+        latest = _load_state(session_id)
+        if (
+            latest
+            and latest.get("job_id") == state.get("job_id")
+            and isinstance(latest.get("handoff"), dict)
+        ):
+            return text_result(_handoff_payload(session_id, latest))
+
         failed_key = f"{session_id}:{state.get('job_id')}:{phase}"
         if failed_key not in _FAILED_EVIDENCE_LOGGED:
             if len(_FAILED_EVIDENCE_LOGGED) > 256:
@@ -1424,17 +1440,7 @@ def launch_detached_job(
 
         handoff = current.get("handoff")
         if isinstance(handoff, dict):
-            return {
-                "session_id": session_id,
-                **handoff,
-                "runtime": {
-                    "phase": current.get("phase"),
-                    "job_id": current.get("job_id"),
-                    "elapsed_sec": current.get("elapsed_sec"),
-                    "exit_code": current.get("exit_code"),
-                    "startup_confirmed": True,
-                },
-            }
+            return _handoff_payload(session_id, current, startup_confirmed=True)
 
         activity = _activity_after_offset(session_id, baseline_chat_size)
         if activity is not None:
@@ -1460,6 +1466,8 @@ def launch_detached_job(
         time.sleep(STARTUP_CONFIRM_POLL_SEC)
 
     current = _load_state(session_id) or {}
+    if isinstance(current.get("handoff"), dict):
+        return _handoff_payload(session_id, current, startup_confirmed=True)
     running = _pid_alive(current.get("pid")) or _pid_alive(current.get("worker_pid"))
     if not running:
         return {
