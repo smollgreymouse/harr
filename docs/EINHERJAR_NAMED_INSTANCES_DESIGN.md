@@ -1,6 +1,6 @@
 # Einherjar: named multi-instance setup and GigaCode compatibility
 
-Status: design + implementation in PR #39; isolated test harness passes. Public installation and real CLI model sessions are not activated/tested here.
+Status: implemented in PR #39 and shipped in Harr 0.2.9. Cross-repository release acceptance covers the real pinned LeanCTX binary and named-instance MCP surface; calls that consume external model quota remain explicit opt-in tests.
 
 ## Goal
 
@@ -16,7 +16,7 @@ The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherja
 - `instance.display_name`: editable human label, not an MCP identifier.
 - `instance.adapter`: `gigacode`, `opencode`, `codex`, or a registered custom command-template adapter. This is implementation detail, not public identity.
 - `instance.interface`: fixed `ein-v1` for **every** instance. It preserves the existing legacy GigaCode MCP behavior and argument/result schema, but deliberately renames the public tool to `ein`. The selected adapter never changes the public tool interface.
-- `instance.profile`: one shared `einherjar-worker` skill and one shared policy template for **all** instances, including GigaCode. The old `$gigacode-executor` may remain as a temporary compatibility alias to the one shared skill, but must not diverge.
+- `instance.profile`: one shared `einherjar-worker` skill and one shared policy template for **all** instances, including GigaCode. The retired `$gigacode-executor` skill is removed during migration rather than installed beside the canonical shared skill.
 - `instance.enabled`: global selection state. Disabled instances remain in configuration and lose gateway/skill routing exposure, but historical session metadata is retained.
 
 **The setup MUST prompt for a unique MCP server name for every newly added Einherjar; no adapter-derived, numbered or silent automatic naming, including duplicates of an adapter.** Check collisions with built-in/static and already registered MCP servers before saving. The existing `gigacode` identity is offered only when importing the legacy installation, and is never forced upon new GigaCode instances.
@@ -108,7 +108,7 @@ Non-interactive parity:
 1. Registry generator merges static `common/mcp/registry.json` *without a second hard-coded GigaCode server* with validated enabled instance definitions. Effective registry drives LeanCTX gateway and host integrations. Detect name collision with any static MCP or another instance; fail closed.
 2. Per-instance MCP launcher: `harr-mcp-run --einherjar-instance ID` (or equivalent manager action) resolves immutable identity and loads config, then starts shared Einherjar engine with a compatibility-aware tool facade. Never trust user-provided `instance_id` in each tool call.
 3. Namespaced cache: `.../harr/einherjar/<instance-id>/<workspace-hash>/<session-uuid>`; session metadata pins adapter id, instance id and config generation at creation. Updating an instance affects new sessions only; explicit action required for existing sessions. No cross-instance UUID lookups, cancel, resume or shared process control.
-4. Tools published only for enabled instances. One shared skill and one shared policy template enumerate the *actual enabled instance tool names*. No separate per-adapter skills or behavior forks; the legacy `$gigacode-executor` remains only as an optional alias to this single canonical skill. Preserve user-authored policy and unrelated MCP settings.
+4. Tools published only for enabled instances. One shared skill and one shared policy template enumerate the *actual enabled instance tool names*. No separate per-adapter skills or behavior forks; the retired `$gigacode-executor` skill is removed rather than installed as a second alias. Preserve user-authored policy and unrelated MCP settings.
 5. If several workers use the same adapter, their executable args, environment, permissions, concurrency limits and session lifecycles remain independent; optional per-workspace concurrency conflict protection prevents two workers editing the same scope simultaneously.
 
 ## Codex Desktop live panel integration
@@ -139,7 +139,7 @@ Treat the pre-feature `gigacode_server.py` as an executable contract. `interface
 - `timeout_sec=0` unlimited; wait up to 1500s never cancels; one-shot status (no parent polling); compact public runtime fields;
 - assistant-only progress, incremental revisions, app-only live panel where supported, explicit `messages`, and no leaking tool logs/JSON into model context;
 - stable session UUID semantics, cancellation/resume, orphan protection, terminal DONE/ESCALATE/FAILED schema and acceptance evidence validation;
-- one canonical shared Einherjar skill that subsumes the full existing `gigacode-executor/SKILL.md` behavior, with an optional compatibility alias `$gigacode-executor`; migrate generated routing and documentation to `gigacode::ein` without divergent instructions;
+- one canonical shared Einherjar skill that subsumes the old `gigacode-executor/SKILL.md` behavior; remove the retired `$gigacode-executor` skill and migrate generated routing/documentation to `gigacode::ein` without divergent instructions;
 - existing tests `tests/gigacode-bridge.py`, `tests/gigacode-lifetime.py`, MCP app tests and Desktop/UI streaming coverage must pass through the **new façade**, not only through the unchanged legacy server.
 
 There are *known differences now*: PR #39 Einherjar has `backend` and `backends` action in public schema; it returns RUNNING based on a different startup path and does not implement the full legacy live-progress surface. Therefore **do not replace legacy GigaCode with the generic worker directly**. Implement the single `GigaCodeCompatibleFacade` used by **every** named instance and close parity gaps, or reuse the legacy MCP adapter over the new core until its behavior is demonstrably equivalent. No removal of old implementation before differential tests pass.

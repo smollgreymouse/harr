@@ -14,7 +14,7 @@ cd harr
 ./install.sh --clean --start
 ```
 
-LeanCTX and CodeGraph are required. The first interactive install presents the shared Harr checklist for optional MCPs such as GitLab, Grafana and GigaCode.
+LeanCTX and CodeGraph are required. The first interactive install presents the shared Harr checklist for optional service MCPs such as GitLab, Grafana, Kibana and Jira. Named executor workers are configured separately with `harr ein configure`.
 
 Full install without prompts:
 
@@ -40,9 +40,9 @@ Normal updates reuse the saved selection without prompting. Use `--configure-mcp
 harr mcp configure
 harr mcp configure none
 harr mcp configure all
-harr mcp add gigacode
 harr mcp remove grafana
 harr mcp available
+harr ein configure
 ```
 
 The first install requires `--clean` so Harr can snapshot the existing global Codex/OpenCode harness and any colliding LaunchAgents before taking ownership. Do not use `sudo`.

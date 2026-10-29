@@ -9,6 +9,9 @@ import time
 from typing import Any
 
 PROJECT_ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+INSTANCE_ID = os.environ.get("HARR_EIN_SMOKE_INSTANCE", "").strip()
+if not INSTANCE_ID:
+    raise SystemExit("set HARR_EIN_SMOKE_INSTANCE to an explicitly user-authorized named Ein instance before running this real-model smoke test")
 
 proc = subprocess.Popen(
     [os.environ.get("LEANCTX_SMOKE_BINARY", "lean-ctx")],
@@ -71,13 +74,13 @@ def tool_payload(response: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(f"downstream JSON is not an object: {parsed!r}")
     return parsed
 
-def call_gigacode(req_id: int, downstream_args: dict[str, Any], *, progress_token: str | None = None,
+def call_ein(req_id: int, downstream_args: dict[str, Any], *, progress_token: str | None = None,
                   timeout: float) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     params: dict[str, Any] = {
         "name": "ctx_tools",
         "arguments": {
             "action": "call",
-            "tool": "gigacode::gigacode",
+            "tool": f"{INSTANCE_ID}::ein",
             "arguments": downstream_args,
         },
     }
@@ -95,7 +98,7 @@ try:
         "params": {
             "protocolVersion": "2025-06-18",
             "capabilities": {},
-            "clientInfo": {"name": "harr-gigacode-live-stream-smoke", "version": "0.1"},
+            "clientInfo": {"name": "harr-ein-live-stream-smoke", "version": "0.1"},
         },
     })
     init, _ = read_until_id(1, 20)
@@ -113,7 +116,7 @@ C3. Return DONE only after the read-only verification succeeds.
 
 Keep the task tiny. The final handoff must follow the bridge-required JSON schema."""
 
-    started, _ = call_gigacode(
+    started, _ = call_ein(
         2,
         {"action": "start", "prompt": prompt, "timeout_sec": 180},
         timeout=40,
@@ -124,12 +127,12 @@ Keep the task tiny. The final handoff must follow the bridge-required JSON schem
     if started.get("status") not in {"RUNNING", "STARTING", "DONE"}:
         raise RuntimeError(f"unexpected start status: {started!r}")
     if started.get("status") == "DONE":
-        raise RuntimeError("GigaCode finished before wait; cannot validate live progress path")
+        raise RuntimeError("Ein worker finished before wait; cannot validate live progress path")
 
-    terminal, wait_seen = call_gigacode(
+    terminal, wait_seen = call_ein(
         3,
         {"action": "wait", "session_id": sid, "wait_timeout_sec": 240},
-        progress_token="gigacode-live-smoke",
+        progress_token="ein-live-smoke",
         timeout=270,
     )
 
@@ -137,7 +140,7 @@ Keep the task tiny. The final handoff must follow the bridge-required JSON schem
         item for item in wait_seen
         if item.get("method") == "notifications/progress"
         and isinstance(item.get("params"), dict)
-        and item["params"].get("progressToken") == "gigacode-live-smoke"
+        and item["params"].get("progressToken") == "ein-live-smoke"
     ]
     messages = [item["params"].get("message", "") for item in progress]
 
@@ -147,7 +150,7 @@ Keep the task tiny. The final handoff must follow the bridge-required JSON schem
         raise RuntimeError(f"no progress notifications reached the outer MCP client; terminal={terminal!r}")
     if any('\"status\": \"DONE\"' in msg or "```json" in msg for msg in messages):
         raise RuntimeError(f"final JSON leaked into progress notifications: {messages!r}")
-    if not all(isinstance(msg, str) and msg.startswith("GigaCode: ") for msg in messages):
+    if not all(isinstance(msg, str) and msg.strip() for msg in messages):
         raise RuntimeError(f"unexpected progress message shape: {messages!r}")
 
     print(json.dumps({

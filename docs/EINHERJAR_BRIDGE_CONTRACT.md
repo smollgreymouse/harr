@@ -20,7 +20,11 @@ The architecture is:
 ```text
 planner
   |
-  | einherjar::worker
+  | <instance-name>::ein
+  v
+named Ein instance
+  |
+  | fixed adapter from Harr instance configuration
   v
 Einherjar core
   |
@@ -48,8 +52,8 @@ CLI flags, transcript locations, or process-management details.
 - worker system contract.
 - final Harr handoff validation.
 - conversion of backend failures into backend-neutral Harr failures.
-- selection of a configured backend.
-- persistence of the selected backend and vendor session handle.
+- binding each generated named instance to its configured adapter.
+- persistence of the instance/adapter identity and vendor session handle.
 - public MCP schemas.
 
 ### Backend adapter owns
@@ -82,18 +86,19 @@ Harr session identity and vendor session identity are separate.
 ```text
 Harr session
   session_id = <Harr UUID>
-  backend = "opencode"
+  instance_id = "opencode-builder"
+  adapter = "opencode"
   vendor_session_id = <opaque backend value>
 ```
 
 Rules:
 
 1. Public `resume/status/messages/wait/cancel` use only the Harr session id.
-2. The selected backend is frozen when the Harr session starts.
+2. The instance id and configured adapter are frozen when the Harr session starts.
 3. The vendor session id is opaque to core and callers.
 4. A backend adapter may return no vendor session id only if it declares itself
    stateless/non-resumable.
-5. Resume must never silently switch backend.
+5. Resume must never silently switch instance or adapter.
 
 ## 4. Required adapter API
 
@@ -354,43 +359,38 @@ cancellation.
 
 ## 15. Configuration contract
 
-Default config:
+The user-facing source of truth is the named-instance registry:
 
 ```text
-~/.config/harr/einherjar.json
+~/.config/harr/einherjar/instances.json
 ```
 
-Respect XDG/Harr config overrides where supported.
+Respect XDG/Harr config overrides where supported. Each instance has a stable
+user-chosen id and one fixed adapter. Built-in adapters may use an executable
+override; custom adapters use an explicit argv-based definition. Provider API
+keys or login tokens must never be embedded in this registry.
 
-Example:
+At runtime Harr may generate a private per-instance compatibility configuration
+for the existing Einherjar core. That generated file is an implementation
+detail: callers must not edit it, select a different backend through it, or
+treat its legacy `default_backend` field as planner-visible configuration.
 
-```json
-{
-  "schema": 1,
-  "default_backend": "gigacode",
-  "backends": {
-    "my-agent": {
-      "adapter": "command-template",
-      "start": ["my-agent", "run", "{prompt}"]
-    }
-  }
-}
-```
+Instance ids and adapter ids are separate stable identifiers. Harr session
+state persists both so resume cannot silently move to another named instance or
+adapter generation.
 
-Configuration must never contain provider API keys or login tokens.
+## 16. Adapter probe contract
 
-Backend names should be stable identifiers suitable for persistence in Harr
-session state.
-
-## 16. Backend probe contract
-
-`backends`/probe output is informational and secret-free.
+Adapter probe output is informational and secret-free. The user-facing probe is
+`harr ein test NAME`; normal `<instance>::ein` calls do not expose a backend
+selector or a `backends` action.
 
 Expose only data such as:
 
 ```json
 {
-  "name": "codex",
+  "instance": "reviewer",
+  "adapter": "codex",
   "source": "builtin",
   "found": true,
   "resumable": true,
@@ -407,7 +407,7 @@ Do not expose:
 - environment secrets;
 - full home-directory paths unless needed for a safe diagnostic.
 
-Executable discovery alone does not prove full backend compatibility.
+Executable discovery alone does not prove full adapter compatibility.
 
 ## 17. Conformance test suite
 
@@ -495,17 +495,22 @@ Potentially valid reason:
 - a new capability that changes Harr lifecycle semantics;
 - a security invariant that must be enforced centrally.
 
-## 20. Backward compatibility
+## 20. Migration compatibility
 
-The legacy Harr `gigacode` MCP may coexist with Einherjar.
+The standalone Harr `gigacode` MCP is retired by the named-instance migration;
+it must not coexist with the generated Ein surface.
 
 During migration:
 
-- existing `gigacode::gigacode` behavior remains valid;
-- the Einherjar GigaCode backend should reuse the same semantics;
-- no existing install is auto-switched to Einherjar;
-- backend abstraction must not weaken GigaCode cancellation, startup
-  confirmation, handoff validation, or progress behavior.
+- preserve existing GigaCode session/history state when importing an explicitly
+  named `gigacode` instance;
+- publish that instance only as `gigacode::ein`;
+- remove Harr-managed standalone GigaCode host registration and the old
+  `gigacode-executor` skill without touching unrelated user-owned entries;
+- reuse the established GigaCode adapter semantics for cancellation, startup
+  confirmation, handoff validation, and progress behavior;
+- never auto-start or auto-select the migrated instance: delegation still
+  requires a direct user instruction.
 
 ## 21. Security invariants
 
