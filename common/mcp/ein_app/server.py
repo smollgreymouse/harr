@@ -26,8 +26,9 @@ def backend(instance):
     os.environ["HARR_EIN_INSTANCE"]=instance
     if item["adapter"]!="gigacode":
      os.environ["HARR_CONFIG_DIR"]=str(CONFIG_ROOT/"einherjar/runtime"/instance)
-    script="gigacode_server.py" if item["adapter"]=="gigacode" else "einherjar_server.py"
-    spec=importlib.util.spec_from_file_location("harr_ein_panel_backend_"+instance.replace("-","_"),str(ROOT/"common/mcp"/script))
+     script=(ROOT/"common/executor/gigacode_runtime.py" if item["adapter"]=="gigacode"
+             else ROOT/"common/mcp/einherjar_server.py")
+     spec=importlib.util.spec_from_file_location("harr_ein_panel_backend_"+instance.replace("-","_"),str(script))
     mod=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     BACKENDS[instance]=mod

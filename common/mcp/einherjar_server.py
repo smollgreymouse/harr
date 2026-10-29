@@ -51,9 +51,11 @@ _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 TOOLS = [{
     "name": "ein" if INSTANCE_ID else "worker",
     "description": (
-        "Delegate a bounded implementation/verification contract to an external CLI agent through "
+        "Use only after the user directly instructs you to delegate work to this named executor. "
+        "Never choose an instance or backend automatically. Delegate a bounded implementation/verification contract "
+        "to an external CLI agent through "
         "Harr Einherjar. start/resume are detached; status is nonblocking; wait blocks inside the "
-        "bridge; messages is opt-in progress; cancel is explicit; backends lists safe capabilities. "
+        "bridge; messages is opt-in progress; cancel is explicit. "
         "Harr session ids are backend-neutral and vendor session ids never leave the bridge."
     ),
     "inputSchema": {
@@ -869,7 +871,20 @@ def handle(request: dict) -> dict | None:
     request_id = request.get("id")
     if method == "initialize":
         requested = request.get("params", {}).get("protocolVersion", "2025-06-18")
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": requested, "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION}}}
+        server_info = {"name": SERVER_NAME, "version": SERVER_VERSION}
+        icon_path = os.environ.get("HARR_MCP_ICON_PATH")
+        if icon_path:
+            try:
+                import base64
+                import mimetypes
+                icon_file = Path(icon_path)
+                if icon_file.is_file():
+                    mime = mimetypes.guess_type(icon_file.name)[0] or "image/png"
+                    data_uri = "data:" + mime + ";base64," + base64.b64encode(icon_file.read_bytes()).decode("ascii")
+                    server_info["icons"] = [{"src": data_uri, "mimeType": mime}]
+            except OSError:
+                pass
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": requested, "capabilities": {"tools": {"listChanged": False}}, "serverInfo": server_info}}
     if method in {"notifications/initialized", "notifications/cancelled"}:
         return None
     if method == "ping":
@@ -883,6 +898,16 @@ def handle(request: dict) -> dict | None:
                 raise ValueError(f"unknown tool: {params.get('name')}")
             arguments = params.get("arguments") or {}
             _validate_arguments(arguments)
+            if INSTANCE_ID and "backend" in arguments:
+                raise ValueError("backend is fixed by Ein instance")
+            if INSTANCE_ID:
+                config = load_einherjar_config()
+                _, adapter = resolve_backend(None, config)
+                meta = params.get("_meta")
+                token = meta.get("progressToken") if isinstance(meta, dict) else None
+                result = adapter.dispatch_named_tool(arguments, token)
+                if result is not None:
+                    return {"jsonrpc": "2.0", "id": request_id, "result": result}
             action = arguments["action"]
             if action == "start":
                 result = start_tool(arguments)
@@ -916,6 +941,9 @@ def main() -> int:
             sys.stderr.write(f"invalid Einherjar job spec: {exc}\n")
             return 2
         return _run_turn(spec)
+    if not INSTANCE_ID:
+        sys.stderr.write("Einherjar requires a configured named instance. Run `harr configure ein` and use the instance's ein tool.\n")
+        return 2
     for line in sys.stdin:
         try:
             request = json.loads(line)

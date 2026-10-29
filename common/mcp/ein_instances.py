@@ -127,12 +127,9 @@ def config_for_instance(name: str) -> dict:
 
 def expanded_servers(base: list[dict], config: dict | None = None) -> list[dict]:
     configured = (config if config is not None else read())["instances"]
-    if configured:
-        # Hide PR #39's obsolete singleton as soon as named workers are configured.
-        base = [server for server in base if server["name"] != "einherjar"]
-    if any(item["id"] == "gigacode" for item in configured):
-        # An explicitly configured named GigaCode replaces the legacy server.
-        base = [server for server in base if server["name"] != "gigacode"]
+    # Legacy standalone registrations are intentionally never emitted. The
+    # literal name "gigacode" remains available to a named Ein instance.
+    base = [server for server in base if server["name"] not in {"einherjar", "gigacode"}]
 
     known = {server["name"] for server in base}
     for item in configured:
@@ -142,16 +139,15 @@ def expanded_servers(base: list[dict], config: dict | None = None) -> list[dict]
         if name in known:
             raise ValueError(f"Ein MCP name collision: {name}")
         known.add(name)
-        script = "gigacode_server.py" if item["adapter"] == "gigacode" else "einherjar_server.py"
         base.append({
             "name": name,
             "label": item.get("display_name", name),
-            "description": f"Named Ein {item['adapter']} worker",
+            "description": f"Named Ein {item['adapter']} worker. Use only after the user explicitly instructs you to delegate; never choose an executor automatically.",
             "required": False,
             "transport": "stdio",
             "lifecycle": "on-demand",
             "ein_instance": name,
-            "runtime": {"kind": "bundled-python", "script": script, "version": "0.1.0", "args": []},
+            "runtime": {"kind": "bundled-python", "script": "einherjar_server.py", "version": "0.1.0", "args": []},
             "skill_reference": "einherjar.md",
         })
     return base

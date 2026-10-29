@@ -40,8 +40,9 @@ def ein_policy(tools: list[str]) -> str:
     if not tools:
         return ''
     lines = [
-        '- For delegated implementation after architecture and acceptance are fixed, load the single `$einherjar-worker` skill. All Ein instances expose identical `start|resume|status|messages|wait|cancel` through their `ein` tool.',
-        '- Select a specific named MCP instance from the configured list; do not pass a backend override or auto-poll. Keep the planner separate from the working executor.',
+        '- Use a named `<instance>::ein` only after the user directly instructs you to delegate work to an executor. Configuring one instance, even the only instance, is not execution authorization. Never choose an instance or backend automatically.',
+        '- For authorized delegation after architecture and acceptance are fixed, load the shared `$einherjar-worker` skill. All instances expose identical `start|resume|status|messages|wait|cancel` and stay bound to their configured backend.',
+        '- Review the full structured handoff against the acceptance criteria; `DONE` alone is not proof. Do not auto-poll or expose vendor session ids.',
         '- Available Ein tools: ' + ', '.join('`' + name + '`' for name in tools) + '.',
     ]
     return '\n'.join(lines) + '\n'
@@ -84,6 +85,11 @@ def filter_skill(args: argparse.Namespace) -> None:
             target = args.output / "references" / str(reference)
             if target.exists():
                 target.unlink()
+    # Retired singleton references must not be copied into freshly generated
+    # managed skills after their catalog entries are removed.
+    retired_reference = args.output / "references" / "gigacode.md"
+    if retired_reference.exists():
+        retired_reference.unlink()
     if tools:
         # A named worker uses the generic reference even without legacy singleton.
         source_ref = args.source / 'references' / 'einherjar.md'
@@ -91,6 +97,10 @@ def filter_skill(args: argparse.Namespace) -> None:
         if source_ref.exists():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source_ref, target)
+    else:
+        target = args.output / 'references' / 'einherjar.md'
+        if target.exists():
+            target.unlink()
 
 
 def main() -> None:

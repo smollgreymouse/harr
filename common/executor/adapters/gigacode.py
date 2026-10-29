@@ -6,6 +6,10 @@ from common.executor.backends import BackendAdapter, BackendCapabilities, Backen
 from common.executor.protocol import WORKER_CONTRACT
 
 class GigaCodeAdapter(BackendAdapter):
+    def dispatch_named_tool(self, arguments: dict, progress_token=None) -> dict | None:
+        from common.executor import gigacode_runtime
+        return gigacode_runtime._dispatch_ein_tool(arguments, progress_token)
+
     def name(self) -> str:
         return "gigacode"
 

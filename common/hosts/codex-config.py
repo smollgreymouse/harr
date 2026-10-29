@@ -315,42 +315,20 @@ def apply_with_fallback() -> None:
     print(f"Applied Harr Codex MCP registration using validated TOML fallback: {CONFIG}")
 
 
-APP_SERVER_NAME = "harr-gigacode-app"
 WORKSPACE_SERVER_NAME = "harr-workspace"
 WORKSPACE_TOOLS = ("workspace_get", "workspace_sync")
 WORKSPACE_APP_SERVER_NAME = "harr-workspace-app"
 
 
-def apply_gigacode_app() -> None:
-    # Keep the existing LeanCTX gateway untouched: UI resources require a direct MCP.
+def retire_gigacode_app() -> None:
+    """Remove only the exact Harr-owned standalone app registration."""
     app = Path(__file__).resolve().parents[1] / "mcp" / "gigacode_app" / "server.py"
-    if not app.is_file():
-        raise RuntimeError(f"GigaCode MCP App missing: {app}")
     text = load_config_text()
-    parse_config(text)
-    text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME, "tools", "show_gigacode_live"])
-    text = remove_exact_table(text, ["mcp_servers", APP_SERVER_NAME]).rstrip()
-    from common.mcp.ein_instances import read as read_ein_instances
-    if any(item["id"] == "gigacode" for item in read_ein_instances()["instances"]):
+    servers = parse_config(text).get("mcp_servers", {})
+    entry = servers.get("harr-gigacode-app") if isinstance(servers, dict) else None
+    if isinstance(entry, dict) and entry.get("command") == sys.executable and entry.get("args") == [str(app)]:
+        text = remove_exact_table(text, ["mcp_servers", "harr-gigacode-app"]).rstrip()
         write_config_text(text + "\n")
-        return
-    selection_path = Path.home() / ".config" / "harr" / "mcp-selection.json"
-    if selection_path.is_file():
-        import json
-        enabled = json.loads(selection_path.read_text(encoding="utf-8")).get("enabled", [])
-        if "gigacode" not in enabled:
-            write_config_text(text + "\n")
-            return
-    block = (f"[mcp_servers.{APP_SERVER_NAME}]\n"
-             f"command = {toml_basic_string(sys.executable)}\n"
-             f"args = [{toml_basic_string(str(app))}]\n"
-             "enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n"
-             "default_tools_approval_mode = \"auto\"\n"
-             f"\n[mcp_servers.{APP_SERVER_NAME}.tools.show_gigacode_live]\n"
-             "approval_mode = \"auto\"\n")
-    text = f"{text}\n\n{block}" if text else block
-    parse_config(text)
-    write_config_text(text)
 
 
 def apply_named_ein_apps() -> None:
@@ -482,7 +460,7 @@ def workspace_app_is_managed(config: dict[str, Any]) -> bool:
 def apply() -> None:
     binary = codex_cli()
     apply_with_codex_cli(binary) if binary else apply_with_fallback()
-    apply_gigacode_app()
+    retire_gigacode_app()
     apply_named_ein_apps()
     apply_workspace_control()
     apply_workspace_app()
@@ -528,7 +506,7 @@ def main() -> int:
         apply()
         return 0
     if command == "apply-ein-panels":
-        apply_gigacode_app()
+        retire_gigacode_app()
         apply_named_ein_apps()
         return 0
     if command == "status":

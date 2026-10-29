@@ -11,6 +11,8 @@ async function runPanel(file, mode) {
   assert.ok(script, `${file}: script block missing`);
   const listeners = new Map();
   const timers = new Set();
+  let pagehidden = false;
+  let callsAfterPagehide = 0;
   let nextTimer = 0;
   const setTimer = (callback, delay) => {
     const id = ++nextTimer;
@@ -46,6 +48,11 @@ async function runPanel(file, mode) {
     addEventListener() {},
   };
   const window = { addEventListener: (name, callback) => listeners.set(name, callback) };
+  const addWindowListener = window.addEventListener;
+  window.addEventListener = (name, callback) => addWindowListener(name, (event) => {
+    if (name === "pagehide") pagehidden = true;
+    callback(event);
+  });
   let claims = 0;
   let releases = 0;
   let messages = 0;
@@ -58,6 +65,7 @@ async function runPanel(file, mode) {
         return;
       }
       if (message.method !== "tools/call" && message.method !== "ui/message") return;
+      if (pagehidden) callsAfterPagehide++;
       if (message.method === "ui/message") messages++;
       const tool = message.params?.name;
       if (tool === "claim_done_notification_ui") {
@@ -83,7 +91,7 @@ async function runPanel(file, mode) {
     document, window, parent, setTimeout: setTimer, clearTimeout: clearTimer,
     console, Math, Date, String, Error, Promise, Map, JSON,
   });
-  vm.runInContext(script + "\nwindow.__announce=()=>{sid='sid';scopeId='scope';if(typeof instance!=='undefined')instance='named';initialized=true;notifyEligible=true;lifecycle=()=>{};return announceDone()};", context, { filename: file });
+  vm.runInContext(script + "\nwindow.__announce=()=>{sid='sid';scopeId='scope';if(typeof instance!=='undefined')instance='named';initialized=true;notifyEligible=true;return announceDone()};", context, { filename: file });
   await new Promise((resolve) => setImmediate(resolve));
   const announcement = context.window.__announce();
   if (mode === "teardown") {
@@ -96,10 +104,11 @@ async function runPanel(file, mode) {
   assert.equal(messages, mode === "success" ? 1 : 0);
   assert.equal(releases, mode === "exhaust" ? 1 : 0);
   assert.equal(timers.size, 0, "completed retries must leave no request or retry timers");
+  assert.equal(callsAfterPagehide, 0, "pagehide must not create new app requests after teardown");
 }
 
 (async () => {
-  for (const file of ["common/mcp/gigacode_app/panel.html", "common/mcp/ein_app/panel.html"]) {
+  for (const file of ["common/mcp/ein_app/panel.html"]) {
     const html = fs.readFileSync(file, "utf8");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     assert.ok(script, `${file}: script block missing`);

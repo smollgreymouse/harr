@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import tomllib
+
+_isolated_config = tempfile.TemporaryDirectory(prefix="harr-mcp-selection-config-")
+os.environ["HARR_CONFIG_DIR"] = _isolated_config.name
 
 ROOT = Path(__file__).resolve().parents[1]
 SELECTOR = ROOT / "common" / "mcp" / "selector.py"
@@ -67,8 +71,8 @@ def check(spec: str, expected: list[str]) -> None:
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
-            allow_a = tmp / "codex-skills" / "gigacode-executor"
-            allow_b = tmp / "opencode-skills" / "gigacode-executor"
+            allow_a = tmp / "codex-skills" / "einherjar-worker"
+            allow_b = tmp / "opencode-skills" / "einherjar-worker"
             run(
                 MANAGER, "--registry", effective, "render-leanctx",
                 "--base", BASE, "--output", lean,
@@ -123,13 +127,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("A browser is a Grafana fallback only" in policy) == ("grafana" in expected)
         assert ("Kibana/Elasticsearch log and document investigation" in policy) == ("kibana" in expected)
         assert ("This Harr route is intentionally read-only" in policy) == ("kibana" in expected)
-        assert ("use the installed `$gigacode-executor` skill" in policy) == ("gigacode" in expected)
-        assert ("gigacode::gigacode" in policy) == ("gigacode" in expected)
-        assert ("delegated scope is frozen for the parent" in policy) == ("gigacode" in expected)
-        assert ("contract acceptance from the structured self-verification handoff" in policy) == ("gigacode" in expected)
-        assert ("use the installed `$einherjar-worker` skill" in policy) == ("einherjar" in expected)
-        assert ("einherjar::worker" in policy) == ("einherjar" in expected)
-        assert ("Vendor session ids are private to the bridge" in policy) == ("einherjar" in expected)
+        assert "$gigacode-executor" not in policy
+        assert "gigacode::gigacode" not in policy
+        assert "einherjar::worker" not in policy
         assert "<!-- harr-mcp:" not in policy
 
         filtered_skill = tmp / "harr-skill"
@@ -182,22 +182,9 @@ def check(spec: str, expected: list[str]) -> None:
             assert "KIBANA_API_KEY" in kibana_text
             assert "/api/console/proxy" in kibana_text
         gigacode_ref = filtered_skill / "references" / "gigacode.md"
-        assert gigacode_ref.exists() == ("gigacode" in expected)
-        if gigacode_ref.exists():
-            gigacode_text = gigacode_ref.read_text(encoding="utf-8")
-            assert "gigacode::gigacode" in gigacode_text
-            assert "startup_confirmed=true" in gigacode_text
-            assert "Nonblocking status and blocking wait" in gigacode_text
-            assert "wait` polls only inside the MCP bridge" in gigacode_text
-            assert "do not return GigaCode event history" in gigacode_text
-            assert "second full parent code review" in gigacode_text
+        assert not gigacode_ref.exists()
         einherjar_ref = filtered_skill / "references" / "einherjar.md"
-        assert einherjar_ref.exists() == ("einherjar" in expected)
-        if einherjar_ref.exists():
-            einherjar_text = einherjar_ref.read_text(encoding="utf-8")
-            assert "einherjar::worker" in einherjar_text
-            assert "`gigacode`" in einherjar_text and "`opencode`" in einherjar_text and "`codex`" in einherjar_text
-            assert "EINHERJAR_BRIDGE_CONTRACT.md" in einherjar_text
+        assert not einherjar_ref.exists()
         assert "<!-- harr-mcp:" not in skill
 
 
@@ -208,15 +195,15 @@ assert servers["gitlab"]["required"] is False
 assert servers["grafana"]["required"] is False
 assert servers["jira"]["required"] is False
 assert servers["kibana"]["required"] is False
-assert servers["gigacode"]["required"] is False
-assert servers["einherjar"]["required"] is False
+assert not {"gigacode", "einherjar"}.intersection(servers)
 
 check("none", ["codegraph"])
 check("gitlab", ["codegraph", "gitlab"])
-check("gigacode", ["codegraph", "gigacode"])
-check("einherjar", ["codegraph", "einherjar"])
+for retired in ("gigacode", "einherjar"):
+    failed = subprocess.run([sys.executable, str(SELECTOR), "--catalog", str(CATALOG), "--selection", "/tmp/no-selection.json", "--effective", "/tmp/no-effective.json", "--spec", retired], capture_output=True, text=True)
+    assert failed.returncode != 0 and "standalone executor MCP choices are retired" in failed.stderr
 check("kibana", ["codegraph", "kibana"])
-check("all", ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira", "redash"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "jira", "redash"])
 
 # Normal reinstall/update without an explicit selection must reuse the saved
 # optional set instead of resetting to required-only or all.
@@ -224,12 +211,12 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     tmp = Path(tmp_raw)
     selection = tmp / "selection.json"
     effective = tmp / "effective.json"
-    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gigacode")
+    selection.write_text(json.dumps({"schema": 1, "enabled": ["codegraph", "gigacode"]}))
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--default", "required")
-    assert names(effective) == ["codegraph", "gigacode"]
+    assert names(effective) == ["codegraph"]
     assert json.loads(selection.read_text(encoding="utf-8")) == {
         "schema": 1,
-        "enabled": ["codegraph", "gigacode"],
+        "enabled": ["codegraph"],
     }
 
 # An upgrade must discard saved choices whose MCPs were removed from the
@@ -238,7 +225,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     tmp = Path(tmp_raw)
     selection = tmp / "selection.json"
     effective = tmp / "effective.json"
-    selection.write_text(json.dumps({"schema": 1, "enabled": ["codegraph", "kibana", "legacyjira"]}))
+    selection.write_text(json.dumps({"schema": 1, "enabled": ["codegraph", "kibana", "legacyjira", "gigacode", "einherjar"]}))
     upgraded = subprocess.run(
         [sys.executable, str(SELECTOR), "--catalog", str(CATALOG),
          "--selection", str(selection), "--effective", str(effective)],
@@ -246,6 +233,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     )
     assert "retired Harr MCP choice(s)" in upgraded.stderr
     assert "legacyjira" in upgraded.stderr
+    assert "gigacode" in upgraded.stderr and "einherjar" in upgraded.stderr
     assert names(effective) == ["codegraph", "kibana"]
     assert json.loads(selection.read_text()) == {"schema": 1, "enabled": ["codegraph", "kibana"]}
 
@@ -266,20 +254,20 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--spec", "gitlab")
     assert names(effective) == ["codegraph", "gitlab"]
 
-    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "gigacode")
-    assert names(effective) == ["codegraph", "gitlab", "gigacode"]
+    failed = subprocess.run([sys.executable, str(SELECTOR), "--catalog", str(CATALOG), "--selection", str(selection), "--effective", str(effective), "--add", "gigacode"], capture_output=True, text=True)
+    assert failed.returncode != 0 and "standalone executor MCP choices are retired" in failed.stderr
 
-    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "grafana,gigacode")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "gigacode"]
+    run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "grafana")
+    assert names(effective) == ["codegraph", "gitlab", "grafana"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "gitlab")
-    assert names(effective) == ["codegraph", "grafana", "gigacode"]
+    assert names(effective) == ["codegraph", "grafana"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--remove", "all")
     assert names(effective) == ["codegraph"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar", "jira", "redash"]
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "jira", "redash"]
 
     failed = subprocess.run(
         [

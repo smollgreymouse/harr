@@ -105,6 +105,8 @@ install_runtime_files() {
   install -d -m 0700 "$SECRETS_DIR"
   rm -rf -- "$COMMON_LIB_DIR"
   cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
+  install -d -m 0755 "${COMMON_LIB_DIR}/mcp/assets"
+  install -m 0644 "${SOURCE_DIR}/../harr.png" "${COMMON_LIB_DIR}/mcp/assets/harr.png"
   find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
   find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
   chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"

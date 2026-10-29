@@ -736,6 +736,16 @@ def workspace_command(args: argparse.Namespace) -> None:
 
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
+    if leanctx_is_mcp(args.rest):
+        # The managed server-info icon lives beside the installed MCP runtime.
+        # Keep the source checkout fallback useful for direct development runs.
+        icon = HERE / "assets" / "harr.png"
+        if not icon.is_file():
+            checkout_icon = HERE.parents[1] / "harr.png"
+            if checkout_icon.is_file():
+                icon = checkout_icon
+        if icon.is_file():
+            env["HARR_MCP_ICON_PATH"] = str(icon)
     if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
         primary = workspace_root()
         store = ensure_workspace_store(args.real, primary)

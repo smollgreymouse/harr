@@ -29,6 +29,10 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition))
     run('add','--id','fake-two','--adapter','custom','--definition-file',str(definition))
     run('add','--id','gigacode','--adapter','gigacode')
+    fake_gigacode=work/'fake-gigacode'
+    fake_gigacode.write_text('#!/bin/sh\nprintf \'%s\\n\' \'{"status":"DONE","summary":"fake GigaCode completed","changed":["fake.py"],"verified":[{"criterion":"wire","check":"fake CLI","result":"PASS","evidence":"exit 0"}],"self_review":{"criteria_complete":true,"diff_scope_clean":true,"unverified":[]},"escalation":null,"blockers":[]}\'\n')
+    fake_gigacode.chmod(0o755)
+    run('edit','gigacode','--executable',str(fake_gigacode))
     codex_home=base/'profiles/codex'
     codex_home.mkdir(parents=True)
     (codex_home/'config.toml').write_text('model = "synthetic"\n')
@@ -49,7 +53,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     data=json.loads(effective.read_text())
     servers={s['name']:s for s in data['servers']}
     assert {'fake-one','fake-two','gigacode','codex-worker'} <= set(servers)
-    assert servers['gigacode']['runtime']['script']=='gigacode_server.py'
+    assert 'einherjar' not in servers and 'gigacode' not in {s['name'] for s in json.loads((ROOT/'common/mcp/registry.json').read_text())['servers']}
+    assert servers['gigacode']['ein_instance']=='gigacode'
+    assert servers['gigacode']['runtime']['script']=='einherjar_server.py'
     assert servers['fake-one']['runtime']['script']=='einherjar_server.py'
     assert len([x for x in data['servers'] if x['name']=='gigacode'])==1
     assets=ROOT/'common/mcp/assets.py'
@@ -58,6 +64,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     assert 'fake-one::ein' in rendered.read_text() and 'fake-two::ein' in rendered.read_text()
     assert 'gigacode::ein' in rendered.read_text()
     assert 'gigacode::gigacode' not in rendered.read_text()
+    assert 'only after the user directly instructs you to delegate' in rendered.read_text()
     # Legacy GigaCode's *entire* argument schema is shared, not only action names.
     legacy_source = ROOT/'common/mcp/ein_tool_schema.json'
     canonical_schema = json.loads(legacy_source.read_text())['inputSchema']
@@ -71,6 +78,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
         assert f'name = "{tool_name}"' in leanctx.read_text()
 
     manager=[PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'run']
+    if os.name != 'nt': env['HARR_EIN_EXECUTABLE']=str(fake_gigacode)
     for name in ('fake-one','fake-two','gigacode','codex-worker'):
         proc=subprocess.Popen([*manager,name],env=env,cwd=work,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
         def call(i,method,params=None):
@@ -84,17 +92,18 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
             assert schema['properties']['action']['enum']==['start','resume','status','messages','wait','cancel']
             assert 'backend' not in schema['properties']
             assert schema == canonical_schema, name
-            if name in ('gigacode','codex-worker'):continue # NEVER run real backends; test API only.
+            if name == 'codex-worker' or (name == 'gigacode' and os.name == 'nt'):continue # NEVER invoke a real backend; this fake executable uses a POSIX script.
             rejected=call(2,'tools/call',{'name':'ein','arguments':{'action':'start','backend':'gigacode','prompt':'test'}})
             assert rejected.get('isError')
             started=call(3,'tools/call',{'name':'ein','arguments':{'action':'start','prompt':'fake task'}})['structuredContent']
+            assert 'session_id' in started,(name,started)
             sid=started['session_id']
             for i in range(30):
                 status=call(10+i,'tools/call',{'name':'ein','arguments':{'action':'status','session_id':sid}})['structuredContent']
                 if status['status']!='RUNNING':break
                 time.sleep(.2)
             assert status['status']=='DONE',(name,status)
-            assert status['summary']=='named fake worker done'
+            assert status['summary']==('fake GigaCode completed' if name=='gigacode' else 'named fake worker done')
             print(name,'MCP tools + lifecycle PASS')
         finally:
             proc.terminate()

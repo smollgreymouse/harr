@@ -20,7 +20,8 @@ spec.loader.exec_module(manager)
 
 registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
 servers = {item["name"]: item for item in registry["servers"]}
-assert set(("codegraph", "gitlab", "grafana", "kibana", "gigacode", "einherjar")) <= set(servers)
+assert set(("codegraph", "gitlab", "grafana", "kibana")) <= set(servers)
+assert not {"gigacode", "einherjar"}.intersection(servers)
 
 grafana = servers["grafana"]
 assert grafana["transport"] == "stdio"
@@ -115,10 +116,7 @@ for platform in ("linux", "windows"):
         assert kibana_rendered["args"] == ["kibana"]
         assert kibana_rendered["secret_env"]["KIBANA_API_KEY"] == {"id": "mcp/kibana/default"}
 
-        gigacode_rendered = rendered["gigacode"]
-        assert gigacode_rendered["transport"] == "stdio"
-        assert gigacode_rendered["command"] == "harr-mcp-run"
-        assert gigacode_rendered["args"] == ["gigacode"]
+        assert not {"gigacode", "einherjar"}.intersection(rendered)
 
 with tempfile.TemporaryDirectory() as tmp:
     target = Path(tmp)
@@ -146,37 +144,8 @@ with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     assert manager.runtime_maintenance_command(kibana, "prefetch_args") == ["/tmp/uvx", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "--version"]
     assert manager.runtime_maintenance_command(kibana, "probe_args") == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@73cb2aa03462c44616601d5299515ff45ed36d7f", "kibana-agent", "--version"]
 
-gigacode = servers["gigacode"]
-assert gigacode["required"] is False
-assert gigacode["transport"] == "stdio"
-assert gigacode["lifecycle"] == "on-demand"
-assert gigacode["runtime"] == {
-    "kind": "bundled-python",
-    "version": "1.11.0",
-    "script": "gigacode_server.py",
-    "requires_command": "gigacode",
-    "args": [],
-    "install_hint": "GigaCode CLI is required for the optional GigaCode executor MCP; install/configure `gigacode` and ensure it is in PATH",
-}
-with patch.object(manager.shutil, "which", return_value="/tmp/gigacode"):
-    gigacode_command = manager.runtime_command(gigacode)
-    assert gigacode_command == [
-        manager.sys.executable,
-        str((REGISTRY_PATH.parent / "gigacode_server.py").resolve()),
-    ]
-
-einherjar = servers["einherjar"]
-assert einherjar["required"] is False
-assert einherjar["transport"] == "stdio"
-assert einherjar["lifecycle"] == "on-demand"
-assert einherjar["runtime"]["kind"] == "bundled-python"
-assert einherjar["runtime"]["script"] == "einherjar_server.py"
-assert "requires_command" not in einherjar["runtime"]
-einherjar_command = manager.runtime_command(einherjar)
-assert einherjar_command == [
-    manager.sys.executable,
-    str((REGISTRY_PATH.parent / "einherjar_server.py").resolve()),
-]
+# Executor instances are user-configured and expanded into the effective
+# registry; neither the retired singleton nor the generic worker is cataloged.
 
 with tempfile.TemporaryDirectory() as tmp:
     secret_dir = Path(tmp) / "secrets"

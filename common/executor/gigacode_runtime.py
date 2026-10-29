@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdio MCP server exposing persistent GigaCode execution.
+"""Private GigaCode execution/session runtime used by named Ein instances.
 
 The MCP boundary is intentionally narrow:
 - action=start: launch a detached persistent GigaCode session from plan_path or prompt.
@@ -161,76 +161,6 @@ Rules for the handoff:
 - Keep the whole JSON compact. Evidence should be sufficient, not exhaustive.
 - Never claim a check passed unless you actually performed it.
 """.strip()
-
-
-TOOLS = [
-    {
-        "name": "ein" if os.environ.get("HARR_EIN_INSTANCE") else "gigacode",
-        "description": (
-            "Delegate a bounded implementation/verification contract to detached GigaCode. "
-            "Parent decides architecture, scope, invariants and acceptance; worker owns code, "
-            "build/test/fix iterations and reports compact DONE/FAILED/ESCALATE evidence. "
-            "After start/resume, return RUNNING/session_id to the user and remain available "
-            "for conversation and independent planning. Do not automatically wait or poll. "
-            "Use one-off status only when the user asks or a task depends on the result. "
-            "Optional wait (default 1500s) only when blocking is explicitly useful; "
-            "never create a short (30-60s) model-side wait loop. "
-            "messages is opt-in for explicit user progress requests (enters model context). "
-            "The app-only live panel shows progress without model-context transcript. "
-            "Keep resume for small corrections in a healthy phase; between major phases "
-            "start a fresh session with a short verified-facts handoff, after the old job is "
-            "terminal. Never start overlapping workers on the same scope. "
-            "Cancellation is explicit; wait timeout does not cancel the job. "
-            "hard_timeout_sec=0 means unlimited; stall_elapsed_sec is informational."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["start", "resume", "status", "messages", "wait", "cancel"],
-                    "description": "start/resume return RUNNING without blocking conversation. No automatic wait/poll. status only on demand; optional wait blocks up to 1500s; messages on request; cancel explicitly.",
-                },
-                "plan_path": {
-                    "type": "string",
-                    "description": "For start: existing implementation plan path inside the workspace. Use either plan_path or prompt, not both.",
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "For resume/cancel/status/messages/wait: session id returned by a prior start.",
-                },
-                "prompt": {
-                    "type": "string",
-                    "description": "For start: direct task when no plan file exists. For resume: only new planner decision/correction/evidence.",
-                },
-                "timeout_sec": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "For start/resume: optional hard wall-clock limit in seconds. 0 (default) means unlimited. Any nonnegative integer accepted.",
-                },
-                "wait_timeout_sec": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1500,
-                    "description": "Only for explicitly desired blocking wait: default/max 1500s (25min). Never short-loop polling. Timeout returns RUNNING, does not cancel.",
-                },
-                "after_revision": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "description": "For messages: return assistant messages newer than this revision. Omit to return the latest messages.",
-                },
-                "message_limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50,
-                    "description": "For messages: maximum number of assistant messages to return. Default 8.",
-                },
-            },
-            "required": ["action"],
-            "additionalProperties": False,
-        },
-    },
-]
 
 
 def emit(message: dict) -> None:
@@ -1858,122 +1788,57 @@ def resume_tool(arguments: dict) -> dict:
     return text_result(payload)
 
 
-def handle(request: dict) -> dict | None:
-    method = request.get("method")
-    request_id = request.get("id")
-
-    if method == "initialize":
-        requested = request.get("params", {}).get("protocolVersion", "2025-06-18")
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "protocolVersion": requested,
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-            },
-        }
-
-    if method in {"notifications/initialized", "notifications/cancelled"}:
-        return None
-
-    if method == "ping":
-        return {"jsonrpc": "2.0", "id": request_id, "result": {}}
-
-    if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
-
-    if method == "tools/call":
-        params = request.get("params", {})
-        name = params.get("name")
-        arguments = params.get("arguments") or {}
-        try:
-            if name != ("ein" if os.environ.get("HARR_EIN_INSTANCE") else "gigacode"):
-                raise ValueError(f"unknown tool: {name}")
-            action = arguments.get("action")
-            timeout_value = arguments.get("timeout_sec")
-            if timeout_value is not None:
-                if isinstance(timeout_value, bool) or not isinstance(timeout_value, int):
-                    raise ValueError("timeout_sec must be a nonnegative integer")
-                if timeout_value < 0:
-                    raise ValueError("timeout_sec must be a nonnegative integer")
-            if action == "start":
-                plan_path = arguments.get("plan_path")
-                direct_prompt = arguments.get("prompt")
-                if plan_path is not None and not isinstance(plan_path, str):
-                    raise ValueError("plan_path must be a string")
-                if direct_prompt is not None and not isinstance(direct_prompt, str):
-                    raise ValueError("prompt must be a string")
-                result = start_tool(arguments)
-            elif action == "resume":
-                if not isinstance(arguments.get("session_id"), str) or not isinstance(arguments.get("prompt"), str):
-                    raise ValueError("resume requires session_id and prompt as strings")
-                result = resume_tool(arguments)
-            elif action == "status":
-                if not isinstance(arguments.get("session_id"), str):
-                    raise ValueError("status requires session_id as a string")
-                result = status_tool(arguments)
-            elif action == "messages":
-                if not isinstance(arguments.get("session_id"), str):
-                    raise ValueError("messages requires session_id as a string")
-                after_revision = arguments.get("after_revision")
-                if after_revision is not None:
-                    if isinstance(after_revision, bool) or not isinstance(after_revision, int) or after_revision < 0:
-                        raise ValueError("after_revision must be a nonnegative integer")
-                message_limit = arguments.get("message_limit")
-                if message_limit is not None:
-                    if isinstance(message_limit, bool) or not isinstance(message_limit, int):
-                        raise ValueError("message_limit must be an integer")
-                    if message_limit < 1 or message_limit > 50:
-                        raise ValueError("message_limit must be between 1 and 50")
-                result = messages_tool(arguments)
-            elif action == "wait":
-                if not isinstance(arguments.get("session_id"), str):
-                    raise ValueError("wait requires session_id as a string")
-                wait_timeout_value = arguments.get("wait_timeout_sec")
-                if wait_timeout_value is not None:
-                    if isinstance(wait_timeout_value, bool) or not isinstance(wait_timeout_value, int):
-                        raise ValueError("wait_timeout_sec must be an integer")
-                    if wait_timeout_value < 1 or wait_timeout_value > MAX_WAIT_TIMEOUT_SEC:
-                        raise ValueError(f"wait_timeout_sec must be between 1 and {MAX_WAIT_TIMEOUT_SEC}")
-                meta = params.get("_meta")
-                progress_token = meta.get("progressToken") if isinstance(meta, dict) else None
-                result = wait_tool(arguments, progress_token=progress_token)
-            elif action == "cancel":
-                if not isinstance(arguments.get("session_id"), str):
-                    raise ValueError("cancel requires session_id as a string")
-                result = cancel_tool(arguments)
-            else:
-                raise ValueError("action must be start, resume, status, messages, wait, or cancel")
-            return {"jsonrpc": "2.0", "id": request_id, "result": result}
-        except Exception as exc:
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": text_result({"error": str(exc)}, is_error=True),
-            }
-
-    if request_id is None:
-        return None
-    return error_response(request_id, -32601, f"Method not found: {method}")
+def _dispatch_ein_tool(arguments: dict, progress_token: object = None) -> dict:
+    """Private backend dispatch called only by the named Ein MCP frontdoor."""
+    action = arguments.get("action")
+    timeout = arguments.get("timeout_sec")
+    if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 0):
+        raise ValueError("timeout_sec must be a nonnegative integer")
+    if action == "start":
+        for key in ("plan_path", "prompt"):
+            if arguments.get(key) is not None and not isinstance(arguments[key], str):
+                raise ValueError(f"{key} must be a string")
+        return start_tool(arguments)
+    if action == "resume":
+        if not isinstance(arguments.get("session_id"), str) or not isinstance(arguments.get("prompt"), str):
+            raise ValueError("resume requires session_id and prompt as strings")
+        return resume_tool(arguments)
+    if action == "status":
+        if not isinstance(arguments.get("session_id"), str):
+            raise ValueError("status requires session_id as a string")
+        return status_tool(arguments)
+    if action == "messages":
+        if not isinstance(arguments.get("session_id"), str):
+            raise ValueError("messages requires session_id as a string")
+        after = arguments.get("after_revision")
+        limit = arguments.get("message_limit")
+        if after is not None and (isinstance(after, bool) or not isinstance(after, int) or after < 0):
+            raise ValueError("after_revision must be a nonnegative integer")
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50):
+            raise ValueError("message_limit must be between 1 and 50")
+        return messages_tool(arguments)
+    if action == "wait":
+        if not isinstance(arguments.get("session_id"), str):
+            raise ValueError("wait requires session_id as a string")
+        wait_timeout = arguments.get("wait_timeout_sec")
+        if wait_timeout is not None and (isinstance(wait_timeout, bool) or not isinstance(wait_timeout, int) or not 1 <= wait_timeout <= MAX_WAIT_TIMEOUT_SEC):
+            raise ValueError(f"wait_timeout_sec must be between 1 and {MAX_WAIT_TIMEOUT_SEC}")
+        return wait_tool(arguments, progress_token=progress_token)
+    if action == "cancel":
+        if not isinstance(arguments.get("session_id"), str):
+            raise ValueError("cancel requires session_id as a string")
+        return cancel_tool(arguments)
+    raise ValueError("action must be start, resume, status, messages, wait, or cancel")
 
 
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--run-job":
         return run_detached_job(sys.argv[2])
 
-    for raw in sys.stdin:
-        raw = raw.strip()
-        if not raw:
-            continue
-        try:
-            request = json.loads(raw)
-            response = handle(request)
-        except Exception as exc:
-            response = error_response(None, -32603, str(exc))
-        if response is not None:
-            emit(response)
-    return 0
+    sys.stderr.write("This private GigaCode runtime is available only through a named Ein instance. Configure one and call its ein tool.\n")
+    return 2
+
+    return 2
 
 
 if __name__ == "__main__":

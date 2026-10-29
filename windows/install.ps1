@@ -105,6 +105,9 @@ if (($firstInstall -or $ConfigureMcp) -and [Environment]::UserInteractive -and -
 New-Item -ItemType Directory -Force -Path $BinDir, $LibExecDir, $StateRoot | Out-Null
 Copy-Item -LiteralPath $StateHelperSource -Destination $StateHelper -Force
 Copy-TreeFresh $CommonSource (Join-Path $LibExecDir 'common')
+$mcpAssets = Join-Path $LibExecDir 'common\mcp\assets'
+New-Item -ItemType Directory -Force -Path $mcpAssets | Out-Null
+Copy-Item -LiteralPath (Join-Path $SourceDir 'harr.png') -Destination (Join-Path $mcpAssets 'harr.png') -Force
 Copy-TreeFresh $FilesSource (Join-Path $LibExecDir 'windows\files')
 Copy-Item -LiteralPath (Join-Path $SourceDir 'harr.ps1') -Destination (Join-Path $LibExecDir 'harr.ps1') -Force
 

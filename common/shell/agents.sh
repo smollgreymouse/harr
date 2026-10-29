@@ -73,6 +73,15 @@ install_one_skill() {
   fi
 }
 
+remove_managed_skill() {
+  local agent="$1" skill="$2" root target
+  root="$(agent_skill_root "$agent")"
+  target="${root}/${skill}"
+  if [[ -r "${target}/SKILL.md" ]] && grep -qF "$HARR_SKILL_MARKER" "${target}/SKILL.md"; then
+    rm -rf -- "$target"
+  fi
+}
+
 render_agent_policy() {
   local agent="$1" output="$2" adapter expanded
   adapter="$(agent_adapter "$agent")"
@@ -124,11 +133,8 @@ cmd_agents_apply() {
   local requested="${1:-all}"
   [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode]'
   local agent skill root
-  local gigacode_enabled=0 einherjar_enabled=0
-  if mcp_manager names | grep -Fxq -- gigacode; then gigacode_enabled=1; fi
-  if mcp_manager names | grep -Fxq -- einherjar; then einherjar_enabled=1; fi
+  local einherjar_enabled=0
   if grep -q '"ein_instance"' "$HARR_MCP_EFFECTIVE" 2>/dev/null; then einherjar_enabled=1; fi
-  if [[ "$(mcp_manager server-field gigacode ein_instance 2>/dev/null || true)" == gigacode ]]; then gigacode_enabled=0; fi
   while IFS= read -r agent; do
     install_agent_policy "$agent"
     for skill in lean-ctx harr; do install_one_skill "$agent" "$skill"; done
@@ -138,11 +144,7 @@ cmd_agents_apply() {
     else
       rm -rf -- "${root}/harr-workspace"
     fi
-    if ((gigacode_enabled)); then
-      install_one_skill "$agent" gigacode-executor
-    else
-      rm -rf -- "${root}/gigacode-executor"
-    fi
+    remove_managed_skill "$agent" gigacode-executor
     if ((einherjar_enabled)); then
       install_one_skill "$agent" einherjar-worker
     else

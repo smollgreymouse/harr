@@ -1,6 +1,6 @@
 {
   "name": "ein",
-  "description": "Delegate an implementation/verification contract to a named Ein CLI worker. All named Ein MCPs share the legacy GigaCode action, argument, lifecycle, and result contract.",
+  "description": "Use this named Ein worker only when the user explicitly instructs you to delegate work to an executor. Never choose an executor automatically, even when only one instance is configured. The backend is fixed for this named instance.",
   "inputSchema": {
     "type": "object",
     "properties": {

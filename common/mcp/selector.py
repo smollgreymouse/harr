@@ -31,6 +31,8 @@ def normalize(data: dict, names: list[str]) -> list[str]:
     requested = set(names)
     unknown = sorted(requested.difference(known))
     if unknown:
+        if set(unknown).intersection({"gigacode", "einherjar"}):
+            raise SystemExit("standalone executor MCP choices are retired; configure a named Ein instance and use <instance>::ein")
         raise SystemExit(f"unknown Harr MCP choice(s): {', '.join(unknown)}")
     requested.update(required_names(data))
     return [name for name in known if name in requested]
@@ -46,7 +48,7 @@ def read_selection(path: Path, data: dict, default: str) -> list[str]:
         retired = sorted(set(saved).difference(known))
         if retired:
             print(
-                f"Ignoring retired Harr MCP choice(s) from saved selection: {', '.join(retired)}",
+                f"retired Harr MCP choice(s) were disabled: {', '.join(retired)}. Configure a named Ein instance instead; existing sessions and history are preserved.",
                 file=sys.stderr,
             )
         return normalize(data, [name for name in saved if name in known])
@@ -80,6 +82,8 @@ def parse_mutation_targets(spec: str, data: dict) -> list[str]:
     known = {str(item["name"]) for item in data["servers"]}
     unknown = sorted(set(parts).difference(known))
     if unknown:
+        if set(unknown).intersection({"gigacode", "einherjar"}):
+            raise SystemExit("standalone executor MCP choices are retired; configure a named Ein instance and use <instance>::ein")
         raise SystemExit(f"unknown Harr MCP choice(s): {', '.join(unknown)}")
     return parts
 

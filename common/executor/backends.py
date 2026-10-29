@@ -95,6 +95,10 @@ class BackendAdapter(ABC):
     def cleanup(self) -> None:
         pass
 
+    def dispatch_named_tool(self, arguments: dict, progress_token: Any = None) -> dict | None:
+        """Allow specialized backends to retain established session semantics."""
+        return None
+
 
 def _config_home() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
