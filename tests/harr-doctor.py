@@ -251,7 +251,7 @@ with tempfile.TemporaryDirectory() as td:
     assert payload["install_type"] == "package"
     assert payload["leanctx"]["build"] == "test-build"
     assert payload["leanctx"]["identity"] == "test-build-id"
-    assert payload["leanctx"]["real_path"].endswith("/vendor/lean-ctx/test-build/lean-ctx")
+    assert Path(payload["leanctx"]["real_path"]).parts[-4:] == ("vendor", "lean-ctx", "test-build", "lean-ctx")
 
 linux_harr = (ROOT / "linux" / "harr").read_text(encoding="utf-8")
 linux_install = (ROOT / "linux" / "install.sh").read_text(encoding="utf-8")
