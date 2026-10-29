@@ -41,7 +41,7 @@ shift || true
 case "$command" in
   setup)
     setup_script=''
-    setup_install_type=source
+    setup_install_type="${HARR_INSTALL_TYPE:-source}"
     if [[ -x "${SELF_DIR}/install.sh" && -d "${SELF_DIR}/files" ]]; then
       setup_script="${SELF_DIR}/install.sh"
     elif [[ -x /usr/lib/harr/linux/install.sh ]]; then

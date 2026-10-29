@@ -104,7 +104,13 @@ file(MAKE_DIRECTORY
 )
 file(COPY "${STAGE_ROOT}" DESTINATION "${DEB_ROOT}/usr/lib")
 file(RENAME "${DEB_ROOT}/usr/lib/${NAME}" "${DEB_ROOT}/usr/lib/harr")
-file(CREATE_LINK "/usr/lib/harr/linux/harr" "${DEB_ROOT}/usr/bin/harr" SYMBOLIC)
+file(WRITE "${DEB_ROOT}/usr/bin/harr" [=[#!/usr/bin/env bash
+set -Eeuo pipefail
+export HARR_INSTALL_TYPE=package
+readonly SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+exec "${SELF_DIR}/../lib/harr/linux/harr" "$@"
+]=])
+file(CHMOD "${DEB_ROOT}/usr/bin/harr" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
 file(WRITE "${DEB_ROOT}/usr/share/doc/harr/INSTALL.md" [=[# Harr after package installation
 

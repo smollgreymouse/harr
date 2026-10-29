@@ -255,7 +255,10 @@ with tempfile.TemporaryDirectory() as td:
 
 linux_harr = (ROOT / "linux" / "harr").read_text(encoding="utf-8")
 linux_install = (ROOT / "linux" / "install.sh").read_text(encoding="utf-8")
+assert 'setup_install_type="${HARR_INSTALL_TYPE:-source}"' in linux_harr
 assert 'HARR_INSTALL_TYPE="$setup_install_type"' in linux_harr
 assert 'local install_type="${HARR_INSTALL_TYPE:-source}"' in linux_install
+packaging = (ROOT / "packaging" / "package-harr.cmake").read_text(encoding="utf-8")
+assert "export HARR_INSTALL_TYPE=package" in packaging
 
 print("Harr doctor contract: PASS")
