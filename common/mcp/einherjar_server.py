@@ -12,6 +12,7 @@ import signal
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -128,9 +129,22 @@ def _runtime_log_path(session_id: str) -> Path:
 
 def _write_state(session_id: str, state: dict) -> None:
     target = _state_path(session_id)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(target)
+    _atomic_write_text(target, json.dumps(state, ensure_ascii=False, separators=(",", ":")))
+
+
+def _atomic_write_text(target: Path, text: str) -> None:
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent,
+            prefix=f".{target.name}.", suffix=".tmp", delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(text)
+        os.replace(tmp_path, target)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
 
 def _load_state(session_id: str) -> dict | None:
@@ -320,9 +334,7 @@ _FAILED_EVIDENCE_LOGGED: set[str] = set()
 
 def _request_cancel(session_id: str, job_id: str) -> None:
     target = _control_path(session_id, job_id)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"action": "cancel", "job_id": job_id, "requested_at": time.time()}), encoding="utf-8")
-    tmp.replace(target)
+    _atomic_write_text(target, json.dumps({"action": "cancel", "job_id": job_id, "requested_at": time.time()}))
 
 
 def _cancel_requested(session_id: str, job_id: str) -> bool:
@@ -722,23 +734,20 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
             raise RuntimeError("cannot establish Einherjar MCP owner identity")
         spec["owner"] = {"pid": os.getpid(), "start_ticks": identity}
     job_path.write_text(json.dumps(spec, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    worker_log = CACHE_ROOT / f"{session_id}.{job_id}.worker.log"
     state = {
         "phase": "queued", "session_id": session_id, "job_id": job_id, "backend": backend,
         "backend_config": backend_config, "vendor_session_id": vendor_session_id,
-        "worker_pid": None, "cwd": str(ROOT), "started_epoch": time.time(),
+        "worker_pid": None, "worker_log": str(worker_log), "cwd": str(ROOT), "started_epoch": time.time(),
         "elapsed_sec": 0.0, "timeout_sec": timeout_sec, "startup_confirmed": False,
     }
     _write_state(session_id, state)
-    worker_log = CACHE_ROOT / f"{session_id}.{job_id}.worker.log"
     with worker_log.open("a", encoding="utf-8") as log_handle:
         worker = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--run-job", str(job_path)],
             cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log_handle, stderr=log_handle,
             env=os.environ.copy(), close_fds=True, **_new_process_group_kwargs(),
         )
-    state["worker_pid"] = worker.pid
-    state["worker_log"] = str(worker_log)
-    _write_state(session_id, state)
     _append_log(session_id, f"DETACHED job={job_id} worker_pid={worker.pid} timeout_sec={timeout_sec}")
     _log_event(session_id, "DETACHED", job_id=job_id, worker_pid=worker.pid, timeout_sec=timeout_sec)
     if removed:
@@ -758,11 +767,11 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
                 "summary": f"Einherjar started backend {backend}.", "job_id": job_id,
                 "runtime": {"phase": "running", "timeout_sec": timeout_sec, "startup_confirmed": True},
             }
-        if not _pid_alive(current.get("worker_pid")):
+        if not _pid_alive(current.get("worker_pid")) and not _pid_alive(worker.pid):
             break
         time.sleep(0.05)
     current = _load_state(session_id) or state
-    if _pid_alive(current.get("worker_pid")) or _pid_alive(current.get("pid")):
+    if _pid_alive(current.get("worker_pid")) or _pid_alive(current.get("pid")) or _pid_alive(worker.pid):
         return {
             "session_id": session_id, "backend": backend, "status": "STARTING",
             "summary": f"Einherjar backend {backend} worker is starting.", "job_id": job_id,

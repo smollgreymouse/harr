@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -571,7 +572,7 @@ with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
         "handoff": {"status": "DONE", "summary": "late startup handoff", "changed": [],
                     "verified": [], "escalation": None, "blockers": []},
     }
-    with patch.object(srv, "_load_state", side_effect=[None, queued, final]), \
+    with patch.object(srv, "_load_state", side_effect=[None, final]), \
          patch.object(srv, "_prune_worker_artifacts", return_value=0), \
          patch.object(srv, "_chat_size", return_value=0), \
          patch.object(srv, "_owner_identity", return_value="owner-start"), \
@@ -583,6 +584,67 @@ with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
           and launch_result.get("summary") == "late startup handoff"
           and launch_result.get("runtime", {}).get("startup_confirmed") is True,
           f"got status={launch_result.get('status')} runtime={launch_result.get('runtime')}")
+    srv._state_path(launch_sid).unlink(missing_ok=True)
+
+with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
+    srv = _sandboxed_server(Path(tmpdir))
+    concurrent_sid = str(server.uuid.uuid4())
+    replace_barrier = threading.Barrier(2)
+    original_replace = os.replace
+
+    def synchronized_replace(source, destination):
+        replace_barrier.wait(timeout=5)
+        return original_replace(source, destination)
+
+    payloads = [{"phase": "running", "writer": "worker"},
+                {"phase": "queued", "writer": "launcher"}]
+    with patch.object(server.os, "replace", side_effect=synchronized_replace):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(srv._write_state, concurrent_sid, payload) for payload in payloads]
+            write_errors = []
+            for future in futures:
+                try:
+                    future.result(timeout=10)
+                except Exception as exc:
+                    write_errors.append(str(exc))
+    stored = srv._load_state(concurrent_sid)
+    leftovers = list(srv.CACHE_ROOT.glob(f".{srv._state_path(concurrent_sid).name}.*.tmp"))
+    check("K4: simultaneous state writes use independent atomic temp files",
+          not write_errors and stored in payloads and not leftovers,
+          f"errors={write_errors!r} state={stored!r} temp_files={len(leftovers)}")
+    srv._state_path(concurrent_sid).unlink(missing_ok=True)
+
+with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
+    srv = _sandboxed_server(Path(tmpdir))
+    launch_sid = str(server.uuid.uuid4())
+    worker_state = {
+        "phase": "running", "session_id": launch_sid, "job_id": "worker-owns-state",
+        "worker_pid": 12345, "worker_pid_start_ticks": "worker-start",
+    }
+    writes = []
+    original_write = srv._write_state
+
+    def observe_write(session_id, payload):
+        writes.append(payload.get("phase"))
+        original_write(session_id, payload)
+
+    process = _make_mock_process(returncode=None)
+
+    def start_worker(*_args, **_kwargs):
+        observe_write(launch_sid, worker_state)
+        return process
+
+    with patch.object(srv, "_write_state", side_effect=observe_write), \
+         patch.object(srv, "_owner_identity", return_value="owner-start"), \
+         patch.object(srv, "STARTUP_CONFIRM_TIMEOUT_SEC", 0.0), \
+         patch.object(srv.subprocess, "Popen", side_effect=start_worker), \
+         patch.object(srv, "_pid_alive", return_value=True):
+        launch_result = srv.launch_detached_job(launch_sid, [], "prompt", 0)
+    persisted = srv._load_state(launch_sid)
+    check("K5: launcher does not overwrite the worker's first running state",
+          writes == ["queued", "running"] and persisted.get("phase") == "running"
+          and launch_result.get("status") == "STARTING",
+          f"writes={writes!r} persisted_phase={persisted.get('phase') if persisted else None!r}")
     srv._state_path(launch_sid).unlink(missing_ok=True)
 
 print(f"\nGigaCode lifetime tests: {tests_passed} passed, {tests_failed} failed")

@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -22,6 +24,26 @@ with tempfile.TemporaryDirectory(prefix='harr-ein-named-') as tmp:
     workspace_key=hashlib.sha256(str(work.resolve()).encode()).hexdigest()[:12]
     legacy_cache=base/'home/.cache/gigacode-mcp'/workspace_key
     legacy_cache.mkdir(parents=True)
+    with patch.dict(os.environ,env):
+        ein_spec=importlib.util.spec_from_file_location('ein_state_writer',ROOT/'common/mcp/einherjar_server.py')
+        ein_state_writer=importlib.util.module_from_spec(ein_spec)
+        ein_spec.loader.exec_module(ein_state_writer)
+    ein_state_writer.CACHE_ROOT=base/'ein-atomic-state';ein_state_writer.CACHE_ROOT.mkdir()
+    concurrent_sid='22222222-2222-4222-8222-222222222222'
+    replace_barrier=threading.Barrier(2)
+    original_replace=os.replace
+    def synchronized_replace(source,destination):
+        replace_barrier.wait(timeout=5)
+        return original_replace(source,destination)
+    concurrent_payloads=[{'phase':'running','writer':'worker'},{'phase':'queued','writer':'launcher'}]
+    with patch.object(os,'replace',side_effect=synchronized_replace):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures=[pool.submit(ein_state_writer._write_state,concurrent_sid,payload) for payload in concurrent_payloads]
+            for future in futures:future.result(timeout=10)
+    persisted=ein_state_writer._load_state(concurrent_sid)
+    temp_files=list(ein_state_writer.CACHE_ROOT.glob(f'.{concurrent_sid}.state.json.*.tmp'))
+    assert persisted in concurrent_payloads and not temp_files,(persisted,temp_files)
+    print('Ein concurrent atomic state writes PASS')
     legacy_sid='11111111-1111-4111-8111-111111111111'
     legacy_handoff={'status':'DONE','summary':'existing history','changed':[],'verified':[{'criterion':'old','check':'state','result':'PASS','evidence':'preserved'}],'escalation':None,'blockers':[]}
     (legacy_cache/f'{legacy_sid}.state.json').write_text(json.dumps({'phase':'finished','session_id':legacy_sid,'handoff':legacy_handoff}))
@@ -58,6 +80,21 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
         if ok:assert p.returncode==0,(args,p.stdout,p.stderr)
         else:assert p.returncode!=0,args
         return p.stdout
+    def failure_evidence(instance_id,session_id):
+        cache=(legacy_cache if instance_id=='gigacode' else
+               base/'home/.cache/harr/einherjar'/instance_id/workspace_key)
+        state_path=cache/f'{session_id}.state.json'
+        try:state=json.loads(state_path.read_text())
+        except (OSError,ValueError) as exc:return f'state unavailable: {exc}'
+        evidence=[f'state={json.dumps(state,ensure_ascii=False)[:2000]}']
+        paths=[state.get('worker_log'),state.get('stdout_path'),state.get('stderr_path'),cache/f'{session_id}.runtime.log']
+        for raw_path in paths:
+            if not raw_path:continue
+            path=Path(raw_path)
+            try:tail=path.read_bytes()[-4000:].decode('utf-8',errors='replace')
+            except OSError:continue
+            if tail:evidence.append(f'{path.name} tail (<=4000 bytes):\n{tail}')
+        return '\n'.join(evidence)[:12000]
     run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition))
     run('add','--id','fake-two','--adapter','custom','--definition-file',str(definition))
     run('add','--id','gigacode','--adapter','gigacode')
@@ -143,7 +180,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
                     status=call(9,'tools/call',{'name':'ein','arguments':{'action':'status','session_id':sid}})['structuredContent']
                     if status['status']=='RUNNING':break
                     time.sleep(.02)
-                assert status['status']=='RUNNING',(name,status)
+                assert status['status']=='RUNNING',(name,status,failure_evidence(name,sid))
                 for _ in range(100):
                     if ready.exists():break
                     time.sleep(.02)
@@ -153,7 +190,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
                 status=call(10+i,'tools/call',{'name':'ein','arguments':{'action':'status','session_id':sid}})['structuredContent']
                 if status['status']!='RUNNING':break
                 time.sleep(.2)
-            assert status['status']=='DONE',(name,status)
+            assert status['status']=='DONE',(name,status,failure_evidence(name,sid))
             assert status['summary']==('fake GigaCode completed' if name=='gigacode' else 'named fake worker done')
             print(name,'MCP tools + lifecycle PASS')
         finally:

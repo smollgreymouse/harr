@@ -21,6 +21,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 import re
@@ -312,12 +313,18 @@ def _prune_worker_artifacts() -> int:
 
 def _write_state(session_id: str, payload: dict) -> None:
     target = _state_path(session_id)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
-    tmp.replace(target)
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent,
+            prefix=f".{target.name}.", suffix=".tmp", delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+        os.replace(tmp_path, target)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
 
 def _load_state(session_id: str) -> dict | None:
@@ -1419,9 +1426,6 @@ def launch_detached_job(
             **_new_process_group_kwargs(),
         )
 
-    current = _load_state(session_id) or state
-    if current.get("phase") == "queued" and current.get("job_id") == job_id:
-        _write_state(session_id, {**current, "worker_pid": worker.pid})
     _append_runtime_log(
         session_id,
         f"DETACHED job={job_id} worker_pid={worker.pid} timeout_sec={timeout_sec}",
@@ -1460,7 +1464,11 @@ def launch_detached_job(
                 },
             }
 
-        running = _pid_alive(current.get("pid")) or _pid_alive(current.get("worker_pid"))
+        running = (
+            _pid_alive(current.get("pid"))
+            or _pid_alive(current.get("worker_pid"))
+            or _pid_alive(worker.pid)
+        )
         if current.get("phase") in {"timed_out", "finished"} and not running:
             break
         time.sleep(STARTUP_CONFIRM_POLL_SEC)
@@ -1468,7 +1476,11 @@ def launch_detached_job(
     current = _load_state(session_id) or {}
     if isinstance(current.get("handoff"), dict):
         return _handoff_payload(session_id, current, startup_confirmed=True)
-    running = _pid_alive(current.get("pid")) or _pid_alive(current.get("worker_pid"))
+    running = (
+        _pid_alive(current.get("pid"))
+        or _pid_alive(current.get("worker_pid"))
+        or _pid_alive(worker.pid)
+    )
     if not running:
         return {
             "session_id": session_id,
