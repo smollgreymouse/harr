@@ -234,6 +234,16 @@ UNIT
 done
 
 "${ROOT}/linux/install.sh" --harr-only
+[[ -f "${HOME}/.local/libexec/harr/install-manifest.json" ]]
+python3 - <<'PY_MANIFEST'
+import json, os
+from pathlib import Path
+manifest = json.loads((Path(os.environ["HOME"]) / ".local/libexec/harr/install-manifest.json").read_text())
+assert manifest["schema"] == 1
+assert manifest["install_type"] == "source"
+assert manifest["harr_version"] != "unknown"
+assert manifest["managed_files"]["leanctx_wrapper_source"]["sha256"]
+PY_MANIFEST
 grep -q '^call_timeout_secs = 1800$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 python3 - <<'PY'
 import os, tomllib
