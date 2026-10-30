@@ -1,6 +1,6 @@
 # Harr 0.3.2
 
-Harr 0.3.2 hardens LeanCTX Workspace and Git worktree lifecycle handling and pins the new Harr LeanCTX build `harr-v3.11.0-unified.3@bf1455d337e9`.
+Harr 0.3.2 hardens LeanCTX Workspace and Git worktree lifecycle handling and pins the new Harr LeanCTX build `harr-v3.11.0-unified.4@afc9715d6d5a`.
 
 Workspace configuration is now separated from effective filesystem authority. An additional root that disappears after `git worktree remove`, an unmount, or another external lifecycle change no longer makes the Workspace store unreadable or kills LeanCTX startup. Missing roots remain visible for diagnosis and can be removed explicitly, while they are excluded from effective authority immediately.
 

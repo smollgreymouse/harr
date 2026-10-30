@@ -460,7 +460,7 @@ Linux:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.11.0-harr-unified.3/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-unified.4/lean-ctx
 
 ~/.local/share/harr/npm/
 ~/.local/share/harr-state/pre-harr/
@@ -498,7 +498,7 @@ macOS:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.11.0-harr-unified.3/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-unified.4/lean-ctx
 
 ~/.config/harr/
   mcp-selection.json
@@ -519,7 +519,7 @@ Windows:
   libexec\
     common\
     windows\
-    vendor\lean-ctx\3.11.0-harr-unified.3\lean-ctx.exe
+    vendor\lean-ctx\3.11.0-harr-unified.4\lean-ctx.exe
   share\npm\
   logs\<service-mcp>.log
 
