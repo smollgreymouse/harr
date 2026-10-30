@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import importlib.util
 import os
 from pathlib import Path
@@ -87,6 +88,7 @@ print(json.dumps({
         "XDG_CACHE_HOME": str(home / ".cache"),
         "XDG_STATE_HOME": str(home / ".local" / "state"),
         "PYTHONPATH": str(ROOT),
+        "PYTHONIOENCODING": "cp1252",
     }
 
     direct = subprocess.Popen(
@@ -95,6 +97,7 @@ print(json.dumps({
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
         cwd=work,
         env=env,
         bufsize=1,
@@ -134,7 +137,7 @@ print(json.dumps({
             direct,
             4,
             "tools/call",
-            {"name": "ein", "arguments": {"action": "start", "prompt": "fixture"}},
+            {"name": "ein", "arguments": {"action": "start", "prompt": "Проведи smoke 🟣"}},
             timeout=8,
         )["result"]["structuredContent"]
         assert started["status"] in {"STARTING", "RUNNING"}, started
@@ -217,6 +220,16 @@ print(json.dumps({
             },
         )["result"]["structuredContent"]
         assert reclaimed["claimed"] is True
+
+        panel_id = "Панель 🟣"
+        event = rpc(direct, 11, "tools/call", {
+            "name": "ein_marker_event_ui",
+            "arguments": {"session_id": sid, "job_id": job_id, "panel_id": panel_id, "event": "shown"},
+        })["result"]["structuredContent"]
+        assert event["ok"] is True
+        workspace_key = hashlib.sha256(str(work.resolve()).encode("utf-8")).hexdigest()[:12]
+        runtime_log = home / ".cache" / "harr" / "einherjar" / "fake-marker" / workspace_key / f"{sid}.runtime.log"
+        assert panel_id in runtime_log.read_text(encoding="utf-8")
     finally:
         stop(direct)
 
@@ -233,6 +246,7 @@ print(json.dumps({
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
         cwd=work,
         env=gateway_env,
         bufsize=1,

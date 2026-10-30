@@ -30,6 +30,7 @@ from common.executor.backends import (
     resolve_backend,
 )
 from common.executor.protocol import parse_worker_handoff
+from common.mcp.jsonrpc_stdio import configure_jsonrpc_stdio
 
 SERVER_NAME = "einherjar"
 SERVER_VERSION = "0.1.0"
@@ -1283,6 +1284,7 @@ def handle(request: dict) -> dict | None:
 
 
 def main() -> int:
+    configure_jsonrpc_stdio()
     if len(sys.argv) == 3 and sys.argv[1] == "--run-job":
         try:
             spec = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))

@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
     config={'schema':2,'instances':[{'id':'gigacode','adapter':'gigacode','enabled':True},{'id':'open-review','adapter':'opencode','enabled':True},{'id':'disabled','adapter':'opencode','enabled':False}]}
     (config_root/'einherjar/instances.json').write_text(json.dumps(config))
     home=base/'home'; home.mkdir()
-    env={**os.environ,'HOME':str(home),'HARR_CONFIG_DIR':str(config_root),'XDG_CACHE_HOME':str(base/'cache'),'XDG_STATE_HOME':str(base/'state'),'PYTHONPATH':str(ROOT)}
+    env={**os.environ,'HOME':str(home),'HARR_CONFIG_DIR':str(config_root),'XDG_CACHE_HOME':str(base/'cache'),'XDG_STATE_HOME':str(base/'state'),'PYTHONPATH':str(ROOT),'PYTHONIOENCODING':'cp1252'}
     mod_spec=importlib.util.spec_from_file_location('test_codex_host_placement',HOST)
     host=importlib.util.module_from_spec(mod_spec)
     mod_spec.loader.exec_module(host)
@@ -122,7 +122,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
 
     for instance in ('gigacode','open-review'):
         penv={**env}
-        p=subprocess.Popen([sys.executable,str(SCRIPT)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=base,env=penv,bufsize=1)
+        p=subprocess.Popen([sys.executable,str(SCRIPT)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',cwd=base,env=penv,bufsize=1)
         try:
             response=rpc(p,1,'tools/list')['result']['tools']
             tools={t['name']:t for t in response}
@@ -133,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
             uri=tools['show_ein_live']['_meta']['ui']['resourceUri']
             assert uri=='ui://harr-ein-ui/live.html'
             html=rpc(p,2,'resources/read',{'uri':uri})['result']['contents'][0]['text']
-            assert "Harr · Ein" in html and 'poll_ein_ui' in html and 'show_gigacode_live' not in html
+            assert "🟣 Harr · Ein" in html and 'Подключение…' in html and 'poll_ein_ui' in html and 'show_gigacode_live' not in html
             assert 'ui/message' not in html and 'claim_done_notification_ui' not in html
             unknown='11111111-1111-1111-1111-111111111111'
             reply=rpc(p,3,'tools/call',{'name':'show_ein_live','arguments':{'instance':instance,'session_id':unknown}})
@@ -155,7 +155,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
     runtime=config_root/'einherjar/runtime/fake-panel';runtime.mkdir(parents=True)
     (runtime/'einherjar.json').write_text(json.dumps({'schema':1,'default_backend':'fake-panel','backends':{'fake-panel':config['instances'][-1]['definition']}}))
     penv['HARR_CONFIG_DIR']=str(runtime)
-    engine=subprocess.Popen([sys.executable,str(mcp)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=base,env=penv,bufsize=1)
+    engine=subprocess.Popen([sys.executable,str(mcp)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',cwd=base,env=penv,bufsize=1)
     try:
         response=rpc(engine,10,'tools/call',{'name':'ein','arguments':{'action':'start','prompt':'smoke'}})
         sid=response['result']['structuredContent']['session_id']
@@ -166,7 +166,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
         assert current['status']=='DONE',current
         # App uses original Harr config dir, but engine used instance-specific runtime config.
         appenv={**env}
-        app=subprocess.Popen([sys.executable,str(SCRIPT)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=base,env=appenv,bufsize=1)
+        app=subprocess.Popen([sys.executable,str(SCRIPT)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',cwd=base,env=appenv,bufsize=1)
         try:
             attached=rpc(app,50,'tools/call',{'name':'show_ein_live','arguments':{'instance':'fake-panel','session_id':sid}})['result']['structuredContent']
             assert attached['status']=='DONE'

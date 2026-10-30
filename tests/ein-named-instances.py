@@ -94,7 +94,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     definition.write_text(json.dumps({'adapter':'command-template','start':[PYTHON,str(fake),'{prompt}']}))
     cli=[PYTHON,str(ROOT/'common/mcp/ein_instances.py')]
     def run(*args,ok=True):
-        p=subprocess.run([*cli,*args],env=env,cwd=work,text=True,capture_output=True)
+        p=subprocess.run([*cli,*args],env=env,cwd=work,text=True,encoding='utf-8',capture_output=True)
         if ok:assert p.returncode==0,(args,p.stdout,p.stderr)
         else:assert p.returncode!=0,args
         return p.stdout
@@ -178,7 +178,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     manager=[PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'run']
     if os.name != 'nt': env['HARR_EIN_EXECUTABLE']=str(fake_gigacode)
     for name in ('fake-one','fake-two','gigacode','codex-worker'):
-        proc=subprocess.Popen([*manager,name],env=env,cwd=work,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1)
+        proc=subprocess.Popen([*manager,name],env=env,cwd=work,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',bufsize=1)
         def call(i,method,params=None):
             proc.stdin.write(json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params or {}})+'\n');proc.stdin.flush()
             raw=proc.stdout.readline();assert raw,proc.stderr.read()

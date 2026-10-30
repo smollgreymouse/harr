@@ -4,6 +4,7 @@ import sys, json, os, pathlib, importlib.util, traceback, threading, time, uuid
 ROOT=pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT))
 from common.mcp.ein_instances import config_for_instance
+from common.mcp.jsonrpc_stdio import configure_jsonrpc_stdio
 import re
 URI="ui://harr-ein-ui/live.html"
 CONFIG_ROOT=pathlib.Path(os.environ.get("HARR_CONFIG_DIR",pathlib.Path.home()/".config/harr"))
@@ -12,7 +13,7 @@ STATE.mkdir(exist_ok=True,parents=True)
 ACTIVE=STATE/"sessions.json"
 SCOPES=STATE/"scopes.json"
 LOG=STATE/"server.jsonl"
-HTML=(pathlib.Path(__file__).with_name("panel.html")).read_text()
+HTML=(pathlib.Path(__file__).with_name("panel.html")).read_text(encoding="utf-8")
 BACKENDS={}
 IMPORT_LOCK=threading.RLock()
 
@@ -92,7 +93,7 @@ def record(event,**data):
    if LOG.exists() and LOG.stat().st_size>LOG_ROTATE_BYTES:
     LOG.replace(LOG.with_name(LOG.name+".1"))
   except OSError:pass
- with LOG.open("a") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
+  with LOG.open("a",encoding="utf-8") as f:f.write(json.dumps({"event":event,**data},ensure_ascii=False)+"\n")
 def result(id,obj):
  with OUTPUT_LOCK: print(json.dumps({"jsonrpc":"2.0","id":id,"result":obj},ensure_ascii=False),flush=True)
 def err(id,msg):
@@ -107,12 +108,12 @@ def tools():
  {"name":"poll_ein_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(instance,sid):
  with REGISTRY_LOCK:
-  try:return {"instance":instance,"session_id":sid} in json.loads(ACTIVE.read_text())
+  try:return {"instance":instance,"session_id":sid} in json.loads(ACTIVE.read_text(encoding="utf-8"))
   except (OSError,ValueError):return False
 
 def register(instance,sid):
  with REGISTRY_LOCK:
-  try: entries=json.loads(ACTIVE.read_text())
+  try: entries=json.loads(ACTIVE.read_text(encoding="utf-8"))
   except (OSError,ValueError):entries=[]
   value={"instance":instance,"session_id":sid}
   if value not in entries:entries.append(value)
@@ -122,7 +123,7 @@ def register_scope(instance,session_id,after_revision):
  scope_id=str(uuid.uuid4())
  now=time.time()
  with REGISTRY_LOCK:
-  try: scopes=json.loads(SCOPES.read_text())
+  try: scopes=json.loads(SCOPES.read_text(encoding="utf-8"))
   except (OSError,ValueError):scopes={}
   if not isinstance(scopes,dict):scopes={}
   # Drop scopes past their TTL; entries without a timestamp (older server
@@ -137,14 +138,14 @@ def register_scope(instance,session_id,after_revision):
 
 def lookup_scope(scope_id,instance,sid):
  with REGISTRY_LOCK:
-  try: scope=json.loads(SCOPES.read_text()).get(scope_id)
+  try: scope=json.loads(SCOPES.read_text(encoding="utf-8")).get(scope_id)
   except (OSError,ValueError,TypeError):return None
  if not isinstance(scope,dict) or scope.get("instance")!=instance or scope.get("session_id")!=sid:return None
  return scope
 
 def restored_sessions():
  with REGISTRY_LOCK:
-  try:entries=json.loads(ACTIVE.read_text())
+  try:entries=json.loads(ACTIVE.read_text(encoding="utf-8"))
   except (OSError,ValueError):entries=[]
  if not isinstance(entries,list):return []
  active=[];finished=[]
@@ -278,6 +279,7 @@ def dispatch(req):
   err(id,str(ex))
 
 def main():
+ configure_jsonrpc_stdio()
  record("started",cwd=str(ROOT))
  for line in sys.stdin:
   try:
