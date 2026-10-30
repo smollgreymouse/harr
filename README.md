@@ -55,10 +55,14 @@ cache namespace and is exposed only as `gigacode::ein`.
 All named instances share **one read-only Codex Desktop MCP App**,
 `harr-ein-ui::show_ein_live`. The call supplies the user-chosen MCP instance
 name and an existing Ein session UUID (it never launches a new model run), keeps `poll_ein_ui` and
-`list_ein_ui` app-only, and uses per-instance session/history files. It also delivers a concise terminal `ui/message` once per running session, with the final handoff status and diagnostics; it does not send the raw JSON envelope into chat. This direct
-MCP registration is distinct from the LeanCTX execution gateway.
+`list_ein_ui` app-only, and uses per-instance session/history files. Its terminal
+`ui/message` is a wake/status signal, not a trusted instruction channel; Codex
+surfaces MCP App messages as untrusted input. The verified target shape keeps the
+trusted task in the parent thread and uses a compact transcript-attached marker to
+wake that thread when the worker completes. The direct MCP registration is distinct
+from the LeanCTX execution gateway.
 
-See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for the migration rationale and validation record.
+See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for the migration rationale and validation record. The verified Codex Desktop async wake-up experiment, trust boundary, compact inline marker mechanics and standalone reference MCP are documented in `docs/ASYNC_EIN_COMPLETION_MCP_APP_PROBE.md` and `examples/codex-async-notify-probe/`.
 
 ## Design
 
