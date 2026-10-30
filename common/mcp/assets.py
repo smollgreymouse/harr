@@ -40,10 +40,7 @@ def ein_policy(tools: list[str]) -> str:
     if not tools:
         return ''
     lines = [
-        '- Use a named `<instance>::ein` only after the user directly instructs you to delegate work to an executor. Configuring one instance, even the only instance, is not execution authorization. Never choose an instance or backend automatically.',
-        '- For authorized delegation after architecture and acceptance are fixed, load the shared `$einherjar-worker` skill. All instances expose identical `start|resume|status|messages|wait|cancel` and stay bound to their configured backend.',
-        '- Review the full structured handoff against the acceptance criteria; `DONE` alone is not proof. Do not auto-poll or expose vendor session ids.',
-        '- Available Ein tools: ' + ', '.join('`' + name + '`' for name in tools) + '.',
+        '- Named Ein workflow: `$ein`. Available Ein tools: ' + ', '.join('`' + name + '`' for name in tools) + '.',
     ]
     return '\n'.join(lines) + '\n'
 
@@ -78,7 +75,7 @@ def filter_skill(args: argparse.Namespace) -> None:
         skill = args.output / 'SKILL.md'
         if skill.exists():
             with skill.open('a', encoding='utf-8') as out:
-                out.write('\n## Named Ein workers\n\nUse the shared `$einherjar-worker` skill. Available MCP tools: ' + ', '.join('`' + t + '`' for t in tools) + '.\n')
+                out.write('\n## Named Ein workers\n\nWorkflow: `$ein`. Available MCP tools: ' + ', '.join('`' + t + '`' for t in tools) + '.\n')
     for server in catalog:
         reference = server.get("skill_reference")
         if reference and str(server["name"]) not in active:

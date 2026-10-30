@@ -14,6 +14,10 @@ CLI:
   harr hosts apply|status
   harr agents apply [all|codex|opencode]
   harr agents status
+  harr agents orchestration {status|enable|disable}
+  harr agents asa status
+  harr agents asa configure [--model MODEL] [--effort EFFORT]
+  harr agents asa apply
   harr leanctx apply|status
   harr secret set NAME
   harr secret status

@@ -71,6 +71,8 @@ enabled = false
     $openAgents = Get-Content -Raw (Join-Path $OpenCodeDir 'AGENTS.md')
     if ($codexAgents -notmatch 'codegraph::codegraph_explore' -or $codexAgents -notmatch 'through `ctx_shell`') { throw 'Codex Harr policy was not applied' }
     if ($openAgents -notmatch 'lean-ctx_ctx_tools' -or $openAgents -notmatch 'Do not use native read/grep/glob/bash') { throw 'OpenCode Harr policy was not applied' }
+    if ($codexAgents -match '\$asa' -or $codexAgents -match 'Spawn native workers only for genuinely independent parallel scopes') { throw 'Default-off orchestration leaked into Codex policy' }
+    if ($openAgents -match '\$asa') { throw 'Codex-only Asa routing leaked into OpenCode policy' }
     if ($codexAgents -match 'GitLab MR/pipeline' -or $codexAgents -match 'Grafana dashboard work') { throw 'Disabled MCP routing leaked into Codex policy' }
     if ($openAgents -match 'GitLab MR/pipeline' -or $openAgents -match 'Grafana dashboard work') { throw 'Disabled MCP routing leaked into OpenCode policy' }
     if ($codexAgents -match 'git-mcp' -or $openAgents -match 'git-mcp') { throw 'Retired git-mcp policy leaked into Windows install' }
@@ -108,8 +110,13 @@ if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.4'")) { throw
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\lean-ctx\SKILL.md'))) { throw 'LeanCTX skill missing' }
     if (Test-Path (Join-Path $OpenCodeDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed' }
     if (Test-Path (Join-Path $CodexDir 'skills\gigacode-executor')) { throw 'Disabled GigaCode executor skill installed for Codex' }
-    if (Test-Path (Join-Path $OpenCodeDir 'skills\einherjar-worker')) { throw 'Disabled Einherjar worker skill installed' }
-    if (Test-Path (Join-Path $CodexDir 'skills\einherjar-worker')) { throw 'Disabled Einherjar worker skill installed for Codex' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\einherjar-worker')) { throw 'Legacy Einherjar worker skill installed' }
+    if (Test-Path (Join-Path $CodexDir 'skills\einherjar-worker')) { throw 'Legacy Einherjar worker skill installed for Codex' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\ein')) { throw 'Disabled Ein skill installed' }
+    if (Test-Path (Join-Path $CodexDir 'skills\ein')) { throw 'Disabled Ein skill installed for Codex' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\asa')) { throw 'Asa skill must remain Codex-only' }
+    if (Test-Path (Join-Path $CodexDir 'skills\asa')) { throw 'Default-off Codex Asa skill installed' }
+    if (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml')) { throw 'Default-off Codex Asa architect role installed' }
     if ($codexAgents -match '\$gigacode-executor') { throw 'Disabled GigaCode routing leaked into Codex policy' }
 
     $codexText = Get-Content -Raw (Join-Path $CodexDir 'config.toml')
@@ -132,6 +139,27 @@ if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.4'")) { throw
     if ($codexText -match '\[mcp_servers\.harr-ein-ui\]') { throw 'Fresh install exposed Ein execution UI without named instances' }
     if (-not (Test-Path (Join-Path $LocalDir 'Harr\bin\harr-mcp-run.cmd'))) { throw 'Generic Windows MCP runner missing' }
 
+    $installedHarr = Join-Path $LocalDir 'Harr\libexec\harr.ps1'
+
+    # Orchestration is explicitly opt-in and reversible.
+    & $installedHarr agents orchestration enable
+    $codexAgents = Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')
+    if ($codexAgents -notmatch 'root is the sole agent router' -or $codexAgents -notmatch '\$asa') { throw 'Explicit orchestration enable did not apply Codex routing' }
+    if (-not (Test-Path (Join-Path $CodexDir 'skills\asa\SKILL.md'))) { throw 'Explicit orchestration enable did not install Asa skill' }
+    if (-not (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml'))) { throw 'Explicit orchestration enable did not install Asa role' }
+    & $installedHarr agents orchestration disable
+    $codexAgents = Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')
+    if ($codexAgents -match '\$asa') { throw 'Explicit orchestration disable left Asa routing' }
+    if (Test-Path (Join-Path $CodexDir 'skills\asa')) { throw 'Explicit orchestration disable left Asa skill' }
+    if (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml')) { throw 'Explicit orchestration disable left Asa role' }
+
+    & $installedHarr ein add --id giga-review --adapter gigacode
+    & $installedHarr ein apply
+    if (-not (Test-Path (Join-Path $CodexDir 'skills\ein\SKILL.md'))) { throw 'Codex Ein skill missing after named instance apply' }
+    if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\ein\SKILL.md'))) { throw 'OpenCode Ein skill missing after named instance apply' }
+    if (Test-Path (Join-Path $CodexDir 'skills\einherjar-worker')) { throw 'Legacy Codex Einherjar skill survived named instance apply' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\einherjar-worker')) { throw 'Legacy OpenCode Einherjar skill survived named instance apply' }
+
     & (Join-Path $Root 'uninstall.ps1')
 
     if ((Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')) -ne $before.CodexAgents) { throw 'Codex AGENTS rollback mismatch' }
@@ -142,6 +170,10 @@ if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.4'")) { throw
     if ((Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')) -ne $before.Lean) { throw 'LeanCTX config rollback mismatch' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'commands\custom.md'))) { throw 'Unrelated command disappeared after rollback' }
     if (-not (Test-Path (Join-Path $OpenCodeDir 'skills\external\SKILL.md'))) { throw 'Unrelated skill disappeared after rollback' }
+    if (Test-Path (Join-Path $CodexDir 'skills\asa')) { throw 'Codex Asa skill survived rollback' }
+    if (Test-Path (Join-Path $CodexDir 'skills\ein')) { throw 'Codex Ein skill survived rollback' }
+    if (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml')) { throw 'Codex Asa role survived rollback' }
+    if (Test-Path (Join-Path $OpenCodeDir 'skills\ein')) { throw 'OpenCode Ein skill survived rollback' }
     if ((Test-Path $selectionPath) -or (Test-Path $effectivePath)) { throw 'Harr MCP selection state survived rollback' }
     if (Test-Path (Join-Path $LocalDir 'Harr')) { throw 'Harr-created install root survived rollback' }
     if (Test-Path (Join-Path $LocalDir 'HarrState')) { throw 'Harr state root survived rollback' }

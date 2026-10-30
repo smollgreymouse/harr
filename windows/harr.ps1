@@ -23,6 +23,10 @@ Harr Windows CLI
   harr install [all|leanctx|mcp]
   harr agents apply [all|codex|opencode]
   harr agents status
+  harr agents orchestration status|enable|disable
+  harr agents asa status
+  harr agents asa configure [--model MODEL] [--effort EFFORT]
+  harr agents asa apply
   harr hosts apply|status
   harr leanctx apply|status
   harr secret set NAME
@@ -62,8 +66,26 @@ switch ($command) {
     'agents' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'apply') { Apply-Agents ($(if ($rest.Count -gt 1) { $rest[1] } else { 'all' })) }
-        elseif ($sub -eq 'status') { foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" } }
-        else { throw 'usage: harr agents apply [all|codex|opencode] | harr agents status' }
+        elseif ($sub -eq 'status') { foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; [void](Invoke-AsaConfig @('status')) }
+        elseif ($sub -eq 'orchestration') {
+            $orchSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
+            if ($rest.Count -gt 2) { throw 'usage: harr agents orchestration status|enable|disable' }
+            if ($orchSub -eq 'status') { [void](Invoke-AsaConfig @('status')) }
+            elseif ($orchSub -in @('enable','disable')) {
+                Require-CleanOwnership
+                [void](Invoke-AsaConfig @($orchSub))
+                Apply-Agents 'codex'
+            } else { throw 'usage: harr agents orchestration status|enable|disable' }
+        }
+        elseif ($sub -eq 'asa') {
+            $asaSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
+            [string[]]$asaArgs = @($asaSub)
+            if ($rest.Count -gt 2) { $asaArgs += @($rest[2..($rest.Count - 1)]) }
+            if ($asaSub -eq 'configure') { Require-CleanOwnership; $asaArgs += '--force' }
+            elseif ($asaSub -eq 'apply') { Require-CleanOwnership; $asaArgs = @('sync','--force') }
+            [void](Invoke-AsaConfig $asaArgs)
+        }
+        else { throw 'usage: harr agents apply [all|codex|opencode] | harr agents status | harr agents orchestration status|enable|disable | harr agents asa {status|configure|apply}' }
     }
     'hosts' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }

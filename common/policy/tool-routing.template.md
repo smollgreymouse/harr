@@ -3,7 +3,7 @@
 
 - Investigation uses MCP; editing uses the native host editor.
 - Harr-managed specialized MCPs stay behind LeanCTX; unrelated third-party MCPs/skills may coexist globally and follow their own explicit rules.
-- Executor use through any named Ein instance requires a direct user instruction to delegate. Configuration, including a sole available instance, is not authorization. Never select an executor, instance, or backend automatically.
+{{HOST_ORCHESTRATION_POLICY}}
 - Cross-file structure, flow, relationships, dependencies, architecture, impact, callers/references: FIRST investigation call MUST be `{{CTX_TOOLS}}` with `action="call"`, `tool="codegraph::codegraph_explore"`, `arguments={"query":"<task or relevant symbols/files>"}`.
 - CodeGraph calls are sequential. Source returned by CodeGraph counts as already read; if another source-code area remains unresolved, make another targeted CodeGraph call before generic read/search/glob/shell.
 - For literal/content lookup after the required CodeGraph step (or when CodeGraph is not applicable), prefer `{{CTX_SEARCH}}`; for filename discovery prefer `{{CTX_GLOB}}`; then use `{{CTX_READ}}` with a narrow line/range request for only the needed sections. Do not use shell tools merely to emulate search/read with `rg`, `grep`, `find`, `sed`, `awk`, `cat`, `head`, or `tail` when the corresponding `ctx_*` tool can answer the question.

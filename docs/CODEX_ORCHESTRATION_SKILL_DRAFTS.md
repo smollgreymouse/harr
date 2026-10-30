@@ -1,12 +1,12 @@
 # Harr orchestration skill economy audit
 
-Status: design audit stacked on the Luna-root topology PR. No runtime/installer changes.
+Status: audit implemented in the follow-on orchestration skills branch. The Codex orchestration layer is opt-in and disabled by default; runtime skill/installer changes match this design. Live-system installation remains separate.
 
 ## What we keep from earlier orchestrator research
 
 The useful parts of the earlier da34 / omid511 comparison survive in a smaller form:
 
-- **delegate only when it buys something** — isolation of a large implementation context, real parallelism, or a material decision;
+- **delegate only for real parallelism** — sequential implementation stays in the Luna root; native workers exist for genuinely independent parallel scopes;
 - **reuse the same executor inside one phase** — follow up the worker/architect/Ein session instead of making another agent reread the same surface;
 - **rotate context deliberately** — start fresh only for a genuinely new phase, independent review, or a context that has become too broad/compacted to be useful;
 - **handoff facts, not history** — invariants, exact evidence, accepted decisions, checks/results, paths/symbols; never transcript replay;
@@ -22,16 +22,13 @@ Two rejected patterns remain rejected:
 
 ```text
 Luna root (long-lived)
-conversation / routing / integration
+sequential implementation / routing / integration
         |
-        | local + cheap
-        +----------------------------> do directly
+        | independent parallel scopes only
+        +----------------------------> stock worker A / B / ...
+        |                               each owns one bounded scope
         |
-        | implementation context worth isolating
-        +----------------------------> one stock Luna worker
-        |                               owns that scope/phase
-        |
-        | material architecture decision
+        | unresolved material architecture decision
         +----------------------------> $asa
         |                               fresh Sol architect
         |
@@ -40,22 +37,26 @@ conversation / routing / integration
                                         Ein owns that scope/phase
 ```
 
-The root is the **control plane**. Worker/Ein sessions are **execution contexts**. Asa is a **decision context**. The economical profile keeps the root on Luna High; stock native workers inherit that model unless the user configures otherwise.
+The root is the **sequential implementation owner and control plane**. Native workers are parallel execution contexts, not context-storage helpers. Asa is a **decision context**. The economical profile keeps the root on Luna High; stock native workers inherit that model unless the user configures otherwise.
 
-Do not add a Harr-specific implementation-worker role. Do not move the same implementation context through all three layers.
+Do not add a Harr-specific implementation-worker role. Do not hand sequential implementation from worker to worker just to shed context.
 
 ## Economy invariants
 
-1. **No agent by default.** A small/local task stays in Luna root.
-2. **One owner per scope.** Root, worker, or Ein owns active implementation work; never two at once.
-3. **One context per phase.** Continue the same worker/Ein session while its code context is useful.
-4. **Asa is an interrupt, not a planner loop.** Call it only for a material decision.
-5. **No duplicate investigation.** Root does not reread a delegated scope; Asa does not inspect the repository broadly.
-6. **No Explorer pre-pass.** The implementation owner investigates its own scope.
-7. **Compact handoffs only.** Transfer evidence and decisions, not transcripts or broad file dumps.
-8. **Rotate on a boundary, not by habit.** New phase / independent review / unusably broad context -> fresh executor with compact handoff.
-9. **Review is risk-based.** Fresh reviewer only when independent context is worth another read.
-10. **Parallelism stays narrow.** One writing worker per repository by default; 2–3 workers maximum for genuinely independent scopes. Parallel writes in one repository require explicit user intent plus isolated worktrees/copies.
+1. **Sequential work stays in root.** Task size or code volume alone never justifies a native worker.
+2. **Workers buy parallelism only.** Spawn them for genuinely independent scopes that can make progress concurrently.
+3. **Root owns decomposition and integration.** Every worker receives a bounded, self-sufficient scope with no dependency on another active worker.
+4. **Root is the sole agent router.** Native workers never spawn/fork agents or invoke Asa themselves; they escalate to root.
+5. **One owner per scope.** Root, worker, or Ein owns active implementation work; never two at once.
+6. **Asa is an interrupt, not a planner loop.** Call it only for an unresolved material decision.
+7. **No duplicate investigation.** Root and sibling workers do not reread an active delegated scope; Asa does not inspect the repository broadly.
+8. **Router-only worker escalation.** On worker -> Asa escalation, root only adds already-known global/user constraints, forwards compact evidence to Asa, then forwards the decision/invariants back. It does not re-analyze the worker scope.
+9. **Pause at material boundaries.** A worker returns compact evidence instead of choosing unresolved material architecture itself.
+10. **Resume the same parallel owner.** After Asa decides, follow up the paused worker rather than creating a replacement.
+11. **No Explorer pre-pass.** The implementation owner investigates its own scope.
+12. **Compact handoffs only.** Transfer evidence and decisions, not transcripts or broad file dumps.
+13. **Review is risk-based.** Fresh reviewer only when independent context is worth another read.
+14. **Parallelism stays narrow.** 2–3 workers maximum for genuinely independent scopes; parallel writes in one repository require explicit user intent plus isolated worktrees/copies.
 
 No mandatory plan file is part of the protocol. A plan file may be used when one already exists or is useful as a durable artifact; it is not required for delegation.
 
@@ -64,15 +65,14 @@ No mandatory plan file is part of the protocol. A plan file may be used when one
 | Situation | Owner / flow |
 | --- | --- |
 | small/local task | Luna root |
-| large but mechanical task with modest context | Luna root |
-| substantial implementation whose code/tool trace should stay out of the long-lived chat | one stock Luna worker; root does not duplicate the read |
-| worker needs ordinary local design choice | worker decides |
-| material decision appears | compact evidence -> `$asa` -> same implementation owner continues |
+| large or code-heavy sequential task | Luna root |
+| two or more genuinely independent scopes | root decomposes -> parallel stock workers -> root integrates |
+| worker needs ordinary local design choice | worker decides inside its bounded scope |
+| root reaches unresolved material decision | compact evidence -> `$asa` -> Luna root continues |
+| worker reaches unresolved material decision | worker pauses -> compact evidence -> root routes only -> `$asa` -> root forwards decision -> SAME worker continues |
 | user explicitly invokes `$asa` | fresh architect immediately |
 | user explicitly delegates to Ein | selected Ein session owns the delegated scope |
 | Ein reports material escalation | compact evidence -> `$asa` -> resume same Ein session |
-| same implementation phase needs correction | follow up same worker/Ein |
-| genuinely new phase | fresh worker/Ein with validated-facts handoff |
 | independent review is warranted | fresh reviewer after implementation is stable |
 
 Task **size** is deliberately not an Asa trigger.
@@ -125,7 +125,7 @@ Reuse the same architect only while resolving the **same decision episode**. A l
 
 ## `$ein` audit
 
-The current `einherjar-worker` skill is about 500 words and repeats action semantics already present in the MCP schema.
+The pre-migration `einherjar-worker` skill was about 500 words and repeated action semantics already present in the MCP schema.
 
 The future `$ein` skill should keep only what changes parent behavior:
 
@@ -192,13 +192,14 @@ No new public Worker skill or Harr-specific Worker role is needed.
 
 Stock worker behavior already supplies implementation ownership, model inheritance and native follow-up. Harr only needs the economy convention:
 
-- use a worker when isolating substantial code/tool context is worth the cold-start cost;
-- once delegated, root treats that worker as its eyes/hands for the scope;
-- follow up the same worker inside the phase;
-- if it hits a material decision, preserve it while Asa decides, then continue it;
-- do not create a replacement worker just because the parent spoke to Asa.
+- keep all sequential implementation in Luna root regardless of size;
+- spawn workers only for genuinely independent scopes that benefit from concurrent progress;
+- root owns decomposition/integration and gives every worker a bounded, self-sufficient scope;
+- once delegated, root and sibling workers do not duplicate that scope;
+- if a worker hits an unresolved material decision, pause it, let Asa decide from compact evidence, then follow up the SAME worker;
+- never replace a worker merely to continue the same sequential phase.
 
-For small/local blocking work, Luna root can simply do it. This preserves da34's "delegate only when useful" behavior instead of turning every task into an agent ceremony.
+This preserves the useful part of the earlier orchestrator research without creating context islands: workers buy wall-clock parallelism, not context storage.
 
 ## Review policy
 
@@ -217,15 +218,11 @@ A reviewer receives requirements + accepted decisions + stable diff/evidence, no
 
 ## Context rotation policy
 
-Reuse beats restart until reuse becomes expensive.
+A native worker exists only for its bounded parallel scope. Reuse that same worker for follow-up inside the scope; do not chain fresh workers to advance sequential phases that belong in root.
 
-Rotate a worker/Ein/architect when:
+For Ein/architect contexts, reuse beats restart until the decision/session is complete. Start fresh for a genuinely new phase or independent review, or when context growth has made a compact validated handoff cheaper.
 
-- the work enters a genuinely new phase with a different scope;
-- independent review is desired;
-- compaction/context growth has made the existing context less useful than a compact validated handoff.
-
-The handoff contains only:
+Any handoff contains only:
 
 - current goal/scope;
 - accepted material decisions/invariants;
@@ -250,11 +247,13 @@ Therefore:
 - architect packets must explicitly carry the relevant domain constraints;
 - domain authorization/safety remains with the root.
 
-## Implementation order
+## Implemented delta
 
-1. Implement the compact auto-discoverable `$asa` + configurable `asa-architect`.
-2. Rename/shrink `$einherjar-worker` to `$ein`; leave action semantics in MCP schema.
-3. Shrink top-level `$harr` and lazy-load its existing references.
-4. Remove duplicated Ein policy from generated Harr routing/skill text, leaving discoverability only.
-5. Add tests for Asa implicit-selection metadata, role rendering/configuration, and skill installation/migration.
-6. Measure real sessions before adding any further orchestration layer.
+- compact auto-discoverable `$asa` plus Harr-managed configurable `asa-architect`;
+- managed `$einherjar-worker` migration to compact `$ein`, with action semantics left in the MCP schema;
+- compact top-level `$harr` with existing references lazy-loaded by topic;
+- generated Ein routing reduced to discoverability only;
+- Codex-only orchestration guard: sequential work stays in root, native workers are parallel-only, unresolved material decisions route to `$asa`, and paused workers resume in place;
+- regression coverage for Asa metadata/config rendering, host-specific orchestration routing, Ein ownership/schema split, installer migration and rollback.
+
+Real-session token/quality measurement remains the next step before adding any further orchestration layer.

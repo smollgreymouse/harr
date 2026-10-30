@@ -8,7 +8,7 @@ Harr setup owns *any number* of independently named Einherjar instances. An inst
 
 ## Short public API name
 
-The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherjar` remains the conceptual/documentation name, not something users must type. Setup displays **Ein workers**. The existing, user-chosen MCP server name is not changed by this abbreviation; its canonical tool is `ein` for every instance. Do not expose `harr einherjar` as the required spelling. The shared skill keeps the existing `$einherjar-worker` identifier as a compatibility reference until a separate skill-name migration is approved; the CLI abbreviation does not silently break existing skills.
+The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherjar` remains the conceptual/documentation name, not something users must type. Setup displays **Ein workers**. The existing, user-chosen MCP server name is not changed by this abbreviation; its canonical tool is `ein` for every instance. Do not expose `harr einherjar` as the required spelling. The shared orchestration skill is `$ein`; Harr removes the legacy managed `$einherjar-worker` skill during agent apply.
 
 ## Identity model
 
@@ -16,7 +16,7 @@ The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherja
 - `instance.display_name`: editable human label, not an MCP identifier.
 - `instance.adapter`: `gigacode`, `opencode`, `codex`, or a registered custom command-template adapter. This is implementation detail, not public identity.
 - `instance.interface`: fixed `ein-v1` for **every** instance. It preserves the existing legacy GigaCode MCP behavior and argument/result schema, but deliberately renames the public tool to `ein`. The selected adapter never changes the public tool interface.
-- `instance.profile`: one shared `einherjar-worker` skill and one shared policy template for **all** instances, including GigaCode. The retired `$gigacode-executor` skill is removed during migration rather than installed beside the canonical shared skill.
+- All instances share the `$ein` skill and generated discovery policy, including GigaCode. Skill selection is not persisted per instance. Retired managed `$gigacode-executor` and `$einherjar-worker` skills are removed during migration rather than installed beside `$ein`.
 - `instance.enabled`: global selection state. Disabled instances remain in configuration and lose gateway/skill routing exposure, but historical session metadata is retained.
 
 **The setup MUST prompt for a unique MCP server name for every newly added Einherjar; no adapter-derived, numbered or silent automatic naming, including duplicates of an adapter.** Check collisions with built-in/static and already registered MCP servers before saving. The existing `gigacode` identity is offered only when importing the legacy installation, and is never forced upon new GigaCode instances.
@@ -37,7 +37,6 @@ Use `~/.config/harr/einherjar/instances.json` (schema 2) as the single source of
       "enabled": true,
       "adapter": "gigacode",
       "interface": "ein-v1",
-      "profile": "einherjar-worker",
       "execution": {"executable": "gigacode", "args": [], "environment_refs": [], "timeout_sec": 0},
       "workspace": {"mode": "caller"}
     },
@@ -47,7 +46,6 @@ Use `~/.config/harr/einherjar/instances.json` (schema 2) as the single source of
       "enabled": true,
       "adapter": "opencode",
       "interface": "ein-v1",
-      "profile": "einherjar-worker",
       "execution": {"executable": "opencode", "args": [], "environment_refs": [], "timeout_sec": 0},
       "workspace": {"mode": "caller"}
     },
@@ -57,7 +55,6 @@ Use `~/.config/harr/einherjar/instances.json` (schema 2) as the single source of
       "enabled": true,
       "adapter": "opencode",
       "interface": "ein-v1",
-      "profile": "einherjar-worker",
       "execution": {"executable": "opencode", "args": [], "environment_refs": [], "timeout_sec": 0},
       "workspace": {"mode": "caller"}
     }
@@ -90,7 +87,7 @@ Add worker:
   Executable / args:                 ...
   Workspace mode:                    ...
   Secrets / env references:          ...
-  Shared skill / policy:             einherjar-worker (fixed)
+  Shared skill / policy:             ein (fixed)
   Enable now?                        ...
   Validate and save
 ```
