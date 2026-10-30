@@ -1,223 +1,260 @@
-# Harr / Asa / Ein — Luna-root topology
+# Harr orchestration skill economy audit
 
-Status: design-only stacked PR on top of the Harr / Asa / Ein skill audit. No runtime/installer changes yet.
+Status: design audit stacked on the Luna-root topology PR. No runtime/installer changes.
 
-## Goal
+## What we keep from earlier orchestrator research
 
-Use the inexpensive model for the long-lived conversation and spend Sol only on decisions that need it.
+The useful parts of the earlier da34 / omid511 comparison survive in a smaller form:
 
-Recommended operating topology:
+- **delegate only when it buys something** — isolation of a large implementation context, real parallelism, or a material decision;
+- **reuse the same executor inside one phase** — follow up the worker/architect/Ein session instead of making another agent reread the same surface;
+- **rotate context deliberately** — start fresh only for a genuinely new phase, independent review, or a context that has become too broad/compacted to be useful;
+- **handoff facts, not history** — invariants, exact evidence, accepted decisions, checks/results, paths/symbols; never transcript replay;
+- **lazy-load instructions** — keep top-level skills short and move domain detail into references/tool schemas;
+- **fresh review is optional** — pay the duplicate-read cost only when risk justifies independent context.
+
+Two rejected patterns remain rejected:
+
+- Explorer -> Worker for implementation-bound work: the Worker rereads the same code;
+- planner/root rereading a delegated implementation scope: duplicated context with no new owner.
+
+## Context topology
 
 ```text
-long-lived user chat
-    Luna High
+Luna root (long-lived)
+conversation / routing / integration
         |
-        +-- ordinary/local work ------------------------------+
-        |                                                     |
-        +-- stock native worker(s), when useful               |
-        |      implementation context / eyes and hands        |
-        |                                                     |
-        +-- material architecture decision?                   |
-               yes                                            |
-                |                                             |
-                v                                             |
-          asa-architect                                       |
-          Sol 6.1 XHigh                                       |
-          fresh compact context                               |
-                |                                             |
-          decision/constraints -------------------------------+
+        | local + cheap
+        +----------------------------> do directly
+        |
+        | implementation context worth isolating
+        +----------------------------> one stock Luna worker
+        |                               owns that scope/phase
+        |
+        | material architecture decision
+        +----------------------------> $asa
+        |                               fresh Sol architect
+        |
+        | explicit external delegation
+        +----------------------------> $ein <instance>
+                                        Ein owns that scope/phase
 ```
 
-The root remains Luna. Asa is no longer the root coordinator; it is the expensive architect subagent.
+The root is the **control plane**. Worker/Ein sessions are **execution contexts**. Asa is a **decision context**. The economical profile keeps the root on Luna High; stock native workers inherit that model unless the user configures otherwise.
 
-Task size is not the routing criterion. A large mechanical migration with stable contracts stays on Luna. A small change to a protocol, lifetime, concurrency, persistence, security or subsystem boundary may require Asa immediately.
+Do not add a Harr-specific implementation-worker role. Do not move the same implementation context through all three layers.
 
-## Public surface
+## Economy invariants
 
-- `$harr` — harness operations and safety policy.
-- `$asa` — request/route a material architecture decision to Harr's architect.
-- `$ein` — explicit external Ein delegation.
-- Stock native workers remain implementation machinery; no public `$worker` skill.
+1. **No agent by default.** A small/local task stays in Luna root.
+2. **One owner per scope.** Root, worker, or Ein owns active implementation work; never two at once.
+3. **One context per phase.** Continue the same worker/Ein session while its code context is useful.
+4. **Asa is an interrupt, not a planner loop.** Call it only for a material decision.
+5. **No duplicate investigation.** Root does not reread a delegated scope; Asa does not inspect the repository broadly.
+6. **No Explorer pre-pass.** The implementation owner investigates its own scope.
+7. **Compact handoffs only.** Transfer evidence and decisions, not transcripts or broad file dumps.
+8. **Rotate on a boundary, not by habit.** New phase / independent review / unusably broad context -> fresh executor with compact handoff.
+9. **Review is risk-based.** Fresh reviewer only when independent context is worth another read.
+10. **Parallelism stays narrow.** One writing worker per repository by default; 2–3 workers maximum for genuinely independent scopes. Parallel writes in one repository require explicit user intent plus isolated worktrees/copies.
 
-## Rule ownership
+No mandatory plan file is part of the protocol. A plan file may be used when one already exists or is useful as a durable artifact; it is not required for delegation.
 
-| Owner | Rules |
+## Routing matrix
+
+| Situation | Owner / flow |
 | --- | --- |
-| Stock Codex | native worker/spawn/follow-up/wait mechanics and parallel ownership |
-| Luna root | user dialogue, routing, integration and ordinary/local decisions |
-| `$asa` | material-decision trigger and the hard boundary against Luna self-architecting |
-| Internal `asa-architect` | architecture decision from a compact evidence packet |
-| Ein MCP / `$ein` | external executor lifecycle and delegated-scope policy |
-| `$harr` | Harr operational safety and repair authorization |
+| small/local task | Luna root |
+| large but mechanical task with modest context | Luna root |
+| substantial implementation whose code/tool trace should stay out of the long-lived chat | one stock Luna worker; root does not duplicate the read |
+| worker needs ordinary local design choice | worker decides |
+| material decision appears | compact evidence -> `$asa` -> same implementation owner continues |
+| user explicitly invokes `$asa` | fresh architect immediately |
+| user explicitly delegates to Ein | selected Ein session owns the delegated scope |
+| Ein reports material escalation | compact evidence -> `$asa` -> resume same Ein session |
+| same implementation phase needs correction | follow up same worker/Ein |
+| genuinely new phase | fresh worker/Ein with validated-facts handoff |
+| independent review is warranted | fresh reviewer after implementation is stable |
 
-Do not duplicate native worker or MCP tool rules in Asa.
+Task **size** is deliberately not an Asa trigger.
 
-## The routing boundary
+## `$asa` audit
 
-The difficult part is preventing Luna from solving an architectural decision itself merely because it believes it can.
+The Luna-root PR has the right core idea. Keep `$asa` small and auto-discoverable.
 
-**Trigger beats confidence.** Once any material trigger applies, Luna must not compare architectures or choose the design locally. It may gather narrowly missing evidence, then routes the decision to Asa.
+The description is the routing classifier, so it must distinguish **materiality** from mere task size. The body should only enforce the behavior that stock Codex does not already provide.
 
-Material triggers:
-
-- public or cross-module API/contract;
-- protocol, schema, wire-format or compatibility decision;
-- ownership, lifetime, concurrency, scheduling or cancellation semantics;
-- persistence, recovery, migration, durability or data-loss behavior;
-- security, permissions, credentials, sandbox or trust boundary;
-- subsystem/module boundary or responsibility split;
-- multiple plausible non-local designs with meaningful long-term trade-offs;
-- an explicit architecture/design/rethink request whose answer is not mechanically determined by existing contracts.
-
-Not triggers by themselves:
-
-- lots of files;
-- a long migration;
-- code reading/investigation;
-- implementation planning when contracts are already fixed;
-- local refactor/bug fix/test repair;
-- a mechanical replacement that preserves existing behavior and lifecycle.
-
-Tie-breaker: if a wrong choice can force non-local rework or alter a long-lived/external contract, route to Asa. If the choice is local and cheaply reversible, Luna owns it.
-
-## Workflow matrix
-
-| Situation | Flow |
-| --- | --- |
-| ordinary/local task | Luna works directly or uses stock native workers as Codex normally would |
-| large but mechanical task | Luna/worker completes it without Asa |
-| user explicitly invokes `$asa` | route the architecture question to `asa-architect` immediately |
-| Luna encounters a material trigger | stop local architecture choice -> gather only missing evidence -> invoke `asa-architect` |
-| worker reports a material decision | Luna forwards compact evidence to Asa; same worker continues after the decision |
-| Ein returns a material `ESCALATE` | Luna invokes Asa for the decision, then resumes Ein if appropriate |
-| Asa asks for missing evidence | Luna/worker gathers only that evidence and follows up the SAME architect |
-| root is doing Harr repair/mutation | `$harr` safety remains root-owned; Asa may advise architecture but does not inherit/replace Harr authorization |
-
-## Draft `$asa`
-
-`$asa` must support both explicit user invocation and automatic Luna routing. Therefore it should remain discoverable for implicit selection rather than using `allow_implicit_invocation: false`.
-
-Keep the skill deliberately small:
+Proposed skill:
 
 ```md
 ---
 name: asa
-description: Use for a material architecture decision: public/cross-module contracts, protocol/schema compatibility, ownership/lifetime/concurrency, persistence/recovery, security/trust boundaries, subsystem boundaries, or genuinely non-local design trade-offs. Do not use merely because a task is large or mechanical.
+description: Use for a material architecture decision involving public/cross-module contracts, protocol/schema compatibility, ownership/lifetime/concurrency, persistence/recovery, security/trust boundaries, subsystem boundaries, or genuinely non-local trade-offs. Do not use merely because work is large, code-heavy, or mechanical.
 ---
 
 When this skill applies, do not choose the material architecture in the root.
 
-Send Harr's internal `asa-architect` a compact decision packet with the goal,
-relevant invariants, concrete evidence, and the exact decision required. Use a
-fresh context; do not dump the root transcript.
+Send `asa-architect` a compact packet: goal, exact decision required, fixed
+constraints/invariants, and concrete evidence. Use fresh context; do not send
+the root transcript or broad code dumps.
 
-If evidence is missing, gather only what the architect needs. Continue the SAME
-architect after supplying that evidence.
+If the architect needs evidence, gather only the requested facts and follow up
+the SAME architect.
 
-After the decision, return implementation to Luna/the existing worker or Ein
-session that already owns the scope.
+Return the decision to the implementation owner that already has the code
+context.
 ```
 
-The anti-self-architecture rule belongs here because this is the policy Harr adds. Native spawn/follow-up mechanics do not.
+### Asa architect
 
-## Automatic selection
+Recommended default remains Sol 6.1 XHigh, configurable through Harr.
 
-Automatic Asa relies on normal Codex skill discovery, not a second global routing protocol.
-
-The skill description carries the material-trigger boundary. The full body is read only when selected/invoked; ordinary turns carry only the normal skill-catalog entry.
-
-Explicit `$asa` remains a manual override: the user is saying the decision deserves architect-grade reasoning even if Luna would otherwise classify it as local.
-
-Do not add a second list of the same triggers to global `AGENTS.md`. One source of truth avoids drift.
-
-### Live routing probe
-
-Verified with `codex-free` / Codex CLI 0.162.1 on Luna Low to make the test conservative:
-
-- a material public-protocol + ownership/lifetime prompt automatically selected the test skill and read its body;
-- a large explicitly mechanical v2-client migration with fixed API/lifecycle/ownership/protocol semantics did not select the skill;
-- when the selected skill instructed a fresh custom architect spawn, Codex created that subagent successfully.
-
-This validates the intended selection path on the current client: description -> implicit skill selection -> skill policy -> architect spawn. It is still model routing behavior, so tests should lock the intended skill metadata and integration behavior as the implementation evolves.
-
-## Internal `asa-architect`
-
-This is a separate native Codex role, not a public skill and not the stock `worker`.
-
-Model/effort are Harr-managed user configuration. Recommended default:
-
-```text
-model:  gpt-6.1-sol
-effort: xhigh
-```
-
-Proposed CLI surface remains:
-
-```text
-harr agents asa status
-harr agents asa configure
-harr agents asa configure --model gpt-6.1-sol --effort xhigh
-```
-
-The root chat model is a session/UI choice, not part of the skill contract. The economical profile recommends Luna High for the main chat; Harr should not silently rewrite an already-running chat model.
-
-Rendered architect role delta:
+The role should be even narrower than the previous draft:
 
 ```toml
 developer_instructions = """
-You are Harr's architecture specialist, not the implementation worker.
-Do not edit code and do not spawn subagents.
-Work from the compact evidence supplied by the parent.
-Decide only the material question asked; do not redesign unrelated areas.
+You are Harr's material-decision specialist.
+Do not implement, edit, spawn agents, or broadly inspect the repository.
+Answer only the decision requested from the supplied evidence.
 Prefer existing contracts and the smallest coherent change.
-If evidence is insufficient, request the exact missing facts instead of broadly
-exploring the repository.
-Return a concise decision, the constraints/invariants it imposes, and any
-specific risk the implementation owner must verify.
+If evidence is insufficient, request the exact missing facts.
+Return the decision plus the invariants/risks the implementation owner must keep.
 """
 ```
 
-The role config also carries the Harr-managed model and reasoning effort.
+Reuse the same architect only while resolving the **same decision episode**. A later independent architecture question gets a fresh architect so expensive Sol context does not accumulate.
 
-Use `fork_turns: "none"`: the purpose is to keep Sol's context short and expensive reasoning focused on the actual decision rather than the long user conversation.
+## `$ein` audit
 
-## Context economy
+The current `einherjar-worker` skill is about 500 words and repeats action semantics already present in the MCP schema.
 
-The long context stays on Luna. Code-heavy context normally stays in Luna/native workers. Sol sees only a decision packet.
+The future `$ein` skill should keep only what changes parent behavior:
 
-A good packet contains:
+```md
+---
+name: ein
+description: Coordinate a bounded scope already delegated to a user-selected Harr Ein executor.
+---
 
-- goal;
-- material decision required;
-- relevant existing contract/invariants;
-- concrete code/runtime evidence;
-- constraints already fixed by the user;
-- no transcript, broad file dump or speculative design essay.
+While an Ein session is active, that session owns its delegated scope. Do not
+inspect, edit, re-run checks, or independently solve the same scope in the
+parent.
 
-Luna must not pre-solve the decision before sending it. Otherwise the expensive architect becomes a reviewer of Luna's answer instead of the decision maker.
+Judge terminal handoff evidence against the requested outcome. Ask only for
+specific missing proof.
 
-## Domain-skill boundary
+For a material design escalation, obtain the decision through Asa and resume the
+SAME Ein session with only that decision/new evidence.
 
-The previous live `codex-free` probe remains relevant: a skill invoked in the root does not propagate into a fresh custom child with `fork_turns: "none"`, and merely putting the skill name in the child task does not load its body.
+Use the same session for corrections in the same phase. Start fresh for a
+genuinely new phase or independent review, transferring only validated facts
+and constraints.
+```
 
-That is acceptable for Asa because the architect should not perform domain mutations. The root must include the specific domain constraints relevant to the decision packet and retains the domain skill's authorization/safety responsibilities.
+Everything else belongs to the named Ein MCP tool schema:
 
-For example, `$harr` repair authorization remains with the root. Asa may decide architecture from supplied constraints but cannot substitute for `$harr` policy.
+- explicit executor authorization/selection;
+- start/resume/status/messages/wait/cancel arguments;
+- blocking wait semantics;
+- no-polling behavior;
+- session identifiers and backend binding.
 
-## Failure modes to guard against
+Remove the current preference for `plan_path` on substantial work. Durable plan files are optional artifacts, not part of the orchestration protocol.
 
-1. **Luna self-architects.** Fix: trigger beats confidence; once material, Luna may gather facts but not choose.
-2. **Asa on every large task.** Fix: size/volume are explicitly non-triggers; mechanical work stays Luna.
-3. **Sol receives the whole chat/codebase.** Fix: fresh architect + compact packet; ask for exact missing evidence.
-4. **Asa becomes another implementation agent.** Fix: role is decision-only; implementation returns to the existing owner.
-5. **Repeated fresh Sol calls for one decision.** Fix: follow up the same architect when evidence is missing.
-6. **Duplicate routing rules drift.** Fix: material-trigger source of truth lives in the `$asa` skill description/body.
+## `$harr` audit
 
-## Implementation delta from the first PR
+The current top-level `$harr` skill is about 830 words. It is correctly explicit/specialized, but once loaded it still carries unrelated Git/MR/Kubernetes detail.
 
-1. Replace the previous root-Asa / internal `asa-worker` topology with Luna root + internal `asa-architect`.
-2. Make `$asa` discoverable for automatic selection as well as explicit `$asa` invocation.
-3. Configure the architect model/effort through Harr; suggest Sol 6.1 XHigh by default.
-4. Keep the main chat model outside skill policy; recommend Luna High as the economical operating profile.
-5. Keep stock native workers stock; no Harr-specific implementation worker role is required.
-6. Preserve the existing `$ein` and `$harr` ownership boundaries.
+Apply the omid511 lazy-load lesson more aggressively:
+
+Top-level `$harr` should contain only:
+
+- purpose/ownership boundary;
+- cheap `status` / `doctor` entry points;
+- repair authorization and fail-closed rules;
+- short command index;
+- instruction to load exactly one relevant reference.
+
+Move/keep detailed flows in existing references:
+
+- host Git / MR -> `references/git.md`;
+- Kubernetes -> `references/kubernetes.md`;
+- LeanCTX -> `references/leanctx.md`;
+- optional MCP-specific diagnostics -> their existing reference files;
+- general install/configure command catalog -> `references/operations.md`.
+
+Do not repeat Ein authorization/action semantics in `$harr`; expose only discoverability of the shared Ein workflow and available named instances.
+
+This makes doctor/repair turns pay for doctor policy, not for an unrelated GitLab MR procedure.
+
+## Root/worker interaction
+
+No new public Worker skill or Harr-specific Worker role is needed.
+
+Stock worker behavior already supplies implementation ownership, model inheritance and native follow-up. Harr only needs the economy convention:
+
+- use a worker when isolating substantial code/tool context is worth the cold-start cost;
+- once delegated, root treats that worker as its eyes/hands for the scope;
+- follow up the same worker inside the phase;
+- if it hits a material decision, preserve it while Asa decides, then continue it;
+- do not create a replacement worker just because the parent spoke to Asa.
+
+For small/local blocking work, Luna root can simply do it. This preserves da34's "delegate only when useful" behavior instead of turning every task into an agent ceremony.
+
+## Review policy
+
+Independent review is not a mandatory final stage.
+
+Use fresh review when one of these is true:
+
+- user explicitly asks for independent review;
+- change crosses a material contract or security/recovery boundary;
+- implementation evidence is weak or contradictory;
+- the cost of a missed defect clearly exceeds another read.
+
+Otherwise the implementation owner's validation plus root integration is enough.
+
+A reviewer receives requirements + accepted decisions + stable diff/evidence, not the implementation transcript.
+
+## Context rotation policy
+
+Reuse beats restart until reuse becomes expensive.
+
+Rotate a worker/Ein/architect when:
+
+- the work enters a genuinely new phase with a different scope;
+- independent review is desired;
+- compaction/context growth has made the existing context less useful than a compact validated handoff.
+
+The handoff contains only:
+
+- current goal/scope;
+- accepted material decisions/invariants;
+- files/symbols actually touched;
+- completed verification and remaining failures;
+- exact blockers/resources needed next.
+
+Never copy conversation history as a handoff.
+
+## Current-client validation retained
+
+Live `codex-free` / Codex CLI 0.162.1 probes already established:
+
+- material protocol + ownership/lifetime prompt can auto-select an implicit Asa-like skill;
+- a large explicitly mechanical migration does not select it;
+- an implicitly selected skill can spawn a fresh custom architect;
+- root-invoked skill bodies do not propagate automatically to a `fork_turns:"none"` child.
+
+Therefore:
+
+- Asa routing can stay in the skill description/body without duplicating triggers in global `AGENTS.md`;
+- architect packets must explicitly carry the relevant domain constraints;
+- domain authorization/safety remains with the root.
+
+## Implementation order
+
+1. Implement the compact auto-discoverable `$asa` + configurable `asa-architect`.
+2. Rename/shrink `$einherjar-worker` to `$ein`; leave action semantics in MCP schema.
+3. Shrink top-level `$harr` and lazy-load its existing references.
+4. Remove duplicated Ein policy from generated Harr routing/skill text, leaving discoverability only.
+5. Add tests for Asa implicit-selection metadata, role rendering/configuration, and skill installation/migration.
+6. Measure real sessions before adding any further orchestration layer.
