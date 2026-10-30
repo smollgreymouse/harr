@@ -328,12 +328,9 @@ def find_workspace_store_by_checkout(real: str | Path, primary: Path) -> Path | 
     for candidate in sorted(workspace_store_dir().glob("*.json")):
         shown = workspace_admin(real, "show", str(candidate))
         if shown.returncode != 0:
-            repaired = workspace_admin(real, "reconcile", str(candidate))
-            if repaired.returncode != 0:
-                continue
-            shown = workspace_admin(real, "show", str(candidate))
-            if shown.returncode != 0:
-                continue
+            # Store discovery is intentionally read-only. Repair/reconciliation
+            # is allowed only after a store has been selected explicitly.
+            continue
         try:
             state = json.loads(shown.stdout)
         except json.JSONDecodeError:
