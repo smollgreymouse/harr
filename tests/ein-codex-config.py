@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import sys
@@ -57,8 +58,9 @@ with tempfile.TemporaryDirectory(prefix="harr-ein-codex-config-") as raw:
         # command/path without a managed env marker. Recognize that one shape,
         # then rewrite it in the current marked format.
         codex.CONFIG.write_text(
-            f'[mcp_servers.harr-ein-ui]\ncommand = "{sys.executable}"\n'
-            f'args = ["{codex.ein_ui_path()}"]\n'
+            "[mcp_servers.harr-ein-ui]\n"
+            f"command = {json.dumps(sys.executable, ensure_ascii=False)}\n"
+            f"args = [{json.dumps(str(codex.ein_ui_path()), ensure_ascii=False)}]\n"
             '[mcp_servers.harr-ein-ui.tools.legacy_extension]\nvalue = "remove"\n',
             encoding="utf-8",
         )
@@ -71,8 +73,8 @@ with tempfile.TemporaryDirectory(prefix="harr-ein-codex-config-") as raw:
         # A foreign executable claiming the same panel script path is still
         # foreign ownership; fail closed without rewriting any of its TOML.
         codex.CONFIG.write_text(
-            f'[mcp_servers.harr-ein-ui]\ncommand = "foreign-wrapper"\n'
-            f'args = ["{codex.ein_ui_path()}"]\n',
+            '[mcp_servers.harr-ein-ui]\ncommand = "foreign-wrapper"\n'
+            f"args = [{json.dumps(str(codex.ein_ui_path()), ensure_ascii=False)}]\n",
             encoding="utf-8",
         )
         before = codex.CONFIG.read_text(encoding="utf-8")
