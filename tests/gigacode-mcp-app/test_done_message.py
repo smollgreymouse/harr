@@ -58,11 +58,15 @@ assert 'JSON.stringify(claim.handoff)' in html
 assert 'do not call gigacode status/messages/wait' in html
 assert "append('Вызов:" not in html
 assert "append('— '+d.status" not in html
-for panel in (html, ein_html):
+for panel in (html,):
     assert 'owner_token:panelId' in panel or 'const owner_token=panelId' in panel
     assert 'for(let attempt=0;attempt<3&&!stopped;attempt++)' in panel
     assert "release_done_notification_ui',args" in panel
     assert 'clearTimeout(p.timer)' in panel
     assert "pending.clear();lifecycle('pagehide')" in panel
-assert 'briefHandoff(claim.handoff)' in ein_html  # preserve chat-only Ein completion summary
+assert 'claim_done_notification_ui' not in ein_html
+assert 'release_done_notification_ui' not in ein_html
+assert "request('ui/message'" not in ein_html  # Ein panel is monitor-only; the inline marker owns completion.
+assert 'poll_ein_ui' in ein_html and "status.textContent=d.status||'RUNNING'" in ein_html
+assert "— '+d.status+' —" in ein_html  # terminal status remains visible in the monitor panel
 print('MCP App DONE notification contract: PASS')

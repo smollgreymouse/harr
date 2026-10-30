@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import sys
 import tempfile
 import tomllib
 from unittest.mock import patch
@@ -50,10 +51,43 @@ with tempfile.TemporaryDirectory(prefix="harr-ein-codex-config-") as raw:
         assert direct["args"] == [str(codex.ein_direct_path()), "review"]
         assert direct["env"]["HARR_EIN_DIRECT_MANAGED"] == "1"
         assert servers["external"]["nested"]["value"] == "keep"
+        managed_config_text = codex.CONFIG.read_text(encoding="utf-8")
+
+        # Upgrade ownership: older releases registered the exact Harr panel
+        # command/path without a managed env marker. Recognize that one shape,
+        # then rewrite it in the current marked format.
+        codex.CONFIG.write_text(
+            f'[mcp_servers.harr-ein-ui]\ncommand = "{sys.executable}"\n'
+            f'args = ["{codex.ein_ui_path()}"]\n'
+            '[mcp_servers.harr-ein-ui.tools.legacy_extension]\nvalue = "remove"\n',
+            encoding="utf-8",
+        )
+        with patch.object(ein_instances, "read", return_value=enabled):
+            codex.apply_named_ein_apps()
+        upgraded_panel = tomllib.loads(codex.CONFIG.read_text(encoding="utf-8"))["mcp_servers"]["harr-ein-ui"]
+        assert upgraded_panel["env"]["HARR_EIN_UI_MANAGED"] == "1"
+        assert "legacy_extension" not in upgraded_panel.get("tools", {})
+
+        # A foreign executable claiming the same panel script path is still
+        # foreign ownership; fail closed without rewriting any of its TOML.
+        codex.CONFIG.write_text(
+            f'[mcp_servers.harr-ein-ui]\ncommand = "foreign-wrapper"\n'
+            f'args = ["{codex.ein_ui_path()}"]\n',
+            encoding="utf-8",
+        )
+        before = codex.CONFIG.read_text(encoding="utf-8")
+        try:
+            with patch.object(ein_instances, "read", return_value=enabled):
+                codex.apply_named_ein_apps()
+        except RuntimeError as exc:
+            assert "harr-ein-ui" in str(exc)
+        else:
+            raise AssertionError("same-path foreign panel entry was accepted")
+        assert codex.CONFIG.read_text(encoding="utf-8") == before
 
         # Exact managed ownership permits removal of the complete TOML subtree,
         # including nested tables outside the generated schema.
-        text = codex.CONFIG.read_text(encoding="utf-8")
+        text = managed_config_text
         text += '\n[mcp_servers.review.tools.user_extension]\nvalue = "owned subtree"\n'
         codex.CONFIG.write_text(text, encoding="utf-8")
         with patch.object(ein_instances, "read", return_value=enabled):

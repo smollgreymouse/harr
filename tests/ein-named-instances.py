@@ -31,9 +31,16 @@ with tempfile.TemporaryDirectory(prefix='harr-ein-named-') as tmp:
     ein_state_writer.CACHE_ROOT=base/'ein-atomic-state';ein_state_writer.CACHE_ROOT.mkdir()
     concurrent_sid='22222222-2222-4222-8222-222222222222'
     replace_barrier=threading.Barrier(2)
+    first_replace_lock=threading.Lock()
+    first_replace_sources=set()
     original_replace=os.replace
     def synchronized_replace(source,destination):
-        replace_barrier.wait(timeout=5)
+        source_key=os.fspath(source)
+        with first_replace_lock:
+            first_attempt=source_key not in first_replace_sources
+            first_replace_sources.add(source_key)
+        if first_attempt:
+            replace_barrier.wait(timeout=5)
         return original_replace(source,destination)
     concurrent_payloads=[{'phase':'running','writer':'worker'},{'phase':'queued','writer':'launcher'}]
     with patch.object(os,'replace',side_effect=synchronized_replace):

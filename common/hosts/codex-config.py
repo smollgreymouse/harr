@@ -399,6 +399,8 @@ def _direct_ein_block(name: str, config_root: Path) -> str:
 def _managed_ein_ui_entry(entry: object) -> bool:
     if not isinstance(entry, dict):
         return False
+    if entry.get("command") != sys.executable:
+        return False
     args = entry.get("args")
     if not isinstance(args, list) or len(args) != 1 or not isinstance(args[0], str):
         return False
@@ -407,8 +409,7 @@ def _managed_ein_ui_entry(entry: object) -> bool:
         return True
     env = entry.get("env")
     return (
-        entry.get("command") == sys.executable
-        and isinstance(env, dict)
+        isinstance(env, dict)
         and env.get("HARR_EIN_UI_MANAGED") == "1"
         and configured.parts[-3:] == ("mcp", "ein_app", "server.py")
     )

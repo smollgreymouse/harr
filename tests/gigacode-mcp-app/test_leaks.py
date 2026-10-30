@@ -227,17 +227,10 @@ class EinPanelLeaks(unittest.TestCase):
   scopes=json.loads(ein_srv.SCOPES.read_text())
   self.assertNotIn("stale",scopes)
 
- def test_claims_capped_per_instance(self):
-  claim_dir=ein_srv.STATE/"delivered-completions"/"default"
-  claim_dir.mkdir(parents=True,exist_ok=True)
-  for i in range(ein_srv.MAX_CLAIM_FILES+3):
-   claim=claim_dir/f"{SID}.{i}.claimed"
-   claim.write_text("x")
-   stamp=time.time()-ein_srv.MAX_CLAIM_FILES+i
-   os.utime(claim,(stamp,stamp))
-  ein_srv.prune_claims("default")
-  remaining=list(claim_dir.glob("*.claimed"))
-  self.assertEqual(len(remaining),ein_srv.MAX_CLAIM_FILES)
+ def test_monitor_panel_exposes_no_completion_claim_tools(self):
+  names={tool["name"] for tool in ein_srv.tools()}
+  self.assertEqual(names,{"show_ein_live","panel_event_ui","list_ein_ui","poll_ein_ui"})
+  self.assertFalse((ein_srv.STATE/"delivered-completions").exists())
 
  def test_server_log_rotates(self):
   log=pathlib.Path(self.t.name)/"log"/"server.jsonl"
@@ -261,19 +254,5 @@ class EinPanelLeaks(unittest.TestCase):
    page=ein_srv._messages_paged(mod,"beta",SID,0)
    self.assertEqual(page["revision"],3)
    self.assertEqual(len(ein_srv._TRANSCRIPT_CURSOR),2)
-
- def test_owner_claim_retry_and_legacy_claim_compatibility(self):
-  path=ein_srv.STATE/"done.claimed"
-  self.assertTrue(ein_srv.claim_notification(path,"scope", "panel-a"))
-  self.assertTrue(ein_srv.claim_notification(path,"scope", "panel-a"))
-  self.assertFalse(ein_srv.claim_notification(path,"scope", "panel-b"))
-  self.assertFalse(ein_srv.release_notification(path,"scope","panel-b"))
-  self.assertTrue(ein_srv.release_notification(path,"scope","panel-a"))
-  path.unlink(missing_ok=True)
-  path.write_text("legacy-scope")
-  self.assertFalse(ein_srv.claim_notification(path,"legacy-scope",None))
-  self.assertFalse(ein_srv.release_notification(path,"legacy-scope","panel-a"))
-  self.assertTrue(ein_srv.release_notification(path,"legacy-scope",None))
-  self.assertTrue(ein_srv.claim_notification(path,"legacy-scope",None))
 
 if __name__=="__main__":unittest.main(verbosity=2)
