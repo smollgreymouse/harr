@@ -253,13 +253,121 @@ def workspace_admin(real: str | Path, *args: str) -> subprocess.CompletedProcess
     )
 
 
+def git_checkout_admin_dir(root: Path) -> Path | None:
+    env = os.environ.copy()
+    env.update({
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_OPTIONAL_LOCKS": "0",
+    })
+    for key in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"):
+        env.pop(key, None)
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--absolute-git-dir"],
+        env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        check=False, timeout=10,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return Path(result.stdout.strip()).expanduser().resolve(strict=False)
+
+
+def workspace_primary_binding(state: dict) -> dict | None:
+    primary = state.get("primary")
+    bindings = state.get("checkout_bindings")
+    if not isinstance(primary, str) or not isinstance(bindings, dict):
+        return None
+    binding = bindings.get(primary)
+    return binding if isinstance(binding, dict) else None
+
+
+def git_admin_generation(git_dir: Path) -> str | None:
+    if os.name != "posix":
+        return None
+    try:
+        stat = git_dir.stat()
+    except OSError:
+        return None
+    return f"unix:{stat.st_dev}:{stat.st_ino}"
+
+
+def binding_matches_checkout(binding: dict, primary: Path) -> bool:
+    current_git_dir = git_checkout_admin_dir(primary)
+    if current_git_dir is None:
+        return False
+    stored_git_dir = binding.get("git_dir")
+    if (
+        not isinstance(stored_git_dir, str)
+        or Path(stored_git_dir).expanduser().resolve(strict=False) != current_git_dir
+    ):
+        return False
+    stored_generation = binding.get("checkout_generation")
+    current_generation = git_admin_generation(current_git_dir)
+    if isinstance(stored_generation, str) and current_generation is not None:
+        return stored_generation == current_generation
+    return True
+
+
+def workspace_state_matches_primary(state: dict, primary: Path) -> bool:
+    binding = workspace_primary_binding(state)
+    if binding is not None:
+        return binding_matches_checkout(binding, primary)
+    configured = state.get("primary")
+    return (
+        isinstance(configured, str)
+        and Path(configured).expanduser().resolve(strict=False) == primary
+    )
+
+
+def find_workspace_store_by_checkout(real: str | Path, primary: Path) -> Path | None:
+    current_git_dir = git_checkout_admin_dir(primary)
+    if current_git_dir is None:
+        return None
+    matches: list[Path] = []
+    for candidate in sorted(workspace_store_dir().glob("*.json")):
+        shown = workspace_admin(real, "show", str(candidate))
+        if shown.returncode != 0:
+            repaired = workspace_admin(real, "reconcile", str(candidate))
+            if repaired.returncode != 0:
+                continue
+            shown = workspace_admin(real, "show", str(candidate))
+            if shown.returncode != 0:
+                continue
+        try:
+            state = json.loads(shown.stdout)
+        except json.JSONDecodeError:
+            continue
+        binding = workspace_primary_binding(state)
+        if binding is None:
+            continue
+        if binding_matches_checkout(binding, primary):
+            matches.append(candidate)
+    if len(matches) > 1:
+        raise SystemExit(
+            "ambiguous Harr Workspace checkout binding: "
+            + ", ".join(str(path) for path in matches)
+        )
+    return matches[0] if matches else None
+
+
 def ensure_workspace_store(real: str | Path, primary: Path) -> Path:
     primary = primary.expanduser().resolve()
     store = workspace_store_path(primary)
     if not store.exists():
-        result = workspace_admin(real, "create", str(store), str(primary))
-        if result.returncode != 0:
-            raise SystemExit(f"cannot create Harr Workspace store: {result.stderr.strip() or result.stdout.strip()}")
+        matched = find_workspace_store_by_checkout(real, primary)
+        if matched is not None:
+            store = matched
+        else:
+            result = workspace_admin(real, "create", str(store), str(primary))
+            if result.returncode != 0:
+                raise SystemExit(f"cannot create Harr Workspace store: {result.stderr.strip() or result.stdout.strip()}")
+    reconciled = workspace_admin(real, "reconcile", str(store))
+    if reconciled.returncode != 0:
+        raise SystemExit(
+            "cannot reconcile Harr Workspace checkout identity: "
+            + (reconciled.stderr.strip() or reconciled.stdout.strip())
+        )
     shown = workspace_admin(real, "show", str(store))
     if shown.returncode != 0:
         raise SystemExit(f"cannot read Harr Workspace store: {shown.stderr.strip() or shown.stdout.strip()}")
@@ -267,7 +375,7 @@ def ensure_workspace_store(real: str | Path, primary: Path) -> Path:
         state = json.loads(shown.stdout)
     except json.JSONDecodeError as exc:
         raise SystemExit(f"invalid Harr Workspace store output: {exc}") from exc
-    if Path(state.get("primary", "")).resolve() != primary:
+    if not workspace_state_matches_primary(state, primary):
         raise SystemExit(f"Harr Workspace store primary mismatch: expected {primary}, got {state.get('primary')}")
     return store
 
@@ -723,9 +831,14 @@ def workspace_command(args: argparse.Namespace) -> None:
         for store in sorted(workspace_store_dir().glob("*.json")):
             try:
                 state = read_workspace_state(real, store)
-            except SystemExit:
+            except SystemExit as exc:
+                rows.append({
+                    "store": str(store),
+                    "status": "error",
+                    "error": str(exc),
+                })
                 continue
-            rows.append({"store": str(store), **state})
+            rows.append({"store": str(store), "status": "ok", **state})
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
 
@@ -733,23 +846,30 @@ def workspace_command(args: argparse.Namespace) -> None:
     store = ensure_workspace_store(real, primary)
     state = read_workspace_state(real, store)
     if args.action == "show":
-        print(json.dumps({"store": str(store), **state}, ensure_ascii=False, indent=2))
+        payload = {"store": str(store), **state}
+        configured_primary = state.get("primary")
+        if isinstance(configured_primary, str) and Path(configured_primary).resolve(strict=False) != primary:
+            payload["activePrimary"] = str(primary)
+            payload["primaryStatus"] = "moved"
+        else:
+            payload["activePrimary"] = str(primary)
+            payload["primaryStatus"] = "active"
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
-    def resolve_target(raw: str) -> Path:
+    def resolve_target(raw: str, *, require_directory: bool = True) -> Path:
         target = Path(raw).expanduser()
         if not target.is_absolute():
-            target = (Path.cwd() / target).resolve()
-        else:
-            target = target.resolve()
-        if not target.is_dir():
+            target = Path.cwd() / target
+        target = target.resolve(strict=False)
+        if require_directory and not target.is_dir():
             raise SystemExit(f"Workspace root is not a directory: {target}")
         return target
 
     if args.action == "sync":
         if not args.paths:
             raise SystemExit("workspace sync requires at least one path")
-        primary_path = Path(state["primary"]).resolve()
+        primary_path = primary
         existing = {str(Path(path).resolve()) for path in state.get("additional", [])}
         seen: set[str] = set()
         added: list[str] = []
@@ -769,7 +889,16 @@ def workspace_command(args: argparse.Namespace) -> None:
                 continue
             result = workspace_admin(real, "add", str(store), target_text, str(state["revision"]))
             if result.returncode != 0:
-                raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"workspace add failed: {target_text}")
+                message = result.stderr.strip() or result.stdout.strip() or f"workspace add failed: {target_text}"
+                lowered = message.lower()
+                if (
+                    "sibling worktree" in lowered
+                    or "worktree topology" in lowered
+                    or "same local git" in lowered
+                ):
+                    skipped.append({"path": target_text, "reason": "same-repository-worktree"})
+                    continue
+                raise SystemExit(message)
             state = json.loads(result.stdout)
             existing.add(target_text)
             added.append(target_text)
@@ -778,8 +907,8 @@ def workspace_command(args: argparse.Namespace) -> None:
 
     if len(args.paths) != 1:
         raise SystemExit(f"workspace {args.action} requires exactly one path")
-    target = resolve_target(args.paths[0])
     operation = "add" if args.action == "add" else "remove"
+    target = resolve_target(args.paths[0], require_directory=operation == "add")
     expected_revision = args.expected_revision if args.expected_revision is not None else int(state["revision"])
     result = workspace_admin(real, operation, str(store), str(target), str(expected_revision))
     if result.returncode != 0:
