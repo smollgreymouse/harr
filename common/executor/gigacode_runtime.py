@@ -800,6 +800,7 @@ def status_tool(arguments: dict) -> dict:
             }],
             "runtime": {
                 "phase": phase,
+                "job_id": state.get("job_id"),
                 "elapsed_sec": state.get("elapsed_sec"),
             },
         }
@@ -813,6 +814,7 @@ def status_tool(arguments: dict) -> dict:
         "summary": "GigaCode is still executing the delegated task.",
         "runtime": {
             "phase": phase,
+            "job_id": state.get("job_id"),
             "elapsed_sec": state.get("elapsed_sec"),
             "timeout_sec": state.get("timeout_sec"),
             "hard_timeout_sec": state.get("hard_timeout_sec", state.get("timeout_sec")),

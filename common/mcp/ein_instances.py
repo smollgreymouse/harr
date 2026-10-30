@@ -24,6 +24,7 @@ SLUG = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 SECRET_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 ADAPTERS = frozenset({"gigacode", "opencode", "codex", "custom"})
+RESERVED_INSTANCE_IDS = frozenset({"lean-ctx", "harr-workspace", "harr-workspace-app", "harr-ein-ui"})
 
 
 def config_dir() -> Path:
@@ -50,6 +51,8 @@ def validate(data: object) -> dict:
         adapter = item.get("adapter")
         if not isinstance(name, str) or not SLUG.fullmatch(name) or name in ids:
             raise ValueError("invalid or duplicate Ein MCP name")
+        if name in RESERVED_INSTANCE_IDS:
+            raise ValueError(f"Ein MCP name is reserved by Harr/Codex: {name}")
         ids.add(name)
         if adapter not in ADAPTERS:
             raise ValueError(f"Ein {name}: invalid adapter")
@@ -123,6 +126,60 @@ def config_for_instance(name: str) -> dict:
         if instance["id"] == name and instance.get("enabled", True):
             return instance
     raise ValueError("disabled or unknown Ein instance")
+
+
+def prepare_instance_runtime_env(name: str, base_env: dict[str, str] | None = None) -> dict[str, str]:
+    """Build the isolated runtime environment for one enabled named Ein.
+
+    Both the LeanCTX gateway runner and Codex's direct MCP-App frontdoor use
+    this function so adapter selection, profiles, secrets and generated
+    einherjar.json cannot drift.
+    """
+    instance = config_for_instance(name)
+    root = config_dir()
+    env = dict(os.environ if base_env is None else base_env)
+    env.pop("HARR_EIN_INSTANCE", None)
+    env.pop("HARR_EIN_EXECUTABLE", None)
+    env["HARR_EIN_INSTANCE"] = instance["id"]
+
+    executable = instance.get("executable")
+    if executable:
+        env["HARR_EIN_EXECUTABLE"] = executable
+
+    if instance["adapter"] == "codex":
+        env.pop("CODEX_HOME", None)
+        profile = Path(instance["codex_home"])
+        if not profile.is_dir() or not (profile / "config.toml").is_file():
+            raise ValueError(f"Ein {instance['id']}: Codex profile is missing: {profile}")
+        env["CODEX_HOME"] = str(profile)
+
+    for variable, filename in instance.get("secret_env", {}).items():
+        secret_path = root / "secrets" / filename
+        if not secret_path.is_file():
+            raise ValueError(f"Ein {instance['id']}: required secret {filename} is missing")
+        env[variable] = secret_path.read_text(encoding="utf-8").strip()
+
+    runtime_dir = root / "einherjar" / "runtime" / instance["id"]
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    config = {"schema": 1, "default_backend": instance["adapter"], "backends": {}}
+    if instance["adapter"] == "custom":
+        config["default_backend"] = instance["id"]
+        config["backends"] = {instance["id"]: instance["definition"]}
+    target = runtime_dir / "einherjar.json"
+    fd, tmp = tempfile.mkstemp(prefix=".einherjar-", dir=runtime_dir)
+    try:
+        os.chmod(tmp, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            json.dump(config, out, ensure_ascii=False)
+            out.write("\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, target)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    env["HARR_CONFIG_DIR"] = str(runtime_dir)
+    return env
 
 
 def expanded_servers(base: list[dict], config: dict | None = None) -> list[dict]:

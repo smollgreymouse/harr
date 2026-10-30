@@ -111,24 +111,70 @@ Non-interactive parity:
 4. Tools published only for enabled instances. One shared skill and one shared policy template enumerate the *actual enabled instance tool names*. No separate per-adapter skills or behavior forks; the retired `$gigacode-executor` skill is removed rather than installed as a second alias. Preserve user-authored policy and unrelated MCP settings.
 5. If several workers use the same adapter, their executable args, environment, permissions, concurrency limits and session lifecycles remain independent; optional per-workspace concurrency conflict protection prevents two workers editing the same scope simultaneously.
 
-## Codex Desktop live panel integration
+## Codex Desktop async marker and live-panel integration
 
-All enabled Ein instances share **one read-only direct MCP App**,
-`harr-ein-ui::show_ein_live`. Its arguments are `instance` (the configured MCP
-name) and `session_id` (Harr UUID). Its resource is `ui://harr-ein-ui/live.html`.
-The server checks that the session belongs to the requested instance before
-opening a panel, pins the instance into each invocation scope, and blocks
-cross-instance reads. `poll_ein_ui`, `list_ein_ui` and lifecycle hooks remain
-app-only. Restoration records the pair `(instance, session_id)`; a single UI
-registration serves any number of CLI adapters, without additional model calls. When a session started in the panel reaches a terminal state, the shared panel retains the installed GigaCode `ui/message` completion behavior, using an atomic app-only per-instance claim/release to avoid duplicates. It formats summary, terminal status, blockers, changed/verified evidence, UUID, job ID, elapsed time and exit code for the chat instead of dumping the JSON handoff. A failed delivery releases its claim.
+Codex Desktop has one deliberate exception to the “specialized MCPs stay behind
+LeanCTX” rule: every enabled named Ein is also registered directly under the same
+user-chosen MCP name. The direct frontdoor exposes only the common `ein` schema
+plus app-only marker helpers. This is required because LeanCTX gateway catalog
+aggregation intentionally drops downstream MCP App resource metadata, so an
+inline completion App cannot be attached through `ctx_tools`.
 
-The source integration is installed by `common/hosts/codex-config.py` on normal
-host apply or by `harr ein apply`; the old per-instance app tables are removed in favor of one shared app.
-Tests: `python3 tests/ein-app-panel.py` (single app serving multiple identities, idempotent host
-registration, disabled/removal reconciliation, fake detached session through
-panel attach/poll/recovery). **A real Codex Desktop UI smoke is still required**
-prior to declaring visual host parity; do not run it on the production Codex
-installation for this PR without explicit user authorization.
+The direct frontdoor and the LeanCTX gateway path call the same
+`prepare_instance_runtime_env()` implementation. Adapter selection, Codex profile,
+secret-file expansion, custom command-template materialization and runtime
+`einherjar.json` therefore have one source of truth.
+
+A direct Codex `start` or `resume` tool call carries
+`ui://harr-ein/marker.html`. The compact marker is job-scoped, not merely
+session-scoped: it records the exact `job_id`, long-polls an app-only status helper,
+and refuses to wake for a newer job in the same session. Terminal delivery is
+atomically claimed by `(instance, workspace, session_id, job_id)` so concurrent
+markers do not send the same completion; a failed delivery releases its claim for
+retry. The UI protocol has no idempotency key, so if Codex accepts a message but its
+acknowledgement is lost, a retry can produce a duplicate. Delivery is best-effort,
+not guaranteed exactly once. The marker sends a neutral `ui/message` containing the
+terminal status and handoff data. Codex treats that payload as untrusted input, so it
+is a wake/status signal only; the task and acceptance criteria must already exist in
+trusted parent context.
+
+The marker resource supplies Codex Desktop's pre-layout sizing metadata
+`openai/widgetHeightHint=44`, `openai/widgetMinFrameHeight=40` and
+`openai/widgetShowCodexWidgetInline=true`, with runtime
+`ui/notifications/size-changed` as a secondary hint. It never requests fullscreen
+mode and never opens or focuses the side panel. Non-`start`/`resume` actions
+immediately tear the marker down.
+
+All enabled Ein instances still share **one read-only opt-in monitor**,
+`harr-ein-ui::show_ein_live`. Its arguments are `instance` and `session_id`;
+its resource is `ui://harr-ein-ui/live.html`. The server verifies instance/session
+ownership and keeps transcript polling app-only. The live panel is monitor-only:
+it does not own completion claims, does not send `ui/message`, and is never opened
+automatically on worker start or completion.
+
+Current Codex Desktop builds suspend an ordinary inline MCP App after roughly
+300 seconds continuously outside the viewport. Harr does not auto-open a fullscreen
+or side-panel surface to evade that host policy. If a long-running marker is
+  suspended, bringing its transcript card back into view remounts it and re-checks
+  the persisted job state; explicit `status` remains the fallback. Automatic wake is
+verified only while the inline marker remains active; after offscreen suspension or
+Desktop restart, the user may need to reopen the card or check `status`.
+
+The integration is reconciled by `common/hosts/codex-config.py` on host apply or
+`harr ein apply`. Harr removes only direct named-Ein registrations it owns and
+fails closed on a same-named user MCP instead of overwriting it. Reserved Harr/Codex
+server names are rejected by instance validation.
+
+Tests:
+- `python3 tests/ein-codex-config.py` — enabled/disabled reconciliation, nested
+  TOML cleanup, and byte-preserving failure for user-owned name collisions;
+- `node tests/ein-marker-script.js` — active marker delivery, failed-send release
+  and retry, exact stale-job rejection, non-start teardown and unmount handling;
+- `python3 tests/ein-async-marker.py` — direct marker resource, async lifecycle,
+  stale-job rejection, nonblocking long-poll and atomic claim/release;
+- `python3 tests/ein-app-panel.py` — monitor-only shared panel lifecycle;
+- `python3 tests/ein-named-instances.py` — gateway path remains one public `ein`
+  tool per instance with no marker-helper leakage.
 
 ## Non-negotiable GigaCode parity
 

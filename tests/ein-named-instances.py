@@ -43,6 +43,17 @@ with tempfile.TemporaryDirectory(prefix='harr-ein-named-') as tmp:
     persisted=ein_state_writer._load_state(concurrent_sid)
     temp_files=list(ein_state_writer.CACHE_ROOT.glob(f'.{concurrent_sid}.state.json.*.tmp'))
     assert persisted in concurrent_payloads and not temp_files,(persisted,temp_files)
+    transient_sid='33333333-3333-4333-8333-333333333333'
+    original_replace=os.replace
+    replace_attempts=[]
+    def transient_permission_error(source,destination):
+        replace_attempts.append((source,destination))
+        if len(replace_attempts)==1:raise PermissionError('simulated transient Windows sharing violation')
+        return original_replace(source,destination)
+    with patch.object(os,'replace',side_effect=transient_permission_error), patch.object(ein_state_writer.time,'sleep'):
+        ein_state_writer._write_state(transient_sid,{'phase':'finished','writer':'retry'})
+    assert ein_state_writer._load_state(transient_sid)=={'phase':'finished','writer':'retry'}
+    assert len(replace_attempts)==2
     print('Ein concurrent atomic state writes PASS')
     legacy_sid='11111111-1111-4111-8111-111111111111'
     legacy_handoff={'status':'DONE','summary':'existing history','changed':[],'verified':[{'criterion':'old','check':'state','result':'PASS','evidence':'preserved'}],'escalation':None,'blockers':[]}
@@ -80,6 +91,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
         if ok:assert p.returncode==0,(args,p.stdout,p.stderr)
         else:assert p.returncode!=0,args
         return p.stdout
+    # Direct Codex frontdoors reserve Harr-owned host namespaces.
+    run('add','--id','harr-ein-ui','--adapter','opencode',ok=False)
+
     def failure_evidence(instance_id,session_id):
         cache=(legacy_cache if instance_id=='gigacode' else
                base/'home/.cache/harr/einherjar'/instance_id/workspace_key)

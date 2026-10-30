@@ -11,6 +11,7 @@ import re
 import signal
 import shutil
 import subprocess
+import threading
 import sys
 import tempfile
 import time
@@ -48,6 +49,18 @@ WORKSPACE_KEY = hashlib.sha256(str(ROOT).encode("utf-8")).hexdigest()[:12]
 CACHE_ROOT = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "harr" / "einherjar" / (INSTANCE_ID or "default") / WORKSPACE_KEY
 CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+MCP_APP_MODE = os.environ.get("HARR_EIN_MCP_APP") == "1"
+MARKER_URI = "ui://harr-ein/marker.html"
+MARKER_HTML = Path(__file__).with_name("ein_marker.html").read_text(encoding="utf-8") if MCP_APP_MODE else ""
+MARKER_STATE_ROOT = (
+    Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    / "harr" / "ein-marker" / (INSTANCE_ID or "default") / WORKSPACE_KEY
+)
+MARKER_CLAIM_ROOT = MARKER_STATE_ROOT / "delivered"
+MARKER_TERMINAL = {"DONE", "FAILED", "CANCELLED", "ESCALATE", "TIMEOUT"}
+MARKER_MAX_CLAIMS = 256
+OUTPUT_LOCK = threading.Lock()
 
 TOOLS = [{
     "name": "ein" if INSTANCE_ID else "worker",
@@ -79,8 +92,9 @@ TOOLS = [{
 
 
 def emit(message: dict) -> None:
-    sys.stdout.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
-    sys.stdout.flush()
+    with OUTPUT_LOCK:
+        sys.stdout.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
 
 
 def text_result(payload: dict, *, is_error: bool = False) -> dict:
@@ -141,7 +155,17 @@ def _atomic_write_text(target: Path, text: str) -> None:
         ) as tmp:
             tmp_path = Path(tmp.name)
             tmp.write(text)
-        os.replace(tmp_path, target)
+        # Windows can briefly deny replacement while another process has the
+        # destination open. Keep the write atomic and retry only that transient
+        # sharing violation; persistent permission errors still surface.
+        for attempt in range(5):
+            try:
+                os.replace(tmp_path, target)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.01 * (2 ** attempt))
     finally:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
@@ -423,6 +447,7 @@ def status_tool(arguments: dict) -> dict:
             "summary": "Detached external worker stopped without a final handoff.",
             "changed": [], "verified": [], "escalation": None,
             "blockers": [{"kind": "tool", "detail": "worker process is no longer running", "evidence": f"phase={state.get('phase')}; job_id={state.get('job_id')}"}],
+            "runtime": {"phase": state.get("phase"), "job_id": state.get("job_id")},
         }, is_error=True)
     return text_result({
         "session_id": session_id, "backend": state.get("backend"), "status": "RUNNING" if state.get("startup_confirmed") else "STARTING",
@@ -871,8 +896,300 @@ def _validate_arguments(arguments: dict) -> None:
         raise ValueError(f"{action} requires session_id")
 
 
+def _app_only_meta() -> dict:
+    return {"ui": {"visibility": ["app"]}}
+
+
+def _marker_tool_meta() -> dict:
+    return {
+        "ui": {"resourceUri": MARKER_URI, "visibility": ["model", "app"]},
+        "ui/resourceUri": MARKER_URI,
+        "openai/outputTemplate": MARKER_URI,
+        "openai/ui": {"preferredModelDisplayMode": "inline"},
+    }
+
+
+def _marker_helper_tools() -> list[dict]:
+    return [
+        {
+            "name": "ein_marker_wait_ui",
+            "description": "App-only bounded wait for one named Ein job.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "panel_id": {"type": "string", "maxLength": 128},
+                    "session_id": {"type": "string"},
+                    "job_id": {"type": "string"},
+                    "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 15000},
+                },
+                "required": ["panel_id", "session_id", "job_id", "timeout_ms"],
+                "additionalProperties": False,
+            },
+            "_meta": _app_only_meta(),
+        },
+        {
+            "name": "ein_marker_claim_ui",
+            "description": "App-only atomic claim for one terminal named Ein job.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "panel_id": {"type": "string", "maxLength": 128},
+                    "session_id": {"type": "string"},
+                    "job_id": {"type": "string"},
+                    "owner_token": {"type": "string", "maxLength": 128},
+                },
+                "required": ["panel_id", "session_id", "job_id", "owner_token"],
+                "additionalProperties": False,
+            },
+            "_meta": _app_only_meta(),
+        },
+        {
+            "name": "ein_marker_release_ui",
+            "description": "App-only release of a failed completion-delivery claim.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "panel_id": {"type": "string", "maxLength": 128},
+                    "session_id": {"type": "string"},
+                    "job_id": {"type": "string"},
+                    "owner_token": {"type": "string", "maxLength": 128},
+                },
+                "required": ["panel_id", "session_id", "job_id", "owner_token"],
+                "additionalProperties": False,
+            },
+            "_meta": _app_only_meta(),
+        },
+        {
+            "name": "ein_marker_event_ui",
+            "description": "App-only lifecycle diagnostics for the compact Ein marker.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "panel_id": {"type": "string", "maxLength": 128},
+                    "event": {"type": "string", "maxLength": 64},
+                    "session_id": {"type": "string"},
+                    "job_id": {"type": "string"},
+                },
+                "required": ["panel_id", "event", "session_id", "job_id"],
+                "additionalProperties": False,
+            },
+            "_meta": _app_only_meta(),
+        },
+    ]
+
+
 if INSTANCE_ID:
-    TOOLS[:] = [json.loads((Path(__file__).with_name("ein_tool_schema.json")).read_text(encoding="utf-8"))]
+    named_tool = json.loads((Path(__file__).with_name("ein_tool_schema.json")).read_text(encoding="utf-8"))
+    if MCP_APP_MODE:
+        named_tool["_meta"] = _marker_tool_meta()
+        TOOLS[:] = [named_tool, *_marker_helper_tools()]
+    else:
+        TOOLS[:] = [named_tool]
+
+
+def _dispatch_named_action(arguments: dict, progress_token: object = None) -> dict:
+    """Dispatch one public Ein action without going through JSON-RPC again."""
+    _validate_arguments(arguments)
+    if INSTANCE_ID and "backend" in arguments:
+        raise ValueError("backend is fixed by Ein instance")
+    if INSTANCE_ID:
+        config = load_einherjar_config()
+        _, adapter = resolve_backend(None, config)
+        specialized = adapter.dispatch_named_tool(arguments, progress_token)
+        if specialized is not None:
+            return specialized
+    action = arguments["action"]
+    if action == "start":
+        return start_tool(arguments)
+    if action == "resume":
+        return resume_tool(arguments)
+    if action == "status":
+        return status_tool(arguments)
+    if action == "messages":
+        return messages_tool(arguments)
+    if action == "wait":
+        return wait_tool(arguments, progress_token)
+    if action == "cancel":
+        return cancel_tool(arguments)
+    return backends_tool()
+
+
+def _tool_payload(result: dict) -> dict:
+    value = result.get("structuredContent")
+    if isinstance(value, dict):
+        return value
+    try:
+        content = result.get("content") or []
+        return json.loads(content[0]["text"]) if content else {}
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _payload_job_id(payload: dict) -> str | None:
+    direct = payload.get("job_id")
+    if isinstance(direct, str) and _JOB_ID_RE.fullmatch(direct):
+        return direct
+    runtime = payload.get("runtime")
+    nested = runtime.get("job_id") if isinstance(runtime, dict) else None
+    return nested if isinstance(nested, str) and _JOB_ID_RE.fullmatch(nested) else None
+
+
+def _marker_identity(arguments: dict) -> tuple[str, str]:
+    session_id = _validate_session_id(arguments.get("session_id"))
+    job_id = arguments.get("job_id")
+    if session_id is None:
+        raise ValueError("valid marker session_id required")
+    if not isinstance(job_id, str) or _JOB_ID_RE.fullmatch(job_id) is None:
+        raise ValueError("valid marker job_id required")
+    return session_id, job_id
+
+
+def _marker_owner(arguments: dict) -> str:
+    owner = arguments.get("owner_token")
+    if (
+        not isinstance(owner, str)
+        or not owner
+        or len(owner) > 128
+        or any(ord(ch) < 32 for ch in owner)
+    ):
+        raise ValueError("valid marker owner_token required")
+    return owner
+
+
+def _marker_snapshot(session_id: str, expected_job_id: str) -> dict:
+    result = _dispatch_named_action({"action": "status", "session_id": session_id})
+    payload = _tool_payload(result)
+    current_job_id = _payload_job_id(payload)
+    status = str(payload.get("status") or "UNKNOWN")
+    replaced = current_job_id is not None and current_job_id != expected_job_id
+    terminal = status in MARKER_TERMINAL and current_job_id == expected_job_id
+    return {
+        "instance": INSTANCE_ID,
+        "session_id": session_id,
+        "job_id": expected_job_id,
+        "current_job_id": current_job_id,
+        "status": status,
+        "summary": str(payload.get("summary") or ""),
+        "terminal": terminal,
+        "replaced": replaced,
+        "handoff": payload if terminal else None,
+    }
+
+
+def _marker_wait(arguments: dict) -> dict:
+    session_id, job_id = _marker_identity(arguments)
+    timeout_ms = arguments.get("timeout_ms", 10000)
+    if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
+        raise ValueError("marker timeout_ms must be an integer")
+    timeout_ms = min(15000, max(100, timeout_ms))
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    while True:
+        snapshot = _marker_snapshot(session_id, job_id)
+        if snapshot["terminal"] or snapshot["replaced"]:
+            return text_result(snapshot)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return text_result(snapshot)
+        time.sleep(min(0.25, remaining))
+
+
+def _marker_claim_path(session_id: str, job_id: str) -> Path:
+    MARKER_CLAIM_ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        MARKER_CLAIM_ROOT.chmod(0o700)
+    except OSError:
+        pass
+    return MARKER_CLAIM_ROOT / f"{session_id}.{job_id}.claimed"
+
+
+def _marker_prune_claims(exclude: Path | None = None) -> None:
+    try:
+        files = [p for p in MARKER_CLAIM_ROOT.glob("*.claimed") if p.is_file() and p != exclude]
+    except OSError:
+        return
+    if len(files) <= MARKER_MAX_CLAIMS:
+        return
+    try:
+        files.sort(key=lambda p: p.stat().st_mtime)
+    except OSError:
+        return
+    for path in files[: len(files) - MARKER_MAX_CLAIMS]:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _marker_claim_owned(path: Path, owner: str) -> bool:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(value, dict) and value.get("schema") == 1 and value.get("owner_token") == owner
+
+
+def _marker_claim(arguments: dict) -> dict:
+    session_id, job_id = _marker_identity(arguments)
+    owner = _marker_owner(arguments)
+    snapshot = _marker_snapshot(session_id, job_id)
+    if not snapshot["terminal"] or snapshot["replaced"]:
+        return text_result({**snapshot, "claimed": False})
+    path = _marker_claim_path(session_id, job_id)
+    _marker_prune_claims(exclude=path)
+    claimed = False
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        claimed = _marker_claim_owned(path, owner)
+    else:
+        value = {
+            "schema": 1,
+            "instance": INSTANCE_ID,
+            "session_id": session_id,
+            "job_id": job_id,
+            "owner_token": owner,
+            "created": time.time(),
+        }
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, separators=(",", ":"))
+        claimed = True
+    return text_result({**snapshot, "claimed": claimed})
+
+
+def _marker_release(arguments: dict) -> dict:
+    session_id, job_id = _marker_identity(arguments)
+    owner = _marker_owner(arguments)
+    path = _marker_claim_path(session_id, job_id)
+    released = False
+    if _marker_claim_owned(path, owner):
+        try:
+            path.unlink()
+            released = True
+        except OSError:
+            pass
+    return text_result({"released": released, "session_id": session_id, "job_id": job_id})
+
+
+def _marker_event(arguments: dict) -> dict:
+    session_id, job_id = _marker_identity(arguments)
+    event = str(arguments.get("event") or "")[:64]
+    panel_id = str(arguments.get("panel_id") or "")[:128]
+    _log_event(session_id, "MARKER_UI", job_id=job_id, marker_event=event, panel_id=panel_id)
+    return text_result({"ok": True})
+
+
+def _marker_helper_call(name: str, arguments: dict) -> dict:
+    if not MCP_APP_MODE:
+        raise ValueError("marker UI helpers are disabled")
+    if name == "ein_marker_wait_ui":
+        return _marker_wait(arguments)
+    if name == "ein_marker_claim_ui":
+        return _marker_claim(arguments)
+    if name == "ein_marker_release_ui":
+        return _marker_release(arguments)
+    if name == "ein_marker_event_ui":
+        return _marker_event(arguments)
+    raise ValueError(f"unknown marker helper: {name}")
 
 
 def handle(request: dict) -> dict | None:
@@ -893,47 +1210,70 @@ def handle(request: dict) -> dict | None:
                     server_info["icons"] = [{"src": data_uri, "mimeType": mime}]
             except OSError:
                 pass
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": requested, "capabilities": {"tools": {"listChanged": False}}, "serverInfo": server_info}}
+        capabilities = {"tools": {"listChanged": False}}
+        if MCP_APP_MODE:
+            capabilities["resources"] = {"listChanged": False}
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": requested, "capabilities": capabilities, "serverInfo": server_info}}
     if method in {"notifications/initialized", "notifications/cancelled"}:
         return None
     if method == "ping":
         return {"jsonrpc": "2.0", "id": request_id, "result": {}}
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
+    if method == "resources/list" and MCP_APP_MODE:
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "resources": [{
+                    "uri": MARKER_URI,
+                    "name": "Harr Ein async completion marker",
+                    "mimeType": "text/html;profile=mcp-app",
+                }]
+            },
+        }
+    if method == "resources/templates/list" and MCP_APP_MODE:
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"resourceTemplates": []}}
+    if method == "resources/read" and MCP_APP_MODE:
+        uri = request.get("params", {}).get("uri")
+        if uri != MARKER_URI:
+            return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": "unknown resource"}}
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "contents": [{
+                    "uri": MARKER_URI,
+                    "mimeType": "text/html;profile=mcp-app",
+                    "text": MARKER_HTML,
+                    "_meta": {
+                        "openai/widgetHeightHint": 44,
+                        "openai/widgetMinFrameHeight": 40,
+                        "openai/widgetPrefersBorder": False,
+                        "openai/widgetShowCodexWidgetInline": True,
+                    },
+                }]
+            },
+        }
     if method == "tools/call":
         params = request.get("params", {})
         try:
-            if params.get("name") != ("ein" if INSTANCE_ID else "worker"):
-                raise ValueError(f"unknown tool: {params.get('name')}")
+            name = params.get("name")
             arguments = params.get("arguments") or {}
-            _validate_arguments(arguments)
-            if INSTANCE_ID and "backend" in arguments:
-                raise ValueError("backend is fixed by Ein instance")
-            if INSTANCE_ID:
-                config = load_einherjar_config()
-                _, adapter = resolve_backend(None, config)
-                meta = params.get("_meta")
-                token = meta.get("progressToken") if isinstance(meta, dict) else None
-                result = adapter.dispatch_named_tool(arguments, token)
-                if result is not None:
-                    return {"jsonrpc": "2.0", "id": request_id, "result": result}
-            action = arguments["action"]
-            if action == "start":
-                result = start_tool(arguments)
-            elif action == "resume":
-                result = resume_tool(arguments)
-            elif action == "status":
-                result = status_tool(arguments)
-            elif action == "messages":
-                result = messages_tool(arguments)
-            elif action == "wait":
-                meta = params.get("_meta")
-                token = meta.get("progressToken") if isinstance(meta, dict) else None
-                result = wait_tool(arguments, token)
-            elif action == "cancel":
-                result = cancel_tool(arguments)
+            if MCP_APP_MODE and name in {
+                "ein_marker_wait_ui",
+                "ein_marker_claim_ui",
+                "ein_marker_release_ui",
+                "ein_marker_event_ui",
+            }:
+                result = _marker_helper_call(name, arguments)
             else:
-                result = backends_tool()
+                expected = "ein" if INSTANCE_ID else "worker"
+                if name != expected:
+                    raise ValueError(f"unknown tool: {name}")
+                meta = params.get("_meta")
+                token = meta.get("progressToken") if isinstance(meta, dict) else None
+                result = _dispatch_named_action(arguments, token)
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
         except Exception as exc:
             return {"jsonrpc": "2.0", "id": request_id, "result": text_result({"error": str(exc)}, is_error=True)}
@@ -953,14 +1293,31 @@ def main() -> int:
     if not INSTANCE_ID:
         sys.stderr.write("Einherjar requires a configured named instance. Run `harr ein configure` and use the instance's ein tool.\n")
         return 2
-    for line in sys.stdin:
+    def process(request: dict) -> None:
         try:
-            request = json.loads(line)
             response = handle(request)
             if response is not None:
                 emit(response)
         except Exception as exc:
+            emit({"jsonrpc": "2.0", "id": request.get("id"), "error": {"code": -32700, "message": str(exc)}})
+
+    for line in sys.stdin:
+        try:
+            request = json.loads(line)
+        except Exception as exc:
             emit({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}})
+            continue
+        params = request.get("params") if isinstance(request, dict) else None
+        marker_wait = (
+            MCP_APP_MODE
+            and request.get("method") == "tools/call"
+            and isinstance(params, dict)
+            and params.get("name") == "ein_marker_wait_ui"
+        )
+        if marker_wait:
+            threading.Thread(target=process, args=(request,), daemon=True).start()
+        else:
+            process(request)
     return 0
 
 

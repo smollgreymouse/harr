@@ -64,15 +64,47 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
         host.apply_named_ein_apps()
         host.apply_named_ein_apps()  # idempotent; no duplicate namespace
         data=tomllib.loads(host.CONFIG.read_text())
-        assert set(data['mcp_servers'])=={'user-owned','harr-ein-ui'},data
+        assert set(data['mcp_servers'])=={'user-owned','gigacode','open-review','harr-ein-ui'},data
         assert data['mcp_servers']['user-owned']['command']=='untouched'
         assert data['mcp_servers']['harr-ein-ui']['env']['HARR_CONFIG_DIR']==str(config_root)
+        assert data['mcp_servers']['harr-ein-ui']['env']['HARR_EIN_UI_MANAGED']=='1'
+        for direct_name in ('gigacode','open-review'):
+            direct=data['mcp_servers'][direct_name]
+            assert direct['args']==[str(ROOT/'common/mcp/ein_direct.py'),direct_name]
+            assert direct['env']['HARR_CONFIG_DIR']==str(config_root)
+            assert direct['env']['HARR_EIN_DIRECT_MANAGED']=='1'
+            assert direct['tools']['ein']['approval_mode']=='auto'
+        assert host.named_ein_apps_are_managed(data)
+
+        # A source-to-package install changes the canonical path. The explicit
+        # ownership marker lets Harr migrate its own panel without touching a
+        # user server that happens to use the same reserved name.
+        package_ui=base/'package/usr/lib/harr/common/mcp/ein_app/server.py'
+        with patch.object(host, 'ein_ui_path', return_value=package_ui):
+            host.apply_named_ein_apps()
+        packaged=tomllib.loads(host.CONFIG.read_text())['mcp_servers']['harr-ein-ui']
+        assert packaged['args']==[str(package_ui)]
+        host.apply_named_ein_apps()
+        managed_text=host.CONFIG.read_text()
+
+        # A same-named user MCP must fail closed rather than be overwritten.
+        collision='[mcp_servers.open-review]\ncommand="user-owned"\n'
+        host.CONFIG.write_text(collision)
+        try:
+            host.apply_named_ein_apps()
+        except RuntimeError as exc:
+            assert 'collision' in str(exc).lower()
+        else:
+            raise AssertionError('expected direct Ein/user MCP name collision')
+        assert host.CONFIG.read_text()==collision
+        host.CONFIG.write_text(managed_text)
+
         # Reconcile removal and keep original third-party MCP.
         config['instances'][1]['enabled']=False
         (config_root/'einherjar/instances.json').write_text(json.dumps(config))
         host.apply_named_ein_apps()
         names=set(tomllib.loads(host.CONFIG.read_text())['mcp_servers'])
-        assert names=={'user-owned','harr-ein-ui'},names
+        assert names=={'user-owned','gigacode','harr-ein-ui'},names
         config['instances'][1]['enabled']=True
         (config_root/'einherjar/instances.json').write_text(json.dumps(config))
     finally:
@@ -97,14 +129,15 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
         try:
             response=rpc(p,1,'tools/list')['result']['tools']
             tools={t['name']:t for t in response}
-            assert {'show_ein_live','panel_event_ui','list_ein_ui','poll_ein_ui','claim_done_notification_ui','release_done_notification_ui'}==set(tools)
+            assert {'show_ein_live','panel_event_ui','list_ein_ui','poll_ein_ui'}==set(tools)
             assert tools['show_ein_live']['_meta']['ui']['visibility']==['model','app']
-            for hidden in ('panel_event_ui','list_ein_ui','poll_ein_ui','claim_done_notification_ui','release_done_notification_ui'):
+            for hidden in ('panel_event_ui','list_ein_ui','poll_ein_ui'):
                 assert tools[hidden]['_meta']['ui']['visibility']==['app']
             uri=tools['show_ein_live']['_meta']['ui']['resourceUri']
             assert uri=='ui://harr-ein-ui/live.html'
             html=rpc(p,2,'resources/read',{'uri':uri})['result']['contents'][0]['text']
             assert "Harr · Ein" in html and 'poll_ein_ui' in html and 'show_gigacode_live' not in html
+            assert 'ui/message' not in html and 'claim_done_notification_ui' not in html
             unknown='11111111-1111-1111-1111-111111111111'
             reply=rpc(p,3,'tools/call',{'name':'show_ein_live','arguments':{'instance':instance,'session_id':unknown}})
             assert 'error' in reply  # Cannot attach to arbitrary or other-instance sessions.
@@ -147,17 +180,6 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
             assert 'error' in denied, denied
             listed=rpc(app,52,'tools/call',{'name':'list_ein_ui','arguments':{}})['result']['structuredContent']
             assert {'instance':'fake-panel','session_id':sid} in listed['sessions']
-            args={'instance':'fake-panel','session_id':sid,'scope_id':attached['scope_id']}
-            claim=rpc(app,55,'tools/call',{'name':'claim_done_notification_ui','arguments':args})['result']['structuredContent']
-            assert claim['claimed'] and claim['handoff']['status']=='DONE'
-            again=rpc(app,56,'tools/call',{'name':'claim_done_notification_ui','arguments':args})['result']['structuredContent']
-            assert not again['claimed']
-            wrong=rpc(app,57,'tools/call',{'name':'release_done_notification_ui','arguments':{**args,'instance':'open-review'}})
-            assert 'error' in wrong
-            release=rpc(app,58,'tools/call',{'name':'release_done_notification_ui','arguments':args})['result']['structuredContent']
-            assert release['ok']
-            reclaimed=rpc(app,59,'tools/call',{'name':'claim_done_notification_ui','arguments':args})['result']['structuredContent']
-            assert reclaimed['claimed']
 
             print('fake-panel detached lifecycle + UI restore PASS')
         finally:

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+:root{color-scheme:light dark}*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:transparent;color:inherit;font-family:inherit;font-size:13px}
+body{padding:2px 4px;visibility:hidden}
+#card{display:flex;align-items:center;gap:8px;border:1px solid color-mix(in srgb,currentColor 17%,transparent);border-radius:8px;padding:5px 8px;min-height:36px}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.55;flex:0 0 auto}
+.done .dot,.failed .dot{opacity:1}
+.main{min-width:0;flex:1}.title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{opacity:.58;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.badge{font-size:10px;border:1px solid color-mix(in srgb,currentColor 17%,transparent);border-radius:999px;padding:2px 6px;opacity:.72;flex:0 0 auto}
+.done .badge,.failed .badge{opacity:1}
+</style>
+</head>
+<body>
+<div id="card">
+  <span class="dot"></span>
+  <div class="main">
+    <div class="title" id="title">🟣 Harr · Ein</div>
+    <div class="sub" id="sub">initializing…</div>
+  </div>
+  <span class="badge" id="badge">STARTING</span>
+</div>
+<script>
+const panelId='ein-marker-'+Math.random().toString(36).slice(2)+'-'+Date.now().toString(36);
+const terminal=new Set(['DONE','FAILED','CANCELLED','ESCALATE','TIMEOUT']);
+const el=id=>document.getElementById(id);
+let counter=1,pending=new Map(),initialized=false,stopped=false,toolAction='',toolResult=null;
+let sessionId='',jobId='',instance='',watching=false,notified=false,lastHeight=0;
+
+function request(method,params){
+  const id=counter++;
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>{if(pending.has(id)){pending.delete(id);reject(Error('timeout '+method))}},20000);
+    pending.set(id,{resolve,reject,timer});
+    parent.postMessage({jsonrpc:'2.0',id,method,params},'*');
+  });
+}
+async function appTool(name,args={}){
+  const r=await request('tools/call',{name,arguments:args});
+  if(r?.isError)throw Error((r.content||[]).map(x=>x.text||'').join('\n')||'tool failed');
+  return r?.structuredContent||{};
+}
+function reportHeight(){
+  const card=el('card');if(!card||stopped)return;
+  const cs=getComputedStyle(document.body);
+  const py=(parseFloat(cs.paddingTop)||0)+(parseFloat(cs.paddingBottom)||0);
+  const h=Math.max(1,Math.ceil(card.getBoundingClientRect().height+py));
+  if(h===lastHeight)return;lastHeight=h;
+  parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:h}},'*');
+}
+function lifecycle(event){
+  if(!initialized||!sessionId||!jobId)return;
+  appTool('ein_marker_event_ui',{panel_id:panelId,event,session_id:sessionId,job_id:jobId}).catch(()=>{});
+}
+function deactivate(){
+  if(stopped)return;
+  stopped=true;
+  document.body.style.display='none';
+  parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:1}},'*');
+  parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/request-teardown',params:{}},'*');
+}
+function resultJobId(d){return d?.job_id||d?.runtime?.job_id||''}
+function render(status,summary=''){
+  const done=terminal.has(status), failed=done&&status!=='DONE';
+  el('card').className=done?(failed?'failed':'done'):'';
+  el('badge').textContent=status||'RUNNING';
+  el('title').textContent=(status==='DONE'?'✅':failed?'⚠️':'🟣')+' Harr · Ein'+(instance?' · '+instance:'');
+  const short=(sessionId||'').slice(0,8);
+  el('sub').textContent=(short?short+' · ':'')+(summary||status||'running');
+  requestAnimationFrame(reportHeight);
+}
+async function deliver(snapshot){
+  if(notified||!snapshot?.terminal||snapshot.replaced)return;
+  notified=true;
+  const args={panel_id:panelId,session_id:sessionId,job_id:jobId,owner_token:panelId};
+  let claim;
+  try{claim=await appTool('ein_marker_claim_ui',args)}
+  catch{notified=false;el('sub').textContent='completed · claim failed';return}
+  if(!claim.claimed){
+    el('sub').textContent=(sessionId||'').slice(0,8)+' · completed · already delivered';
+    return;
+  }
+  const envelope={
+    event:'harr.ein.completed',
+    instance:claim.instance||instance||null,
+    session_id:sessionId,
+    job_id:jobId,
+    status:claim.status,
+    handoff:claim.handoff||null
+  };
+  const text='[harr-ein-completion]\n'+JSON.stringify(envelope);
+  try{
+    await request('ui/message',{role:'user',content:[{type:'text',text}]});
+    lifecycle('completion_message_sent');
+  }catch{
+    notified=false;
+    try{await appTool('ein_marker_release_ui',args)}catch{}
+    el('sub').textContent='completed · ui/message failed';
+  }
+}
+async function watch(){
+  if(watching||stopped||!sessionId||!jobId)return;
+  watching=true;
+  try{
+    while(!stopped){
+      const d=await appTool('ein_marker_wait_ui',{panel_id:panelId,session_id:sessionId,job_id:jobId,timeout_ms:10000});
+      if(d.instance)instance=d.instance;
+      render(d.status||'RUNNING',d.summary||'');
+      if(d.replaced){el('sub').textContent='superseded by a newer Ein turn';break}
+      if(d.terminal){await deliver(d);break}
+    }
+  }catch{
+    if(!stopped){
+      el('sub').textContent='reconnecting…';
+      setTimeout(()=>{watching=false;watch()},800);
+      return;
+    }
+  }
+  watching=false;
+}
+function maybeAttach(){
+  if(stopped||!toolAction)return;
+  if(toolAction!=='start'&&toolAction!=='resume'){deactivate();return}
+  document.body.style.visibility='visible';
+  const d=toolResult;
+  if(!d||!d.session_id)return;
+  const jid=resultJobId(d);
+  if(!jid){deactivate();return}
+  sessionId=d.session_id;jobId=jid;instance=d.instance||instance;
+  const status=d.status||'RUNNING';
+  render(status,d.summary||'');
+  lifecycle('attached');
+  if(terminal.has(status)){
+    // The launching tool already returned the terminal handoff synchronously.
+    // No asynchronous wake is needed for this turn.
+    lifecycle('already_terminal');
+    return;
+  }
+  watch();
+}
+window.addEventListener('message',ev=>{
+  const o=ev.data||{};
+  if(o.id!==undefined&&pending.has(o.id)){
+    const p=pending.get(o.id);pending.delete(o.id);clearTimeout(p.timer);
+    o.error?p.reject(Error(o.error.message||'request failed')):p.resolve(o.result);return;
+  }
+  if(o.method==='ui/notifications/tool-input'){
+    const a=o.params?.arguments||o.params?.toolInput||o.params;
+    if(a&&typeof a.action==='string'){toolAction=a.action;maybeAttach()}
+    return;
+  }
+  if(o.method==='ui/notifications/tool-result'){
+    let d=o.params?.result?.structuredContent||o.params?.structuredContent;
+    if(typeof d==='string'){try{d=JSON.parse(d)}catch{}}
+    if(d&&typeof d==='object'){toolResult=d;maybeAttach()}
+    return;
+  }
+  if(o.method==='ui/resource-teardown'){
+    stopped=true;
+    for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('marker closed'))}
+    pending.clear();
+    if(o.id!==undefined)parent.postMessage({jsonrpc:'2.0',id:o.id,result:{}},'*');
+  }
+});
+window.addEventListener('pagehide',()=>{stopped=true;lifecycle('pagehide')});
+document.addEventListener('visibilitychange',()=>lifecycle(document.hidden?'hidden':'visible'));
+(async()=>{
+  try{
+    await request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'harr-ein-marker',version:'1.0'},capabilities:{},appCapabilities:{}});
+    parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');
+    initialized=true;
+    new ResizeObserver(()=>reportHeight()).observe(el('card'));
+    reportHeight();
+  }catch(e){el('sub').textContent='init failed: '+e.message}
+})();
+</script>
+</body>
+</html>

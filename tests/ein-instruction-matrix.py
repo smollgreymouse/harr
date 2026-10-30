@@ -13,6 +13,8 @@ CATALOG = ROOT / "common/mcp/registry.json"
 POLICY = ROOT / "common/policy/tool-routing.template.md"
 HARR_SKILL = ROOT / "common/skills/harr"
 EIN_SKILL = ROOT / "common/skills/einherjar-worker/SKILL.md"
+CODEX_ENV = ROOT / "common/hosts/codex.env"
+OPENCODE_ENV = ROOT / "common/hosts/opencode.env"
 ADAPTERS = ("gigacode", "opencode", "codex", "custom")
 HOST_SURFACES = ("codex", "opencode", "windows", "macos", "linux")
 
@@ -78,5 +80,14 @@ with tempfile.TemporaryDirectory(prefix="harr-ein-policy-matrix-") as tmp_raw:
             assert "directly instructs executor delegation" in shared
             assert "DONE" in shared and "proof" in shared
             assert "gigacode-executor" not in shared
+
+codex_policy = CODEX_ENV.read_text()
+opencode_policy = OPENCODE_ENV.read_text()
+ein_reference = (HARR_SKILL / "references/einherjar.md").read_text()
+assert "Codex Desktop Ein app routing" in codex_policy
+assert "OpenCode and other hosts keep Harr-managed MCP calls behind LeanCTX" in codex_policy
+assert "Codex Desktop Ein app routing" not in opencode_policy
+assert "use it for user-authorized `start` and `resume` calls" in ein_reference
+assert "LeanCTX gateway for status, messages, wait, cancel" in ein_reference
 
 print(f"Ein instruction matrix: PASS ({len(HOST_SURFACES)} host surfaces x {len(cases)} instance/backend cases)")
