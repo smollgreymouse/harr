@@ -61,7 +61,6 @@ LOG=STATE/"server.jsonl"
 # registry, claim directories, and event log grow for the life of the process.
 SCOPE_TTL_SEC=24*3600
 MAX_SCOPES=64
-MAX_CLAIM_FILES=128
 LOG_ROTATE_BYTES=5*1024*1024
 MAX_TRANSCRIPT_CURSORS=256
 POLL_LOCK=threading.Lock()
@@ -105,8 +104,6 @@ def tools():
  {"name":"show_ein_live","description":"Read-only: display an existing Ein session in an HTML panel; no job is started or modified. The transcript is app-only and is not returned to the model.","annotations":{"readOnlyHint":True,"destructiveHint":False,"idempotentHint":True,"openWorldHint":False},"inputSchema":{"type":"object","properties":{"instance":{"type":"string","description":"User-configured Ein MCP name."},"session_id":{"type":"string","description":"Existing Ein session UUID to display."}},"required":["instance","session_id"],"additionalProperties":False},"_meta":{"ui":{"resourceUri":URI,"visibility":["model","app"]},"ui/resourceUri":URI,"openai/outputTemplate":URI}},
  {"name":"panel_event_ui","description":"App-only panel lifecycle diagnostics.","inputSchema":{"type":"object","properties":{"panel_id":{"type":"string"},"event":{"type":"string"},"session_id":{"type":"string"}},"required":["panel_id","event"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"list_ein_ui","description":"App-only list of displayed Ein sessions.","inputSchema":{"type":"object","properties":{}},"_meta":{"ui":{"visibility":["app"]}}},
-  {"name":"claim_done_notification_ui","description":"App-only: claim a terminal completion notification; owner_token makes retries idempotent.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"},"owner_token":{"type":"string","maxLength":128}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
-  {"name":"release_done_notification_ui","description":"App-only: release a failed completion delivery claim.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"scope_id":{"type":"string"},"owner_token":{"type":"string","maxLength":128}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}},
  {"name":"poll_ein_ui","description":"UI only: read progress transcript using a cursor.","inputSchema":{"type":"object","properties":{"instance":{"type":"string"},"session_id":{"type":"string"},"after_revision":{"type":"integer"},"scope_id":{"type":"string"},"wait_ms":{"type":"integer","minimum":0,"maximum":15000}},"required":["instance","session_id","scope_id"]},"_meta":{"ui":{"visibility":["app"]}}}]
 def registered(instance,sid):
  with REGISTRY_LOCK:
@@ -137,55 +134,6 @@ def register_scope(instance,session_id,after_revision):
   scopes[scope_id]={"instance":instance,"session_id":session_id,"initial_revision":after_revision,"created":now}
   temp=SCOPES.with_suffix(".tmp");temp.write_text(json.dumps(scopes));temp.replace(SCOPES)
  return scope_id
-
-def prune_claims(instance,exclude=None):
- """Bound the per-instance delivered-completions directory."""
- claim_dir=STATE/"delivered-completions"/instance
- try: files=[p for p in claim_dir.glob("*.claimed") if p.is_file() and p!=exclude]
- except OSError:return
- if len(files)<=MAX_CLAIM_FILES:return
- try: files.sort(key=lambda p:p.stat().st_mtime)
- except OSError:return
- for path in files[:len(files)-MAX_CLAIM_FILES]:
-  try: path.unlink()
-  except OSError:pass
-
-def _claim_owner_token(args):
- token=args.get("owner_token")
- if token is not None and (not isinstance(token,str) or not token or len(token)>128 or any(ord(c)<32 for c in token)):
-  raise ValueError("invalid notification owner_token")
- return token
-
-def _claim_is_owned(path,scope_id,owner_token):
- if owner_token is None:return False
- try:value=json.loads(path.read_text())
- except (OSError,ValueError):return False
- return isinstance(value,dict) and value.get("schema")==1 and value.get("scope_id")==scope_id and value.get("owner_token")==owner_token
-
-def claim_notification(path,scope_id,owner_token):
- """Atomically claim once; same-owner retries recover a lost response."""
- with REGISTRY_LOCK:
-  if path.exists():return _claim_is_owned(path,scope_id,owner_token)
-  try:fd=os.open(path,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
-  except FileExistsError:return _claim_is_owned(path,scope_id,owner_token)
-  try:
-   value=scope_id if owner_token is None else json.dumps({"schema":1,"scope_id":scope_id,"owner_token":owner_token,"created":time.time()})
-   with os.fdopen(fd,"w") as handle:handle.write(value)
-  except Exception:
-   try:path.unlink()
-   except OSError:pass
-   raise
-  return True
-
-def release_notification(path,scope_id,owner_token):
- with REGISTRY_LOCK:
-  try:
-   if owner_token is None:
-    if path.read_text()!=scope_id:return False
-   elif not _claim_is_owned(path,scope_id,owner_token):return False
-   path.unlink()
-   return True
-  except OSError:return False
 
 def lookup_scope(scope_id,instance,sid):
  with REGISTRY_LOCK:
@@ -302,28 +250,6 @@ def dispatch(req):
     ids=restored_sessions()
     record("restored_list",sessions=len(ids))
     result(id,{"content":[{"type":"text","text":"UI-only list"}],"structuredContent":{"sessions":ids}})
-   elif name in ("claim_done_notification_ui","release_done_notification_ui"):
-    args=p.get("arguments") or {}
-    instance=instance_id(args.get("instance"));sid=args.get("session_id")
-    scope_id=args.get("scope_id")
-    if not isinstance(sid,str) or lookup_scope(scope_id,instance,sid) is None:
-     raise ValueError("unrecognized invocation scope")
-    mod,state=session_state(instance,sid)
-    claim_dir=STATE/"delivered-completions"/instance;claim_dir.mkdir(exist_ok=True,parents=True)
-    claim=claim_dir/(sid+".claimed")
-    owner_token=_claim_owner_token(args)
-    if name=="release_done_notification_ui":
-     release_notification(claim,scope_id,owner_token)
-     visible={"ok":True}
-    else:
-     handoff=unbox(mod.status_tool({"session_id":sid}))
-     current=handoff.get("status")
-     claimed=False
-     if current in TERMINAL:
-      prune_claims(instance,exclude=claim)
-      claimed=claim_notification(claim,scope_id,owner_token)
-     visible={"claimed":claimed,"status":current,"handoff":handoff if claimed else None}
-    result(id,{"content":[{"type":"text","text":"UI only"}],"structuredContent":visible})
    elif name=="poll_ein_ui":
     args=p.get("arguments") or {}
     sid=args.get("session_id","")

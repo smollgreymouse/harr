@@ -321,7 +321,7 @@ gateway_names = {server['name'] for server in lean['gateway']['servers']}
 assert {'giga-review', 'giga-builder'} <= gateway_names
 assert 'gigacode' not in gateway_names and 'einherjar' not in gateway_names
 codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text())
-assert set(codex['mcp_servers']) >= {'harr-ein-ui'}
+assert set(codex['mcp_servers']) >= {'harr-ein-ui', 'giga-review', 'giga-builder'}
 assert 'harr-gigacode-app' not in codex['mcp_servers']
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor').exists()
 assert (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker/SKILL.md').is_file()

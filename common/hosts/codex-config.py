@@ -341,34 +341,156 @@ def retire_gigacode_app() -> None:
         write_config_text(text + "\n")
 
 
+def ein_direct_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "mcp" / "ein_direct.py"
+
+
+def ein_ui_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "mcp" / "ein_app" / "server.py"
+
+
+def _managed_direct_ein_name(name: str, entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    args = entry.get("args")
+    env = entry.get("env")
+    return (
+        entry.get("command") == sys.executable
+        and isinstance(args, list)
+        and len(args) == 2
+        and isinstance(args[0], str)
+        and Path(args[0]).name == "ein_direct.py"
+        and args[1] == name
+        and isinstance(env, dict)
+        and env.get("HARR_EIN_DIRECT_MANAGED") == "1"
+    )
+
+
+def _direct_ein_block(name: str, config_root: Path) -> str:
+    return (
+        f"[mcp_servers.{name}]\n"
+        f"command = {toml_basic_string(sys.executable)}\n"
+        f"args = [{toml_basic_string(str(ein_direct_path()))}, {toml_basic_string(name)}]\n"
+        "enabled = true\nstartup_timeout_sec = 60\n"
+        f"tool_timeout_sec = {MCP_TOOL_TIMEOUT_SEC}\n"
+        'default_tools_approval_mode = "auto"\n'
+        f"[mcp_servers.{name}.env]\n"
+        f"HARR_CONFIG_DIR = {toml_basic_string(str(config_root))}\n"
+        'HARR_EIN_DIRECT_MANAGED = "1"\n'
+        f"[mcp_servers.{name}.tools.ein]\n"
+        'approval_mode = "auto"\n'
+    )
+
+
 def apply_named_ein_apps() -> None:
-    """Reconcile one shared read-only MCP App for all enabled Ein instances."""
+    """Reconcile direct Codex Ein MCP Apps plus the opt-in shared live panel."""
     from common.mcp.ein_instances import read
 
-    app = Path(__file__).resolve().parents[1] / "mcp" / "ein_app" / "server.py"
     data = read()
+    enabled = [item for item in data["instances"] if item.get("enabled", True)]
+    config_root = Path(os.environ.get("HARR_CONFIG_DIR") or (Path.home() / ".config/harr"))
     text = load_config_text()
     existing = parse_config(text).get("mcp_servers", {})
-    for name in list(existing):
-        if name == "harr-ein-ui" or re.fullmatch(r"harr-ein-[a-z][a-z0-9-]{0,62}-app", name):
+    if not isinstance(existing, dict):
+        existing = {}
+
+    # Remove only Harr-owned direct instance frontdoors and legacy per-instance
+    # panel registrations. A same-named user MCP with another command survives.
+    for name, entry in list(existing.items()):
+        if _managed_direct_ein_name(name, entry):
+            text = remove_exact_table(text, ["mcp_servers", name, "tools", "ein"])
+            text = remove_exact_table(text, ["mcp_servers", name, "env"])
+            text = remove_exact_table(text, ["mcp_servers", name])
+        elif name == "harr-ein-ui" or re.fullmatch(r"harr-ein-[a-z][a-z0-9-]{0,62}-app", name):
             text = remove_exact_table(text, ["mcp_servers", name, "tools", "show_ein_live"])
             text = remove_exact_table(text, ["mcp_servers", name, "env"])
             text = remove_exact_table(text, ["mcp_servers", name])
-    if any(item.get("enabled", True) for item in data["instances"]):
-        block = (
+
+    remaining = parse_config(text).get("mcp_servers", {})
+    if not isinstance(remaining, dict):
+        remaining = {}
+    reserved = {SERVER_NAME, WORKSPACE_SERVER_NAME, WORKSPACE_APP_SERVER_NAME, "harr-ein-ui"}
+    for item in enabled:
+        name = item["id"]
+        if name in reserved:
+            raise RuntimeError(f"Codex MCP name {name!r} is reserved and cannot be used by a direct Ein")
+        if name in remaining:
+            raise RuntimeError(
+                f"Codex MCP name collision for Ein {name!r}; existing user-owned server was not modified"
+            )
+
+    blocks = [_direct_ein_block(item["id"], config_root) for item in enabled]
+    if enabled:
+        app = ein_ui_path()
+        blocks.append(
             "[mcp_servers.harr-ein-ui]\n"
             f"command = {toml_basic_string(sys.executable)}\n"
             f"args = [{toml_basic_string(str(app))}]\n"
             'enabled = true\nstartup_timeout_sec = 60\ntool_timeout_sec = 120\n'
             'default_tools_approval_mode = "auto"\n'
             "[mcp_servers.harr-ein-ui.env]\n"
-            f"HARR_CONFIG_DIR = {toml_basic_string(str(Path(os.environ.get('HARR_CONFIG_DIR') or (Path.home() / '.config/harr'))))}\n"
+            f"HARR_CONFIG_DIR = {toml_basic_string(str(config_root))}\n"
             "[mcp_servers.harr-ein-ui.tools.show_ein_live]\n"
             'approval_mode = "auto"\n'
         )
-        text = text.rstrip() + "\n\n" + block
+    if blocks:
+        text = text.rstrip() + "\n\n" + "\n\n".join(blocks)
     parse_config(text)
     write_config_text(text.rstrip() + "\n")
+
+
+def named_ein_apps_are_managed(config: dict[str, Any]) -> bool:
+    from common.mcp.ein_instances import read
+
+    servers = config.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return False
+    enabled = [item for item in read()["instances"] if item.get("enabled", True)]
+    expected_names = {item["id"] for item in enabled}
+    config_root = Path(os.environ.get("HARR_CONFIG_DIR") or (Path.home() / ".config/harr"))
+
+    managed_names = {
+        name for name, entry in servers.items()
+        if _managed_direct_ein_name(name, entry)
+    }
+    if managed_names != expected_names:
+        return False
+
+    for name in expected_names:
+        entry = servers.get(name)
+        if not isinstance(entry, dict):
+            return False
+        if (
+            entry.get("command") != sys.executable
+            or entry.get("args") != [str(ein_direct_path()), name]
+            or entry.get("enabled") is not True
+            or entry.get("startup_timeout_sec") != 60
+            or entry.get("tool_timeout_sec") != MCP_TOOL_TIMEOUT_SEC
+            or entry.get("default_tools_approval_mode") != "auto"
+            or entry.get("env") != {
+                "HARR_CONFIG_DIR": str(config_root),
+                "HARR_EIN_DIRECT_MANAGED": "1",
+            }
+            or not isinstance(entry.get("tools"), dict)
+            or entry["tools"].get("ein") != {"approval_mode": "auto"}
+        ):
+            return False
+
+    ui = servers.get("harr-ein-ui")
+    if not enabled:
+        return ui is None
+    return (
+        isinstance(ui, dict)
+        and ui.get("command") == sys.executable
+        and ui.get("args") == [str(ein_ui_path())]
+        and ui.get("enabled") is True
+        and ui.get("startup_timeout_sec") == 60
+        and ui.get("tool_timeout_sec") == 120
+        and ui.get("default_tools_approval_mode") == "auto"
+        and ui.get("env") == {"HARR_CONFIG_DIR": str(config_root)}
+        and isinstance(ui.get("tools"), dict)
+        and ui["tools"].get("show_ein_live") == {"approval_mode": "auto"}
+    )
 
 
 def workspace_server_path() -> Path:
@@ -488,7 +610,12 @@ def status() -> int:
     if entry is None:
         print(f"codex-config\tmissing\tLeanCTX MCP not registered in {CONFIG}")
         return 1
-    if entry_is_managed(entry) and workspace_control_is_managed(config) and workspace_app_is_managed(config):
+    if (
+        entry_is_managed(entry)
+        and named_ein_apps_are_managed(config)
+        and workspace_control_is_managed(config)
+        and workspace_app_is_managed(config)
+    ):
         print(f"codex-config\tmanaged\t{CONFIG}")
         return 0
 

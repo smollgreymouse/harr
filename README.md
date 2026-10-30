@@ -52,11 +52,21 @@ The standalone GigaCode MCP is retired. Upgrades remove its managed host
 registration and runtime app while preserving named instance configuration and
 session files. An instance explicitly named `gigacode` keeps the old session
 cache namespace and is exposed only as `gigacode::ein`.
-All named instances share **one read-only Codex Desktop MCP App**,
-`harr-ein-ui::show_ein_live`. The call supplies the user-chosen MCP instance
-name and an existing Ein session UUID (it never launches a new model run), keeps `poll_ein_ui` and
-`list_ein_ui` app-only, and uses per-instance session/history files. It also delivers a concise terminal `ui/message` once per running session, with the final handoff status and diagnostics; it does not send the raw JSON envelope into chat. This direct
-MCP registration is distinct from the LeanCTX execution gateway.
+Codex Desktop also registers every enabled named Ein **directly** under its
+user-chosen MCP name. A `start`/`resume` call leaves a compact inline marker;
+the marker watches that exact `job_id` and sends one neutral completion
+`ui/message` when the worker reaches a terminal state. That message is a wake/status
+signal and untrusted data, not a new instruction channel. Normal completion therefore
+requires no model-side polling while the inline app remains active. Current Codex
+Desktop builds may suspend an inline MCP App after roughly five minutes continuously
+outside the viewport; Harr does not auto-open the side panel to evade that host policy,
+and explicit `status` remains the fallback for such long offscreen runs.
+
+All named instances still share the opt-in read-only monitor
+`harr-ein-ui::show_ein_live`. It displays an existing session and transcript but
+never starts a run and no longer owns completion delivery. The monitor does not
+open or focus automatically on worker start or completion. OpenCode and gateway
+fallback continue to reach named Ein through LeanCTX.
 
 See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for the migration rationale and validation record.
 
@@ -64,7 +74,7 @@ See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for the migration rationale and v
 
 Harr is not merged into another global harness. On first installation it takes **clean ownership of its global layer**, after saving an exact rollback snapshot. Project-level configuration is deliberately out of scope.
 
-Harr-managed specialized MCPs stay behind LeanCTX so their large schemas do not live permanently in the agent context. Unrelated third-party MCPs and skills may coexist globally.
+Harr-managed specialized MCPs stay behind LeanCTX so their large schemas do not live permanently in the agent context. The deliberate Codex Desktop exception is enabled named Ein: each exposes only its small common `ein` schema directly so its MCP App can attach the async completion marker; the same instance remains available behind LeanCTX for OpenCode/fallback. Unrelated third-party MCPs and skills may coexist globally.
 
 ```text
 Codex / OpenCode

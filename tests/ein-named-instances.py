@@ -80,6 +80,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
         if ok:assert p.returncode==0,(args,p.stdout,p.stderr)
         else:assert p.returncode!=0,args
         return p.stdout
+    # Direct Codex frontdoors reserve Harr-owned host namespaces.
+    run('add','--id','harr-ein-ui','--adapter','opencode',ok=False)
+
     def failure_evidence(instance_id,session_id):
         cache=(legacy_cache if instance_id=='gigacode' else
                base/'home/.cache/harr/einherjar'/instance_id/workspace_key)
