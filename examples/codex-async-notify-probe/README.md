@@ -25,6 +25,8 @@ async notify probe smoke: PASS
 
 The smoke test verifies initialization, tool discovery, marker resource metadata, async completion, and atomic claim/release behavior. It cannot verify `ui/message`, because that requires a real MCP Apps host.
 
+The side-panel monitor is optional. Do not call `show_async_workspace_probe` for the normal wake test. Starting and completing a marker must leave the side panel closed unless it was explicitly opened by the user.
+
 ## Register in Codex for manual Desktop testing
 
 From the Harr checkout:

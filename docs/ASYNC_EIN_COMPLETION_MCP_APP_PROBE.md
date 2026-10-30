@@ -75,6 +75,18 @@ per async run
 
 The worker engine and UI are deliberately separated. A real Ein adapter should publish a generic completion event; the UI should not be the process supervisor.
 
+## Side-panel opening policy
+
+The Workspace side panel is strictly opt-in UI:
+
+- starting an async worker must not open, focus or expand the side panel;
+- worker completion must not open, focus or expand the side panel;
+- if the side panel is already open, it may update silently in place;
+- the side panel opens only after an explicit user/model request to show the Workspace panel;
+- the async wake path must continue to work with the side panel never opened at all.
+
+The verified reference implementation follows this rule: `start_async_marker_probe` exposes only the inline marker resource, and neither its start path nor its completion path invokes `show_async_workspace_probe`, fullscreen mode or `ui/request-display-mode`.
+
 ## Compact marker sizing
 
 Codex Desktop supports runtime `ui/notifications/size-changed`, but on the tested build that notification did not shrink the already-large inline host allocation reliably.
