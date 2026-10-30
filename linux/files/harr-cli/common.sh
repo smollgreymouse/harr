@@ -26,12 +26,17 @@ validate_mcp_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "invalid MCP na
 mcp_unit() { validate_mcp_name "$1"; printf 'harr-mcp@%s.service\n' "$1"; }
 mcp_unit_path() { printf '%s/%s\n' "$HARR_SYSTEMD_USER_DIR" 'harr-mcp@.service'; }
 managed_mcp_names() { mcp_manager names --lifecycle service; }
+managed_mcp_names_readonly() { mcp_manager_readonly names --lifecycle service; }
 all_mcp_names() { mcp_manager names; }
+all_mcp_names_readonly() { mcp_manager_readonly names; }
 catalog_service_mcp_names() { mcp_catalog_manager names --lifecycle service; }
 mcp_exists() { managed_mcp_names | grep -Fxq -- "$1"; }
+mcp_exists_readonly() { managed_mcp_names_readonly | grep -Fxq -- "$1"; }
 require_mcp() { mcp_exists "$1" || die "unknown or non-service enabled Harr MCP: $1"; }
+require_mcp_readonly() { mcp_exists_readonly "$1" || die "unknown or non-service enabled Harr MCP: $1"; }
 mcp_env_file() { printf '%s/%s.env\n' "$HARR_MCP_CONFIG_DIR" "$1"; }
 mcp_server_field() { mcp_manager server-field "$1" "$2"; }
+mcp_server_field_readonly() { mcp_manager_readonly server-field "$1" "$2"; }
 
 env_value() {
   local file="$1" key="$2" line

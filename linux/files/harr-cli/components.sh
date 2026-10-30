@@ -174,5 +174,5 @@ cmd_components_status() {
 
   while IFS=$'\t' read -r name expected state installed; do
     printf '%-16s %-18s %-16s %s\n' "$name" "$expected" "$state" "$installed"
-  done < <(mcp_manager components --npm-prefix "$HARR_NPM_PREFIX")
+  done < <(mcp_manager_readonly components --npm-prefix "$HARR_NPM_PREFIX")
 }

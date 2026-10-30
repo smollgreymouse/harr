@@ -44,7 +44,7 @@ cmd_secret_status() {
     name="$(printf '%s' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])')"
     file="$(printf '%s' "$line" | python3 -c 'import json,sys; print(json.load(sys.stdin)["file"])')"
     if [[ -s "${HARR_SECRETS_DIR}/${file}" ]]; then printf '%-16s %s\n' "$name" configured; else printf '%-16s %s\n' "$name" missing; fi
-  done < <(mcp_manager secrets)
+  done < <(mcp_manager_readonly secrets)
 }
 
 cmd_secret_unset() {

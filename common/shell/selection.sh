@@ -30,6 +30,35 @@ mcp_manager() {
   python3 "$HARR_MCP_MANAGER" --registry "$HARR_MCP_EFFECTIVE" "$@"
 }
 
+mcp_manager_readonly() {
+  require_mcp_manager
+  require_mcp_selector
+  if [[ -r "$HARR_MCP_EFFECTIVE" ]]; then
+    python3 "$HARR_MCP_MANAGER" --registry "$HARR_MCP_EFFECTIVE" "$@"
+    return
+  fi
+
+  local tmpdir selection effective default rc
+  tmpdir="$(mktemp -d)"
+  selection="${tmpdir}/selection.json"
+  effective="${tmpdir}/effective.json"
+  default=all
+  if [[ -r "$HARR_MCP_SELECTION" ]]; then
+    cp -- "$HARR_MCP_SELECTION" "$selection"
+    chmod u+w "$selection"
+    default=required
+  fi
+  python3 "$HARR_MCP_SELECTOR" \
+    --catalog "$HARR_MCP_CATALOG" \
+    --selection "$selection" \
+    --effective "$effective" \
+    --default "$default" >/dev/null
+  python3 "$HARR_MCP_MANAGER" --registry "$effective" "$@"
+  rc=$?
+  rm -rf -- "$tmpdir"
+  return "$rc"
+}
+
 mcp_catalog_manager() {
   require_mcp_manager
   python3 "$HARR_MCP_MANAGER" --registry "$HARR_MCP_CATALOG" "$@"
@@ -53,10 +82,22 @@ mcp_select() {
 
 mcp_available() {
   require_mcp_selector
-  local spec=''
+  local tmpdir selection effective default rc
+  tmpdir="$(mktemp -d)"
+  selection="${tmpdir}/selection.json"
+  effective="${tmpdir}/effective.json"
+  default=all
   if [[ -r "$HARR_MCP_SELECTION" ]]; then
-    python3 "$HARR_MCP_SELECTOR" --catalog "$HARR_MCP_CATALOG" --selection "$HARR_MCP_SELECTION" --effective "$HARR_MCP_EFFECTIVE" --default required
-  else
-    python3 "$HARR_MCP_SELECTOR" --catalog "$HARR_MCP_CATALOG" --selection "$HARR_MCP_SELECTION" --effective "$HARR_MCP_EFFECTIVE" --default all
+    cp -- "$HARR_MCP_SELECTION" "$selection"
+    chmod u+w "$selection"
+    default=required
   fi
+  python3 "$HARR_MCP_SELECTOR" \
+    --catalog "$HARR_MCP_CATALOG" \
+    --selection "$selection" \
+    --effective "$effective" \
+    --default "$default"
+  rc=$?
+  rm -rf -- "$tmpdir"
+  return "$rc"
 }

@@ -9,6 +9,7 @@ mcp_targets() {
 }
 
 mcp_endpoint() { mcp_server_field "$1" url 2>/dev/null || true; }
+mcp_endpoint_readonly() { mcp_server_field_readonly "$1" url 2>/dev/null || true; }
 mcp_endpoint_state() {
   local endpoint="$1"
   [[ -n "$endpoint" ]] || { printf '%s\n' '-'; return; }
@@ -27,14 +28,14 @@ mcp_pid() {
 
 mcp_status_row() {
   local name="$1" endpoint
-  endpoint="$(mcp_endpoint "$name")"
+  endpoint="$(mcp_endpoint_readonly "$name")"
   printf '%-16s %-11s %-11s %-8s %-12s %s\n' "$name" "$(mcp_service_state "$name")" "$(mcp_startup_state "$name")" "$(mcp_pid "$name")" "$(mcp_endpoint_state "$endpoint")" "${endpoint:--}"
 }
 
 cmd_mcp_status_all() {
   [[ $# -eq 0 ]] || die 'usage: harr mcp status'
   local -a names=()
-  mapfile -t names < <(managed_mcp_names)
+  mapfile -t names < <(managed_mcp_names_readonly)
   printf '%-16s %-11s %-11s %-8s %-12s %s\n' MCP SERVICE STARTUP PID ENDPOINT URL
   if ((${#names[@]} == 0)); then printf '%s\n' '(no Harr service MCPs configured)'; return; fi
   local name
@@ -44,7 +45,7 @@ cmd_mcp_status_all() {
 cmd_mcp_status() {
   if [[ $# -eq 0 ]]; then cmd_mcp_status_all; return; fi
   [[ $# -eq 1 ]] || die 'usage: harr mcp status [NAME]'
-  require_mcp "$1"
+  require_mcp_readonly "$1"
   printf '%-16s %-11s %-11s %-8s %-12s %s\n' MCP SERVICE STARTUP PID ENDPOINT URL
   mcp_status_row "$1"
 }
@@ -128,7 +129,7 @@ cmd_mcp() {
   local command="${1:-status}"
   shift || true
   case "$command" in
-    list) [[ $# -eq 0 ]] || die 'usage: harr mcp list'; all_mcp_names ;;
+    list) [[ $# -eq 0 ]] || die 'usage: harr mcp list'; all_mcp_names_readonly ;;
     available) [[ $# -eq 0 ]] || die 'usage: harr mcp available'; mcp_available ;;
     configure) cmd_mcp_configure "$@" ;;
     add|remove) cmd_mcp_mutate "$command" "$@" ;;
