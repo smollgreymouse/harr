@@ -8,12 +8,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import select
 import subprocess
 import sys
 import tempfile
 import tomllib
 from unittest.mock import patch
+from jsonrpc_reader import join_jsonrpc_reader, read_jsonrpc_line
 
 ROOT=Path(__file__).resolve().parents[1]
 SCRIPT=ROOT/'common/mcp/ein_app/server.py'
@@ -22,10 +22,7 @@ HOST=ROOT/'common/hosts/codex-config.py'
 def rpc(process,number,method,params=None):
     process.stdin.write(json.dumps({'jsonrpc':'2.0','id':number,'method':method,'params':params or {}})+'\n')
     process.stdin.flush()
-    assert select.select([process.stdout],[],[],6)[0], 'panel server did not reply'
-    raw=process.stdout.readline()
-    assert raw,process.stderr.read()
-    value=json.loads(raw)
+    value=json.loads(read_jsonrpc_line(process,6))
     assert value.get('id')==number,value
     return value
 
@@ -144,8 +141,9 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
             print(instance,'read-only isolated panel PASS')
         finally:
             p.terminate()
-            try:p.communicate(timeout=5)
-            except subprocess.TimeoutExpired:p.kill();p.communicate()
+            try:p.wait(timeout=5)
+            except subprocess.TimeoutExpired:p.kill();p.wait(timeout=5)
+            join_jsonrpc_reader(p)
     # One real detached fake job, opened by the direct MCP App after start.
     fake=base/'fake_agent.py'
     fake.write_text('import json\nprint(json.dumps({"status":"DONE","summary":"panel-connected","changed":[],"verified":[{"criterion":"smoke","check":"fake","result":"PASS","evidence":"0"}],"self_review":{"criteria_complete":True,"diff_scope_clean":True,"unverified":[]},"escalation":None,"blockers":[]}))\n')
@@ -183,7 +181,13 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
 
             print('fake-panel detached lifecycle + UI restore PASS')
         finally:
-            app.terminate();app.communicate(timeout=5)
+            app.terminate()
+            try:app.wait(timeout=5)
+            except subprocess.TimeoutExpired:app.kill();app.wait(timeout=5)
+            join_jsonrpc_reader(app)
     finally:
-        engine.terminate();engine.communicate(timeout=5)
+        engine.terminate()
+        try:engine.wait(timeout=5)
+        except subprocess.TimeoutExpired:engine.kill();engine.wait(timeout=5)
+        join_jsonrpc_reader(engine)
     print('Named Ein Desktop App panel: PASS')

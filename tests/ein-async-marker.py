@@ -7,13 +7,13 @@ import json
 import importlib.util
 import os
 from pathlib import Path
-import select
 import subprocess
 import sys
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
+from jsonrpc_reader import join_jsonrpc_reader, read_jsonrpc_line
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECT = ROOT / "common" / "mcp" / "ein_direct.py"
@@ -25,10 +25,7 @@ def rpc(process: subprocess.Popen, number: int, method: str, params: dict | None
     assert process.stdin is not None and process.stdout is not None and process.stderr is not None
     process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": number, "method": method, "params": params or {}}) + "\n")
     process.stdin.flush()
-    assert select.select([process.stdout], [], [], timeout)[0], f"timeout waiting for {method}"
-    raw = process.stdout.readline()
-    assert raw, process.stderr.read()
-    value = json.loads(raw)
+    value = json.loads(read_jsonrpc_line(process, timeout))
     assert value.get("id") == number, value
     return value
 
@@ -36,10 +33,11 @@ def rpc(process: subprocess.Popen, number: int, method: str, params: dict | None
 def stop(process: subprocess.Popen) -> None:
     process.terminate()
     try:
-        process.communicate(timeout=5)
+        process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.communicate(timeout=5)
+        process.wait(timeout=5)
+    join_jsonrpc_reader(process)
 
 
 with tempfile.TemporaryDirectory(prefix="harr-ein-marker-") as tmp:
@@ -178,11 +176,9 @@ print(json.dumps({
         }) + "\n")
         direct.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 61, "method": "ping", "params": {}}) + "\n")
         direct.stdin.flush()
-        assert select.select([direct.stdout], [], [], 1.0)[0], "marker long-poll blocked ping"
-        ping = json.loads(direct.stdout.readline())
+        ping = json.loads(read_jsonrpc_line(direct, 1.0))
         assert ping["id"] == 61 and ping["result"] == {}, ping
-        assert select.select([direct.stdout], [], [], 10.0)[0], "terminal marker wait timed out"
-        waited_reply = json.loads(direct.stdout.readline())
+        waited_reply = json.loads(read_jsonrpc_line(direct, 10.0))
         assert waited_reply["id"] == 6, waited_reply
         waited = waited_reply["result"]["structuredContent"]
         assert waited["terminal"] is True and waited["status"] == "DONE", waited
