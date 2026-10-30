@@ -210,6 +210,19 @@ def remove_exact_table(text: str, target: list[str]) -> str:
     return "".join(line for idx, line in enumerate(lines) if not remove[idx])
 
 
+def remove_table_subtree(text: str, target: list[str]) -> str:
+    """Remove an owned server together with its env/tools child tables."""
+    kept: list[str] = []
+    keep = True
+    for line in text.splitlines(keepends=True):
+        header = table_header(line)
+        if header is not None:
+            keep = header[1][:len(target)] != target
+        if keep:
+            kept.append(line)
+    return "".join(kept)
+
+
 def toml_basic_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
@@ -337,7 +350,8 @@ def retire_gigacode_app() -> None:
         else None
     )
     if configured_path == managed_path:
-        text = remove_exact_table(text, ["mcp_servers", "harr-gigacode-app"]).rstrip()
+        text = remove_table_subtree(text, ["mcp_servers", "harr-gigacode-app"]).rstrip()
+        parse_config(text)
         write_config_text(text + "\n")
 
 
@@ -351,9 +365,7 @@ def apply_named_ein_apps() -> None:
     existing = parse_config(text).get("mcp_servers", {})
     for name in list(existing):
         if name == "harr-ein-ui" or re.fullmatch(r"harr-ein-[a-z][a-z0-9-]{0,62}-app", name):
-            text = remove_exact_table(text, ["mcp_servers", name, "tools", "show_ein_live"])
-            text = remove_exact_table(text, ["mcp_servers", name, "env"])
-            text = remove_exact_table(text, ["mcp_servers", name])
+            text = remove_table_subtree(text, ["mcp_servers", name])
     if any(item.get("enabled", True) for item in data["instances"]):
         block = (
             "[mcp_servers.harr-ein-ui]\n"

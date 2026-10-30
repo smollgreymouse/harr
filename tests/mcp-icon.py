@@ -30,14 +30,22 @@ with tempfile.TemporaryDirectory(prefix="harr-icon-runtime-") as tmp:
     runtime_assets.mkdir(parents=True)
     (runtime_assets / "harr.png").write_bytes(ICON.read_bytes())
     manager.HERE = runtime_mcp
-    with patch.dict(os.environ, {"HARR_WORKSPACE_MODE": "legacy"}, clear=False), \
+    with patch.dict(os.environ, {"HARR_WORKSPACE_MODE": "legacy"}, clear=True), \
          patch.object(manager.os, "execvpe", side_effect=capture_env), \
          patch.object(manager.subprocess, "call", side_effect=capture_env):
         manager.exec_leanctx(type("Args", (), {"real": "/bin/true", "rest": ["mcp"]})(), {"servers": []})
     expected_icon = runtime_assets / "harr.png"
     assert captured.get("HARR_MCP_ICON_PATH") == str(expected_icon)
+    assert captured.get("LEAN_CTX_LOG") == "info,rmcp=warn"
     captured.clear()
-    with patch.object(manager.os, "execvpe", side_effect=capture_env), \
+    with patch.dict(os.environ, {"HARR_WORKSPACE_MODE": "legacy", "LEAN_CTX_LOG": "debug"}, clear=True), \
+         patch.object(manager.os, "execvpe", side_effect=capture_env), \
+         patch.object(manager.subprocess, "call", side_effect=capture_env):
+        manager.exec_leanctx(type("Args", (), {"real": "/bin/true", "rest": ["mcp"]})(), {"servers": []})
+    assert captured.get("LEAN_CTX_LOG") == "debug"
+    captured.clear()
+    with patch.dict(os.environ, {}, clear=True), \
+         patch.object(manager.os, "execvpe", side_effect=capture_env), \
          patch.object(manager.subprocess, "call", side_effect=capture_env):
         manager.exec_leanctx(type("Args", (), {"real": "/bin/true", "rest": ["status"]})(), {"servers": []})
     assert "HARR_MCP_ICON_PATH" not in captured

@@ -36,6 +36,12 @@ cat >>"${CODEX_HOME}/config.toml" <<EOF
 command = "/old/python"
 args = ["${HOME}/.local/libexec/harr/common/mcp/gigacode_app/server.py"]
 enabled = true
+
+[mcp_servers.harr-gigacode-app.env]
+LEGACY_FIXTURE = "retired"
+
+[mcp_servers.harr-gigacode-app.tools.show_gigacode_live]
+approval_mode = "auto"
 EOF
 cat >"${XDG_CONFIG_HOME}/opencode/AGENTS.md" <<'EOF'
 OLD OPENCODE POLICY

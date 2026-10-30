@@ -116,31 +116,41 @@ select_mcp_set() {
 }
 
 install_runtime_files() {
-  install -d -m 0755 "$BIN_DIR" "$LIBEXEC_DIR" "$CLI_LIB_DIR" "$MCP_LIB_DIR" "$LEANCTX_LIB_DIR" "$STATE_LIB_DIR" "$MCP_CONFIG_DIR" "$SYSTEMD_USER_DIR"
+  local install_type="$1" package_command=''
+  if [[ "$install_type" == package ]]; then
+    package_command="$(cd -- "${SOURCE_DIR}/../../../bin" && pwd)/harr"
+    [[ -x "$package_command" ]] || die "Harr package launcher missing: $package_command"
+  fi
+  install -d -m 0755 "$BIN_DIR" "$LIBEXEC_DIR" "$MCP_LIB_DIR" "$LEANCTX_LIB_DIR" "$STATE_LIB_DIR" "$MCP_CONFIG_DIR" "$SYSTEMD_USER_DIR"
   if [[ -r "${SOURCE_DIR}/../VERSION" ]]; then install -m 0644 "${SOURCE_DIR}/../VERSION" "${LIBEXEC_DIR}/VERSION"; fi
   install -d -m 0700 "$SECRETS_DIR"
   rm -rf -- "$COMMON_LIB_DIR"
-  cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
-  rm -rf -- "${COMMON_LIB_DIR}/mcp/gigacode_app"
-  install -d -m 0755 "${COMMON_LIB_DIR}/mcp/assets"
-  install -m 0644 "${SOURCE_DIR}/../harr.png" "${COMMON_LIB_DIR}/mcp/assets/harr.png"
-  find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
-  find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
-  chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"
-  chmod 0755 "${COMMON_LIB_DIR}/git_host/git_host.py"
-  if [[ -x /usr/bin/harr && "$(readlink -f -- /usr/bin/harr 2>/dev/null || true)" == "${SOURCE_DIR}/harr" ]]; then
-    cat >"${BIN_DIR}/harr" <<'EOF_HARR_PACKAGE_SHIM'
-#!/usr/bin/env bash
-exec /usr/bin/harr "$@"
-EOF_HARR_PACKAGE_SHIM
+  if [[ "$install_type" == package ]]; then
+    # User runtimes must use the package's helpers after an upgrade too.
+    ln -s "$COMMON_DIR" "$COMMON_LIB_DIR"
+    rm -rf -- "$CLI_LIB_DIR"
+    ln -s "${FILES_DIR}/harr-cli" "$CLI_LIB_DIR"
+    # The Debian entrypoint is a shell launcher, not a symlink. Keep the
+    # package authoritative even when ~/.local/bin precedes /usr/bin in PATH.
+    printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$package_command" >"${BIN_DIR}/harr"
     chmod 0755 "${BIN_DIR}/harr"
   else
+    cp -a "${COMMON_DIR}" "$COMMON_LIB_DIR"
+    rm -rf -- "${COMMON_LIB_DIR}/mcp/gigacode_app"
+    install -d -m 0755 "${COMMON_LIB_DIR}/mcp/assets"
+    install -m 0644 "${SOURCE_DIR}/../harr.png" "${COMMON_LIB_DIR}/mcp/assets/harr.png"
+    find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
+    find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
+    chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"
+    chmod 0755 "${COMMON_LIB_DIR}/git_host/git_host.py"
+    if [[ -L "$CLI_LIB_DIR" ]]; then rm -- "$CLI_LIB_DIR"; fi
+    install -d -m 0755 "$CLI_LIB_DIR"
+    local f
+    for f in common help components workspace mcp uninstall; do install -m 0644 "${FILES_DIR}/harr-cli/${f}.sh" "${CLI_LIB_DIR}/${f}.sh"; done
     install -m 0755 "${SOURCE_DIR}/harr" "${BIN_DIR}/harr"
   fi
   install -m 0755 "${FILES_DIR}/mcp/harr-mcp-run" "${BIN_DIR}/harr-mcp-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${BIN_DIR}/codegraph"
-  local f
-  for f in common help components workspace mcp uninstall; do install -m 0644 "${FILES_DIR}/harr-cli/${f}.sh" "${CLI_LIB_DIR}/${f}.sh"; done
   install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
   install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${MCP_UNIT_TEMPLATE}" "${SYSTEMD_USER_DIR}/${MCP_UNIT_TEMPLATE}"
@@ -191,6 +201,8 @@ configure_systemd() {
 main() {
   [[ "$EUID" -ne 0 ]] || die 'run Harr installer as your normal user, without sudo'
   parse_arguments "$@"
+  local install_type="${HARR_INSTALL_TYPE:-source}"
+  case "$install_type" in package|source) ;; *) die "invalid HARR_INSTALL_TYPE: $install_type" ;; esac
   command -v python3 >/dev/null 2>&1 || die 'python3 is required for Harr host configuration management'
   prepare_clean_ownership
   select_mcp_set
@@ -201,7 +213,7 @@ main() {
       y|Y|yes|YES|Yes) python3 "${COMMON_DIR}/mcp/ein_instances.py" configure ;;
     esac
   fi
-  install_runtime_files
+  install_runtime_files "$install_type"
   install_mcp_configs
   configure_systemd
 
@@ -216,8 +228,6 @@ main() {
     "${BIN_DIR}/harr" agents apply all
     "${BIN_DIR}/harr" leanctx apply
   fi
-  local install_type="${HARR_INSTALL_TYPE:-source}"
-  case "$install_type" in package|source) ;; *) die "invalid HARR_INSTALL_TYPE: $install_type" ;; esac
   "${BIN_DIR}/harr" doctor --write-manifest --install-type "$install_type" --source-root "${SOURCE_DIR}/.."
   if ((start_now)); then "${BIN_DIR}/harr" mcp restart all; fi
 

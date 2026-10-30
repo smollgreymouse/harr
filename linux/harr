@@ -15,10 +15,12 @@ if [[ -d "${SELF_DIR}/files/harr-cli" ]]; then
   readonly CLI_LIB_DIR="${SELF_DIR}/files/harr-cli"
   HARR_COMMON_DIR="$(cd -- "${SELF_DIR}/../common" && pwd)"
 else
-  readonly CLI_LIB_DIR="${HARR_LIBEXEC_DIR:-${HOME}/.local/libexec/harr/cli}"
-  HARR_COMMON_DIR="${HARR_COMMON_DIR:-${HOME}/.local/libexec/harr/common}"
+  readonly CLI_LIB_DIR="${HARR_LIBEXEC_DIR:-${HOME}/.local/libexec/harr}/cli"
+  HARR_COMMON_DIR="${HARR_COMMON_DIR:-${HARR_LIBEXEC_DIR:-${HOME}/.local/libexec/harr}/common}"
 fi
 export HARR_COMMON_DIR
+# Bind doctor and repair to this CLI, including package launches shadowed in PATH.
+export HARR_COMMAND="$SELF_PATH"
 
 source "${CLI_LIB_DIR}/common.sh"
 source "${HARR_COMMON_DIR}/shell/selection.sh"

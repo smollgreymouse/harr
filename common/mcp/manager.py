@@ -917,6 +917,10 @@ def workspace_command(args: argparse.Namespace) -> None:
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
     if leanctx_is_mcp(args.rest):
+        # rmcp logs whole initialize payloads at info, including base64 icons.
+        # These can overflow a host's nonblocking stderr and panic discovery.
+        # Keep normal server logs while allowing an explicit LeanCTX override.
+        env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
         # The managed server-info icon lives beside the installed MCP runtime.
         # Keep the source checkout fallback useful for direct development runs.
         icon = HERE / "assets" / "harr.png"

@@ -36,6 +36,8 @@ jobs:
         run: python3 tests/mcp-selection.py
       - name: Harr status is read-only
         run: bash tests/harr-status-readonly.sh
+      - name: Source-to-package setup and package upgrade
+        run: python3 tests/harr-package-upgrade.py
       - name: Named Ein migration and icon contracts
         run: |
           python3 tests/ein-named-instances.py
