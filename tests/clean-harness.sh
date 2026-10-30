@@ -211,7 +211,7 @@ grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/einherjar-worker" ]]
 [[ ! -e "${CODEX_HOME}/skills/einherjar-worker" ]]
-grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-unified.2"' "${ROOT}/linux/files/harr-cli/components.sh"
+grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-unified.3"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"

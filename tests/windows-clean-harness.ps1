@@ -94,7 +94,7 @@ enabled = false
 
     $leanCommand = Join-Path $LocalDir 'Harr\bin\lean-ctx.cmd'
     $runtimeSource = Get-Content -Raw (Join-Path $Root 'windows\files\harr-cli\common.ps1')
-if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.2'")) { throw 'Windows Harr LeanCTX build id mismatch' }
+if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.3'")) { throw 'Windows Harr LeanCTX build id mismatch' }
     if (-not $runtimeSource.Contains("LeanRepo = 'smollgreymouse/lean-ctx'")) { throw 'Windows Harr LeanCTX repo mismatch' }
     $open = Get-Content -Raw (Join-Path $OpenCodeDir 'opencode.jsonc') | ConvertFrom-Json
     if ($open.provider.'external-provider'.api -ne 'keep') { throw 'Unrelated OpenCode provider was not preserved' }
