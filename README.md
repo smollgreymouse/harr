@@ -15,7 +15,7 @@ A global harness for token-efficient MCP infrastructure.
 ## Named Ein CLI workers (PR #39)
 
 Harr manages any number of **user-named Ein MCP instances**. Every instance has a
-fixed adapter (`gigacode`, `opencode`, `codex`, or a custom command-template)
+fixed adapter (`gigacode`, `opencode`, `codex`, `zcode`, or a custom command-template)
 with its own runtime state and configuration. Each publishes the **same**
 `<mcp-name>::ein` tool and shared `$einherjar-worker` skill, preserving the
 legacy GigaCode action and argument schema. The GigaCode adapter reuses its
@@ -47,6 +47,23 @@ Optional `--executable PATH` overrides a built-in executable and
 `--secret-env ENV=SECRET_FILE` references a file in Harr's private `secrets/`
 directory without putting its contents into the instances config.
 Configurations live under `~/.config/harr/einherjar/instances.json`.
+
+The `zcode` adapter targets the official [Z.ai ZCode Agent CLI](https://github.com/zai-org/ZCode/blob/main/apps/zcode-cli/docs/usage/README.md).
+Install and authenticate the CLI separately, then register a user-named worker:
+
+```bash
+zcode --version                       # Agent CLI, not the Electron desktop launcher
+harr ein add --id zcode-worker --adapter zcode
+harr ein apply
+```
+
+Use `--executable /absolute/path/to/cli` if the console command has another name.
+The adapter uses `--prompt`, `--cwd`, `--output-format stream-json`, and explicit
+`--resume SESSION_ID`. It runs in ZCode's `yolo` mode for non-interactive tools;
+this mode does not provide a sandbox. Model/login configuration and the ZCode
+data directory stay under ZCode's control and must remain the same for resume.
+Only the final result's `response` is treated as worker output; intermediate
+vendor events are not published as planner progress messages.
 
 The standalone GigaCode MCP is retired. Upgrades remove its managed host
 registration and runtime app while preserving named instance configuration and
@@ -103,7 +120,7 @@ LeanCTX 3.11.0 Harr unified build         required
       +-- stdio on demand --> Jira MCP -> Jira REST API
       |
       +-- stdio -----------> <instance>::ein        user-configured
-                            named executor adapter (GigaCode/OpenCode/Codex/custom)
+                            named executor adapter (GigaCode/OpenCode/Codex/ZCode/custom)
       |
       +-- future MCPs -----> common registry       required/optional metadata
 

@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 SLUG = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 SECRET_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
-ADAPTERS = frozenset({"gigacode", "opencode", "codex", "custom"})
+ADAPTERS = frozenset({"gigacode", "opencode", "codex", "zcode", "custom"})
 RESERVED_INSTANCE_IDS = frozenset({"lean-ctx", "harr-workspace", "harr-workspace-app", "harr-ein-ui"})
 
 
@@ -263,7 +263,7 @@ def configure_wizard() -> None:
             return
         if action == "a":
             name = input("MCP server name (unique, required): ").strip()
-            adapter = input("Adapter (gigacode/opencode/codex/custom): ").strip()
+            adapter = input("Adapter (gigacode/opencode/codex/zcode/custom): ").strip()
             command = [sys.executable, script, "add", "--id", name, "--adapter", adapter]
             if adapter == "custom":
                 command += ["--definition-file", input("Adapter JSON path: ").strip()]
@@ -321,7 +321,7 @@ def main() -> None:
     if args.cmd == "add":
         name = args.id or (input("MCP server name: ").strip() if sys.stdin.isatty() else "")
         backend = args.adapter or (
-            input("Adapter [gigacode/opencode/codex/custom]: ").strip() if sys.stdin.isatty() else ""
+            input("Adapter [gigacode/opencode/codex/zcode/custom]: ").strip() if sys.stdin.isatty() else ""
         )
         if not SLUG.fullmatch(name):
             cli.error("MCP server name is required and must be a lowercase slug")

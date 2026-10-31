@@ -136,6 +136,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     (codex_home/'config.toml').write_text('model = "synthetic"\n')
     run('add','--id','codex-worker','--adapter','codex','--codex-home',str(codex_home))
     assert json.loads(run('show','codex-worker'))['codex_home']==str(codex_home)
+    run('add','--id','zcode-worker','--adapter','zcode','--executable',PYTHON)
+    assert json.loads(run('show','zcode-worker'))['adapter']=='zcode'
+    assert 'found (no model calls)' in run('test','zcode-worker')
     run('add','--id','bad-profile','--adapter','opencode','--codex-home',str(codex_home),ok=False)
     run('add','--id','bad-relative','--adapter','codex','--codex-home','relative/path',ok=False)
     run('add','--id','bad-missing','--adapter','codex',ok=False)
@@ -150,7 +153,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     subprocess.run(select,env=env,check=True,capture_output=True)
     data=json.loads(effective.read_text())
     servers={s['name']:s for s in data['servers']}
-    assert {'fake-one','fake-two','gigacode','codex-worker'} <= set(servers)
+    assert {'fake-one','fake-two','gigacode','codex-worker','zcode-worker'} <= set(servers)
+    assert servers['zcode-worker']['ein_instance']=='zcode-worker'
+    assert servers['zcode-worker']['runtime']['script']=='einherjar_server.py'
     assert 'einherjar' not in servers and 'gigacode' not in {s['name'] for s in json.loads((ROOT/'common/mcp/registry.json').read_text())['servers']}
     assert servers['gigacode']['ein_instance']=='gigacode'
     assert servers['gigacode']['runtime']['script']=='einherjar_server.py'
@@ -172,12 +177,12 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     assert (skill_dir/'references/einherjar.md').exists()
     leanctx=base/'leanctx.toml'
     subprocess.run([PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'render-leanctx','--base',str(ROOT/'common/leanctx/config.base.toml'),'--output',str(leanctx),'--platform','linux','--runner-command','harr-mcp-run'],check=True,env=env)
-    for tool_name in ('fake-one','fake-two','gigacode'):
+    for tool_name in ('fake-one','fake-two','gigacode','zcode-worker'):
         assert f'name = "{tool_name}"' in leanctx.read_text()
 
     manager=[PYTHON,str(ROOT/'common/mcp/manager.py'),'--registry',str(effective),'run']
     if os.name != 'nt': env['HARR_EIN_EXECUTABLE']=str(fake_gigacode)
-    for name in ('fake-one','fake-two','gigacode','codex-worker'):
+    for name in ('fake-one','fake-two','gigacode','codex-worker','zcode-worker'):
         proc=subprocess.Popen([*manager,name],env=env,cwd=work,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8',bufsize=1)
         def call(i,method,params=None):
             proc.stdin.write(json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params or {}})+'\n');proc.stdin.flush()
@@ -190,7 +195,10 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
             assert schema['properties']['action']['enum']==['start','resume','status','messages','wait','cancel']
             assert 'backend' not in schema['properties']
             assert schema == canonical_schema, name
-            if name == 'codex-worker' or (name == 'gigacode' and os.name == 'nt'):continue # NEVER invoke a real backend; this fake executable uses a POSIX script.
+            if name == 'zcode-worker':
+                runtime_config=Path(env['HARR_CONFIG_DIR'])/'einherjar/runtime/zcode-worker/einherjar.json'
+                assert json.loads(runtime_config.read_text())=={'schema':1,'default_backend':'zcode','backends':{}}
+            if name in {'codex-worker','zcode-worker'} or (name == 'gigacode' and os.name == 'nt'):continue # NEVER invoke a real backend; this fake executable uses a POSIX script.
             rejected=call(2,'tools/call',{'name':'ein','arguments':{'action':'start','backend':'gigacode','prompt':'test'}})
             assert rejected.get('isError')
             started=call(3,'tools/call',{'name':'ein','arguments':{'action':'start','prompt':'fake task'}})['structuredContent']
