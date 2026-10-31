@@ -65,6 +65,30 @@ data directory stay under ZCode's control and must remain the same for resume.
 Only the final result's `response` is treated as worker output; intermediate
 vendor events are not published as planner progress messages.
 
+Model and reasoning selection live in ZCode's personal provider config under
+`config.defaultModelSelection` (`providerId`, `modelId`, and
+`options.reasoningLevel`). Pin a named worker to that file with:
+
+```bash
+harr ein edit zcode-worker --zcode-provider-config /absolute/path/to/provider_config.json
+harr ein apply
+```
+
+The same option is available on `harr ein add`. Harr stores the path and passes
+`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` to both gateway and direct MCP runtimes;
+ZCode reads the file without Harr copying or changing its contents. Without the
+option, ZCode keeps its existing config discovery. ZCode controls whether a
+resumed session retains its persisted model or uses a configured default.
+
+[The Start Plan profile example](docs/examples/zcode-start-plan-provider.json)
+records the requested `account:zai-start-plan` / `GLM-5.3-Flash` / `max` selection.
+It contains no credentials. **Start Plan inference is not working in the
+installed CLI 0.17.1:** its standalone account loader only admits
+`individual-coding-plan` providers. The real Ein request failed before inference
+with `Select a model before sending a message`, even with this selection saved.
+The profile does not add Start Plan authorization support; Desktop success does
+not verify the standalone path.
+
 The standalone GigaCode MCP is retired. Upgrades remove its managed host
 registration and runtime app while preserving named instance configuration and
 session files. An instance explicitly named `gigacode` keeps the old session

@@ -67,6 +67,14 @@ def validate(data: object) -> dict:
             if (not isinstance(codex_home,str) or not Path(codex_home).is_absolute()
                 or any(char in codex_home for char in "\n\r\x00")):
                 raise ValueError(f"Ein {name}: codex_home must be an absolute directory path")
+        zcode_provider_config = item.get("zcode_provider_config")
+        if zcode_provider_config is not None:
+            if adapter != "zcode":
+                raise ValueError(f"Ein {name}: zcode_provider_config requires adapter=zcode")
+            if (not isinstance(zcode_provider_config, str)
+                or not Path(zcode_provider_config).is_absolute()
+                or any(char in zcode_provider_config for char in "\n\r\x00")):
+                raise ValueError(f"Ein {name}: zcode_provider_config must be an absolute file path")
         executable = item.get("executable")
         if executable is not None and (
             not isinstance(executable, str)
@@ -158,6 +166,12 @@ def prepare_instance_runtime_env(name: str, base_env: dict[str, str] | None = No
         if not secret_path.is_file():
             raise ValueError(f"Ein {instance['id']}: required secret {filename} is missing")
         env[variable] = secret_path.read_text(encoding="utf-8").strip()
+
+    if instance["adapter"] == "zcode" and instance.get("zcode_provider_config"):
+        profile = Path(instance["zcode_provider_config"])
+        if not profile.is_file():
+            raise ValueError(f"Ein {instance['id']}: ZCode provider config is missing: {profile}")
+        env["ZCODE_PERSONAL_PROVIDER_CONFIG_FILE"] = str(profile)
 
     runtime_dir = root / "einherjar" / "runtime" / instance["id"]
     runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -290,6 +304,7 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--definition-file")
     add.add_argument("--executable")
     add.add_argument("--codex-home", help="absolute local Codex profile path (codex adapter only)")
+    add.add_argument("--zcode-provider-config", help="absolute ZCode personal config path for model/reasoning selection (zcode adapter only)")
     add.add_argument("--secret-env", action="append", default=[], metavar="ENV=SECRET_FILE")
     for command in ("show", "enable", "disable", "remove", "test"):
         commands.add_parser(command).add_argument("name")
@@ -300,6 +315,7 @@ def parser() -> argparse.ArgumentParser:
     edit.add_argument("--definition-file")
     edit.add_argument("--executable")
     edit.add_argument("--codex-home", help="absolute local Codex profile path (codex adapter only)")
+    edit.add_argument("--zcode-provider-config", help="absolute ZCode personal config path for model/reasoning selection (zcode adapter only)")
     edit.add_argument("--secret-env", action="append", default=[], metavar="ENV=SECRET_FILE")
     return root
 
@@ -334,6 +350,8 @@ def main() -> None:
             value["executable"] = args.executable
         if args.codex_home:
             value["codex_home"] = args.codex_home
+        if args.zcode_provider_config:
+            value["zcode_provider_config"] = args.zcode_provider_config
         if args.secret_env:
             try:
                 value["secret_env"] = parse_secret_env(args.secret_env)
@@ -366,7 +384,7 @@ def main() -> None:
         return
     if args.cmd == "edit":
         adapter = args.adapter or instance["adapter"]
-        if sys.stdin.isatty() and not any((args.adapter, args.display_name, args.definition_file, args.executable, args.secret_env)):
+        if sys.stdin.isatty() and not any((args.adapter, args.display_name, args.definition_file, args.executable, args.zcode_provider_config, args.secret_env)):
             adapter = input(f"Adapter [{adapter}]: ").strip() or adapter
         instance["adapter"] = adapter
         if args.display_name:
@@ -375,6 +393,8 @@ def main() -> None:
             instance["executable"] = args.executable
         if args.codex_home:
             instance["codex_home"] = args.codex_home
+        if args.zcode_provider_config:
+            instance["zcode_provider_config"] = args.zcode_provider_config
         if args.secret_env:
             try:
                 instance.setdefault("secret_env", {}).update(parse_secret_env(args.secret_env))
@@ -386,6 +406,8 @@ def main() -> None:
             instance.pop("definition", None)
         if adapter != "codex":
             instance.pop("codex_home", None)
+        if adapter != "zcode":
+            instance.pop("zcode_provider_config", None)
         persist(data)
     elif args.cmd == "remove":
         data["instances"].remove(instance)

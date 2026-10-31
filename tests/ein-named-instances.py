@@ -139,6 +139,37 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     run('add','--id','zcode-worker','--adapter','zcode','--executable',PYTHON)
     assert json.loads(run('show','zcode-worker'))['adapter']=='zcode'
     assert 'found (no model calls)' in run('test','zcode-worker')
+    zcode_profile=base/'profiles/zcode-provider.json'
+    zcode_profile_text=(ROOT/'docs/examples/zcode-start-plan-provider.json').read_text(encoding='utf-8')
+    zcode_profile.write_text(zcode_profile_text,encoding='utf-8')
+    run('edit','zcode-worker','--zcode-provider-config',str(zcode_profile))
+    assert json.loads(run('show','zcode-worker'))['zcode_provider_config']==str(zcode_profile)
+    run('add','--id','bad-zcode-profile','--adapter','opencode','--zcode-provider-config',str(zcode_profile),ok=False)
+    run('add','--id','bad-zcode-relative','--adapter','zcode','--zcode-provider-config','relative.json',ok=False)
+    zcode_instances_spec=importlib.util.spec_from_file_location('zcode_instances',ROOT/'common/mcp/ein_instances.py')
+    zcode_instances=importlib.util.module_from_spec(zcode_instances_spec)
+    zcode_instances_spec.loader.exec_module(zcode_instances)
+    with patch.dict(os.environ,env):
+        zcode_env=zcode_instances.prepare_instance_runtime_env('zcode-worker',{
+            'ZCODE_PERSONAL_PROVIDER_CONFIG_FILE':'inherited-profile',
+        })
+        assert zcode_env['ZCODE_PERSONAL_PROVIDER_CONFIG_FILE']==str(zcode_profile)
+        selected=json.loads(zcode_profile.read_text(encoding='utf-8'))['config']['defaultModelSelection']
+        assert selected=={'providerId':'account:zai-start-plan','modelId':'GLM-5.3-Flash','options':{'reasoningLevel':'max'}}
+        assert zcode_profile.read_text(encoding='utf-8')==zcode_profile_text
+        missing_profile={**json.loads(run('show','zcode-worker')),'zcode_provider_config':str(base/'missing.json')}
+        with patch.object(zcode_instances,'config_for_instance',return_value=missing_profile):
+            try:
+                zcode_instances.prepare_instance_runtime_env('zcode-worker',{})
+                raise AssertionError('missing ZCode provider config accepted')
+            except ValueError as exc:
+                assert 'ZCode provider config is missing' in str(exc)
+    run('edit','zcode-worker','--adapter','opencode')
+    assert 'zcode_provider_config' not in json.loads(run('show','zcode-worker'))
+    run('edit','zcode-worker','--adapter','zcode','--zcode-provider-config',str(zcode_profile))
+    run('add','--id','zcode-add-profile','--adapter','zcode','--zcode-provider-config',str(zcode_profile))
+    assert json.loads(run('show','zcode-add-profile'))['zcode_provider_config']==str(zcode_profile)
+    run('remove','zcode-add-profile')
     run('add','--id','bad-profile','--adapter','opencode','--codex-home',str(codex_home),ok=False)
     run('add','--id','bad-relative','--adapter','codex','--codex-home','relative/path',ok=False)
     run('add','--id','bad-missing','--adapter','codex',ok=False)
