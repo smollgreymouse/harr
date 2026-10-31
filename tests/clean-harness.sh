@@ -93,6 +93,7 @@ grep -q 'Asa model: gpt-6.1-sol' "${TMP}/orchestration.default"
 grep -q 'Asa effort: xhigh' "${TMP}/orchestration.default"
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
 
@@ -105,6 +106,7 @@ grep -q 'Asa effort: xhigh' "${TMP}/orchestration.default"
 "${ROOT}/linux/harr" agents orchestration enable
 [[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'keep sequential implementation in the root regardless of task size' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
 grep -Fq 'Unresolved material architecture decisions' "${CODEX_HOME}/AGENTS.md"

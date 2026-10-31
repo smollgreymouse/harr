@@ -75,6 +75,7 @@ switch ($command) {
                 Require-CleanOwnership
                 [void](Invoke-AsaConfig @($orchSub))
                 Apply-Agents 'codex'
+                Apply-LeanCtx
             } else { throw 'usage: harr agents orchestration status|enable|disable' }
         }
         elseif ($sub -eq 'asa') {

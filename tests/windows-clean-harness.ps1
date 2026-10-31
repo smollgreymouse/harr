@@ -147,11 +147,15 @@ if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.4'")) { throw
     if ($codexAgents -notmatch 'root is the sole agent router' -or $codexAgents -notmatch '\$asa') { throw 'Explicit orchestration enable did not apply Codex routing' }
     if (-not (Test-Path (Join-Path $CodexDir 'skills\asa\SKILL.md'))) { throw 'Explicit orchestration enable did not install Asa skill' }
     if (-not (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml'))) { throw 'Explicit orchestration enable did not install Asa role' }
+    $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
+    if ($leanText -notmatch [regex]::Escape((Join-Path $CodexDir 'skills\asa'))) { throw 'Explicit orchestration enable did not add Asa LeanCTX allow-path' }
     & $installedHarr agents orchestration disable
     $codexAgents = Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')
     if ($codexAgents -match '\$asa') { throw 'Explicit orchestration disable left Asa routing' }
     if (Test-Path (Join-Path $CodexDir 'skills\asa')) { throw 'Explicit orchestration disable left Asa skill' }
     if (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml')) { throw 'Explicit orchestration disable left Asa role' }
+    $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
+    if ($leanText -match [regex]::Escape((Join-Path $CodexDir 'skills\asa'))) { throw 'Explicit orchestration disable left Asa LeanCTX allow-path' }
 
     & $installedHarr ein add --id giga-review --adapter gigacode
     & $installedHarr ein apply

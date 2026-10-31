@@ -110,6 +110,7 @@ cmd_agents_orchestration() {
       require_clean_ownership
       asa_config "$sub"
       cmd_agents_apply codex
+      cmd_leanctx_apply
       ;;
     *) die 'usage: harr agents orchestration {status|enable|disable}' ;;
   esac

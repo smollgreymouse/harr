@@ -83,10 +83,12 @@ grep -q 'lean-ctx_ctx_tools' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 "${HOME}/.local/bin/harr" agents orchestration enable
 [[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
 [[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'root is the sole agent router' "${CODEX_HOME}/AGENTS.md"
 grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 "${HOME}/.local/bin/harr" agents orchestration disable
