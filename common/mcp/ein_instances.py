@@ -199,7 +199,7 @@ def expanded_servers(base: list[dict], config: dict | None = None) -> list[dict]
         base.append({
             "name": name,
             "label": item.get("display_name", name),
-            "description": f"Named Ein {item['adapter']} worker. Use only after the user explicitly instructs you to delegate; never choose an executor automatically.",
+            "description": f"Named Ein {item['adapter']} external worker.",
             "required": False,
             "transport": "stdio",
             "lifecycle": "on-demand",

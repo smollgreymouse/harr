@@ -78,6 +78,24 @@ grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'GitLab MR/pipeline' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Grafana dashboard work' "${CODEX_HOME}/AGENTS.md"
 grep -q 'lean-ctx_ctx_tools' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+# New orchestration is default-off and reversible.
+"${HOME}/.local/bin/harr" agents orchestration status >"${TMP}/orchestration.default"
+grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+"${HOME}/.local/bin/harr" agents orchestration enable
+[[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+grep -q 'root is the sole agent router' "${CODEX_HOME}/AGENTS.md"
+grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+"${HOME}/.local/bin/harr" agents orchestration disable
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+! grep -Fq '$asa' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q '^# Managed by Harr\.$' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'brew' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
@@ -91,6 +109,11 @@ grep -q 'name = "codegraph"' "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/einherjar-worker" ]]
 [[ ! -e "${CODEX_HOME}/skills/einherjar-worker" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
+[[ ! -e "${CODEX_HOME}/skills/ein" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
 [[ ! -e "${HOME}/.local/libexec/harr/common/mcp/gigacode_app" ]]
 cmp -s "${ROOT}/harr.png" "${HOME}/.local/libexec/harr/common/mcp/assets/harr.png"
 ! grep -q '^\[mcp_servers\.harr-gigacode-app\]$' "${CODEX_HOME}/config.toml"
@@ -134,10 +157,10 @@ lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.tom
 assert lean['allow_paths'] == [
     str(Path(os.environ['CODEX_HOME']) / 'skills/harr'),
     str(Path(os.environ['CODEX_HOME']) / 'skills/lean-ctx'),
-    str(Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker'),
+    str(Path(os.environ['CODEX_HOME']) / 'skills/ein'),
     str(config / 'opencode/skills/harr'),
     str(config / 'opencode/skills/lean-ctx'),
-    str(config / 'opencode/skills/einherjar-worker'),
+    str(config / 'opencode/skills/ein'),
 ]
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
@@ -180,7 +203,9 @@ codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text
 assert set(codex['mcp_servers']) >= {'harr-ein-ui', 'giga-review', 'giga-builder'}
 assert 'harr-gigacode-app' not in codex['mcp_servers']
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor').exists()
-assert (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker/SKILL.md').is_file()
+assert (Path(os.environ['CODEX_HOME']) / 'skills/ein/SKILL.md').is_file()
+assert (Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/skills/ein/SKILL.md').is_file()
+assert not (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker').exists()
 PY
 
 # A subsequent Harr refresh must preserve configured instance IDs.
@@ -202,6 +227,10 @@ cmp -s "${TMP}/opencode-config.before" "${XDG_CONFIG_HOME}/opencode/opencode.jso
 cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/skills/ein" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-selection.json" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-registry.json" ]]
 [[ ! -e "${HOME}/.local/libexec/harr" ]]

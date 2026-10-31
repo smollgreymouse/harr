@@ -24,16 +24,7 @@ The adapter is bound to the MCP instance in Harr setup, not selected by a model 
 
 ## Start
 
-Prefer a plan file:
-
-```text
-arguments = {
-  "action": "start",
-  "plan_path": "IMPLEMENTATION_PLAN.md"
-}
-```
-
-Or a small direct task:
+Use either `prompt` for a self-contained task or `plan_path` when a durable implementation plan already exists. Neither form is preferred by the orchestration protocol.
 
 ```text
 arguments = {

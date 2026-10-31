@@ -86,6 +86,56 @@ bash "${ROOT}/linux/files/state/harr-state" snapshot
 "${ROOT}/linux/harr" agents apply all
 "${ROOT}/linux/harr" hosts apply
 
+# Orchestration is opt-in: default/off installs neither Asa artifacts nor routing.
+"${ROOT}/linux/harr" agents orchestration status >"${TMP}/orchestration.default"
+grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
+grep -q 'Asa model: gpt-6.1-sol' "${TMP}/orchestration.default"
+grep -q 'Asa effort: xhigh' "${TMP}/orchestration.default"
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
+
+# Configure while disabled must not activate anything.
+"${ROOT}/linux/harr" agents asa configure --model gpt-6-luna --effort high
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+
+# Explicit enable installs the Codex-only orchestration surface.
+"${ROOT}/linux/harr" agents orchestration enable
+[[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+grep -q 'keep sequential implementation in the root regardless of task size' "${CODEX_HOME}/AGENTS.md"
+grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
+grep -Fq 'Unresolved material architecture decisions' "${CODEX_HOME}/AGENTS.md"
+grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+grep -q 'root is the sole agent router' "${CODEX_HOME}/AGENTS.md"
+grep -q 'Workers never spawn/fork agents or invoke Asa themselves' "${CODEX_HOME}/AGENTS.md"
+grep -q 'must not reread or re-analyze the delegated scope' "${CODEX_HOME}/AGENTS.md"
+grep -q 'back to the SAME worker' "${CODEX_HOME}/AGENTS.md"
+! grep -Fq '$asa' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+python3 - <<'PY_ASA'
+import os, tomllib
+from pathlib import Path
+role = Path(os.environ['CODEX_HOME']) / 'agents/asa-architect.toml'
+parsed = tomllib.loads(role.read_text())
+assert parsed['model'] == 'gpt-6-luna'
+assert parsed['model_reasoning_effort'] == 'high'
+assert parsed['skills']['include_instructions'] is False
+PY_ASA
+
+# Explicit disable removes only the new orchestration feature and persists.
+"${ROOT}/linux/harr" agents orchestration disable
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
+"${ROOT}/linux/harr" agents apply all
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+
 ! grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'OLD OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'codegraph::codegraph_explore' "${CODEX_HOME}/AGENTS.md"
@@ -105,6 +155,7 @@ grep -q 'Keep investigation output bounded' "${CODEX_HOME}/AGENTS.md"
 grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+! grep -Fq '$asa' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Git repository local state/history/branches/configuration/commits' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr git ...' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr git -C /absolute/repository/path' "${CODEX_HOME}/AGENTS.md"
@@ -226,9 +277,15 @@ grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ ! -e "${CODEX_HOME}/skills/gigacode-executor" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/einherjar-worker" ]]
 [[ ! -e "${CODEX_HOME}/skills/einherjar-worker" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
+[[ ! -e "${CODEX_HOME}/skills/ein" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
 grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-unified.4"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/linux/files/harr-cli/components.sh"
-grep -q '## Host Git transport' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
+grep -q 'references/git.md' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
+[[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md" ]]
 grep -q 'harr git -C /absolute/repository/path' "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md"
 grep -q 'do not attempt bare network Git first' "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx/SKILL.md"
 
@@ -270,11 +327,11 @@ assert lean['allow_paths'] == [
     str(codex / 'skills/harr'),
     str(codex / 'skills/harr-workspace'),
     str(codex / 'skills/lean-ctx'),
-    str(codex / 'skills/einherjar-worker'),
+    str(codex / 'skills/ein'),
     str(config / 'opencode/skills/harr'),
     str(config / 'opencode/skills/harr-workspace'),
     str(config / 'opencode/skills/lean-ctx'),
-    str(config / 'opencode/skills/einherjar-worker'),
+    str(config / 'opencode/skills/ein'),
 ]
 PY
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
@@ -339,7 +396,9 @@ codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text
 assert set(codex['mcp_servers']) >= {'harr-ein-ui', 'giga-review', 'giga-builder'}
 assert 'harr-gigacode-app' not in codex['mcp_servers']
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor').exists()
-assert (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker/SKILL.md').is_file()
+assert (Path(os.environ['CODEX_HOME']) / 'skills/ein/SKILL.md').is_file()
+assert (Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/skills/ein/SKILL.md').is_file()
+assert not (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker').exists()
 PY
 
 # A subsequent Harr refresh must preserve configured instance IDs.
@@ -347,8 +406,11 @@ PY
 python3 - <<'PY'
 import json, os
 from pathlib import Path
-config = Path(os.environ['XDG_CONFIG_HOME']) / 'harr/einherjar/instances.json'
+config_root = Path(os.environ['XDG_CONFIG_HOME']) / 'harr'
+config = config_root / 'einherjar/instances.json'
 assert [item['id'] for item in json.loads(config.read_text())['instances']] == ['giga-review', 'giga-builder']
+asa = json.loads((config_root / 'asa.json').read_text())
+assert asa == {'enabled': False, 'model': 'gpt-6-luna', 'effort': 'high'}
 PY
 
 mkdir -p "${HOME}/.local/libexec/harr/state"
@@ -364,6 +426,10 @@ cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 cmp -s "${TMP}/quick.before" "${XDG_CONFIG_HOME}/opencode/commands/quick.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/skills/ein" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
 [[ ! -e "${HOME}/.local/share/harr-state" ]]
 find "${HOME}/.local/share/harr-uninstall-backups" -mindepth 1 -maxdepth 1 -type d | grep -q .
 
