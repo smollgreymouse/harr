@@ -71,8 +71,8 @@ def check(spec: str, expected: list[str]) -> None:
 
         for platform in ("linux", "windows", "macos"):
             lean = tmp / f"lean-{platform}.toml"
-            allow_a = tmp / "codex-skills" / "einherjar-worker"
-            allow_b = tmp / "opencode-skills" / "einherjar-worker"
+            allow_a = tmp / "codex-skills" / "ein"
+            allow_b = tmp / "opencode-skills" / "ein"
             run(
                 MANAGER, "--registry", effective, "render-leanctx",
                 "--base", BASE, "--output", lean,
@@ -135,11 +135,11 @@ def check(spec: str, expected: list[str]) -> None:
         filtered_skill = tmp / "harr-skill"
         run(ASSETS, "filter-skill", "--catalog", CATALOG, "--registry", effective, "--source", SKILL, "--output", filtered_skill)
         skill = (filtered_skill / "SKILL.md").read_text(encoding="utf-8")
-        assert "harr kube configure" in skill
-        assert "harr kubectl <kubectl args...>" in skill
-        assert "## Host Git transport" in skill
-        assert "harr git -C /absolute/repository/path" in skill
-        assert "Do not try bare network `git` first" in skill
+        assert "references/kubernetes.md" in skill
+        assert "references/git.md" in skill
+        assert "harr kube configure" not in skill
+        assert "## Host Git transport" not in skill
+        assert "harr git -C /absolute/repository/path" not in skill
         git_ref = filtered_skill / "references" / "git.md"
         assert git_ref.exists()
         git_text = git_ref.read_text(encoding="utf-8")
@@ -152,10 +152,10 @@ def check(spec: str, expected: list[str]) -> None:
         assert "Kubernetes is intentionally **not** a Harr MCP component" in kube_text
         assert "kubectl config view --raw --flatten -o json" in kube_text
         assert "user.exec" in kube_text
-        assert ("harr secret set gitlab" in skill) == ("gitlab" in expected)
-        assert ("harr secret set grafana" in skill) == ("grafana" in expected)
-        assert ("harr secret set kibana" in skill) == ("kibana" in expected)
-        assert ("harr secret set jira" in skill) == ("jira" in expected)
+        assert "harr secret set gitlab" not in skill
+        assert "harr secret set grafana" not in skill
+        assert "harr secret set kibana" not in skill
+        assert "harr secret set jira" not in skill
         gitlab_ref = filtered_skill / "references" / "gitlab.md"
         assert gitlab_ref.exists() == ("gitlab" in expected)
         if gitlab_ref.exists():

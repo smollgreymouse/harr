@@ -20,6 +20,7 @@ $script:WindowsDir = Join-Path $LibExecDir 'windows'
 $script:Manager = Join-Path $CommonDir 'mcp\manager.py'
 $script:Selector = Join-Path $CommonDir 'mcp\selector.py'
 $script:Assets = Join-Path $CommonDir 'mcp\assets.py'
+$script:AsaConfig = Join-Path $CommonDir 'agents\asa_config.py'
 $script:McpCatalog = Join-Path $CommonDir 'mcp\registry.json'
 $script:NpmPrefix = Join-Path $HarrRoot 'share\npm'
 $script:NpmBin = Join-Path $NpmPrefix 'node_modules\.bin'
@@ -126,9 +127,11 @@ function Read-Adapter([string]$Name) {
 function Render-Policy([string]$Agent) {
     $text = Get-Content -Raw -LiteralPath (Join-Path $CommonDir 'policy\tool-routing.template.md')
     $adapter = Read-Adapter $Agent
-    foreach ($name in @('CTX_READ','CTX_SHELL','CTX_SEARCH','CTX_GLOB','CTX_TOOLS','CTX_CALL','HOST_NATIVE_POLICY')) {
+    foreach ($name in @('CTX_READ','CTX_SHELL','CTX_SEARCH','CTX_GLOB','CTX_TOOLS','CTX_CALL','HOST_ORCHESTRATION_POLICY','HOST_NATIVE_POLICY')) {
         if (-not $adapter.ContainsKey($name)) { throw "Incomplete Harr host adapter: $Agent ($name missing)" }
-        $text = $text.Replace("{{$name}}", [string]$adapter[$name])
+        $value = [string]$adapter[$name]
+        if ($name -eq 'HOST_ORCHESTRATION_POLICY' -and (($Agent -ne 'codex') -or -not (Test-OrchestrationEnabled))) { $value = '' }
+        $text = $text.Replace("{{$name}}", $value)
     }
     Ensure-McpEffective
     $input = [IO.Path]::GetTempFileName()
@@ -160,6 +163,24 @@ function Install-HarrSkill([string]$Target) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
     [void](Invoke-Python @($Assets, 'filter-skill', '--catalog', $McpCatalog, '--registry', $McpEffective, '--source', (Join-Path $CommonDir 'skills\harr'), '--output', $Target))
 }
+function Remove-HarrManagedSkill([string]$Target) {
+    $skillFile = Join-Path $Target 'SKILL.md'
+    if ((Test-Path -LiteralPath $skillFile) -and (Select-String -LiteralPath $skillFile -SimpleMatch '<!-- harr-managed-skill-v1 -->' -Quiet)) {
+        Remove-Item -LiteralPath $Target -Recurse -Force
+    }
+}
+function Invoke-AsaConfig([string[]]$Args, [switch]$AllowFailure) {
+    $env:HARR_CONFIG_DIR = $HarrConfig
+    $env:CODEX_HOME = $CodexHome
+    return Invoke-Python -CommandArgs (@($AsaConfig) + @($Args)) -AllowFailure:$AllowFailure
+}
+function Test-OrchestrationEnabled {
+    $code = Invoke-AsaConfig @('enabled') -AllowFailure
+    return ($code -eq 0)
+}
+function Sync-AsaRole {
+    [void](Invoke-AsaConfig @('sync','--force'))
+}
 
 function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
@@ -176,16 +197,19 @@ function Apply-Agents([string]$Requested = 'all') {
         Write-Utf8 $policy (Render-Policy $agent)
         Copy-TreeFresh (Join-Path $CommonDir 'skills\lean-ctx') (Join-Path $skillRoot 'lean-ctx')
         Install-HarrSkill (Join-Path $skillRoot 'harr')
-        $gigaSkill = Join-Path $skillRoot 'gigacode-executor'
-        $gigaSkillFile = Join-Path $gigaSkill 'SKILL.md'
-        if ((Test-Path -LiteralPath $gigaSkillFile) -and (Select-String -LiteralPath $gigaSkillFile -SimpleMatch '<!-- harr-managed-skill-v1 -->' -Quiet)) {
-            Remove-Item -LiteralPath $gigaSkill -Recurse -Force
+        Remove-HarrManagedSkill (Join-Path $skillRoot 'gigacode-executor')
+        Remove-HarrManagedSkill (Join-Path $skillRoot 'einherjar-worker')
+        if ($agent -eq 'codex' -and (Test-OrchestrationEnabled)) {
+            Copy-TreeFresh (Join-Path $CommonDir 'skills\asa') (Join-Path $skillRoot 'asa')
+        } else {
+            Remove-HarrManagedSkill (Join-Path $skillRoot 'asa')
         }
-        $einherjarSkill = Join-Path $skillRoot 'einherjar-worker'
+        if ($agent -eq 'codex') { Sync-AsaRole }
+        $einSkill = Join-Path $skillRoot 'ein'
         if ($einherjarEnabled) {
-            Copy-TreeFresh (Join-Path $CommonDir 'skills\einherjar-worker') $einherjarSkill
-        } elseif (Test-Path -LiteralPath $einherjarSkill) {
-            Remove-Item -LiteralPath $einherjarSkill -Recurse -Force
+            Copy-TreeFresh (Join-Path $CommonDir 'skills\ein') $einSkill
+        } else {
+            Remove-HarrManagedSkill $einSkill
         }
         Write-Host "Applied Harr-owned global policy for ${agent}: $policy"
     }

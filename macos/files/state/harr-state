@@ -34,10 +34,14 @@ item_target() {
     codex-skill-leanctx) printf '%s\n' "${CODEX_HOME_REAL}/skills/lean-ctx" ;;
     codex-skill-gigacode) printf '%s\n' "${CODEX_HOME_REAL}/skills/gigacode-executor" ;;
     codex-skill-einherjar) printf '%s\n' "${CODEX_HOME_REAL}/skills/einherjar-worker" ;;
+    codex-skill-asa) printf '%s\n' "${CODEX_HOME_REAL}/skills/asa" ;;
+    codex-skill-ein) printf '%s\n' "${CODEX_HOME_REAL}/skills/ein" ;;
+    codex-agent-asa) printf '%s\n' "${CODEX_HOME_REAL}/agents/asa-architect.toml" ;;
     opencode-skill-harr) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/harr" ;;
     opencode-skill-leanctx) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/lean-ctx" ;;
     opencode-skill-gigacode) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/gigacode-executor" ;;
     opencode-skill-einherjar) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/einherjar-worker" ;;
+    opencode-skill-ein) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/opencode/skills/ein" ;;
     leanctx-config) printf '%s\n' "${XDG_CONFIG_HOME_REAL}/lean-ctx/config.toml" ;;
     leanctx-launcher) printf '%s\n' "${HOME}/.local/bin/lean-ctx" ;;
     codegraph-launcher) printf '%s\n' "${HOME}/.local/bin/codegraph" ;;
@@ -60,8 +64,8 @@ item_target() {
 static_items() {
   printf '%s\n' \
     codex-agents codex-config opencode-agents opencode-jsonc opencode-json \
-    codex-skill-harr codex-skill-leanctx codex-skill-gigacode codex-skill-einherjar \
-    opencode-skill-harr opencode-skill-leanctx opencode-skill-gigacode opencode-skill-einherjar \
+    codex-skill-harr codex-skill-leanctx codex-skill-gigacode codex-skill-einherjar codex-skill-asa codex-skill-ein codex-agent-asa \
+    opencode-skill-harr opencode-skill-leanctx opencode-skill-gigacode opencode-skill-einherjar opencode-skill-ein \
     leanctx-config leanctx-launcher codegraph-launcher mcp-runner harr-launcher \
     harr-config-root harr-libexec-root harr-share-root \
     ocwf-command-build-log ocwf-command-build-ok ocwf-command-quick \

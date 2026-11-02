@@ -162,7 +162,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     assert 'fake-one::ein' in rendered.read_text() and 'fake-two::ein' in rendered.read_text()
     assert 'gigacode::ein' in rendered.read_text()
     assert 'gigacode::gigacode' not in rendered.read_text()
-    assert 'only after the user directly instructs you to delegate' in rendered.read_text()
+    policy_text = rendered.read_text()
+    assert 'Named Ein workflow: `$ein`' in policy_text
+    assert 'not authorization' not in policy_text
     # Legacy GigaCode's *entire* argument schema is shared, not only action names.
     legacy_source = ROOT/'common/mcp/ein_tool_schema.json'
     canonical_schema = json.loads(legacy_source.read_text())['inputSchema']

@@ -12,12 +12,35 @@
 
 A global harness for token-efficient MCP infrastructure.
 
+## Economical Codex orchestration
+
+Harr provides an opt-in Codex orchestration feature. It is **disabled by default**.
+When enabled, Harr installs an auto-discoverable `$asa` skill for unresolved
+material architecture decisions and a private Codex `asa-architect` role. The
+recommended economical profile keeps the long-lived chat on Luna and spends the
+architect model only on compact decision packets. Sequential implementation stays
+in that Luna root; native workers are reserved for genuinely independent parallel
+scopes.
+
+Enable or disable the feature explicitly; model/effort may be configured while it
+is disabled without activating it:
+
+```bash
+harr agents orchestration status
+harr agents orchestration enable
+harr agents orchestration disable
+harr agents asa configure --model gpt-6.1-sol --effort xhigh
+```
+
+Harr does not change the model of an already-running chat. Named external
+executors use the shared `$ein` workflow when configured.
+
 ## Named Ein CLI workers (PR #39)
 
 Harr manages any number of **user-named Ein MCP instances**. Every instance has a
 fixed adapter (`gigacode`, `opencode`, `codex`, or a custom command-template)
 with its own runtime state and configuration. Each publishes the **same**
-`<mcp-name>::ein` tool and shared `$einherjar-worker` skill, preserving the
+`<mcp-name>::ein` tool and shared `$ein` skill, preserving the
 legacy GigaCode action and argument schema. The GigaCode adapter reuses its
 established bridge for startup confirmation, lifecycle and Desktop progress.
 

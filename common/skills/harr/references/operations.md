@@ -13,6 +13,12 @@ harr leanctx apply
 harr leanctx status
 harr agents apply
 harr agents status
+harr agents orchestration status
+harr agents orchestration enable
+harr agents orchestration disable
+harr agents asa status
+harr agents asa configure --model MODEL --effort EFFORT
+harr agents asa apply
 harr git <git-arguments>
 harr git -C /absolute/repository/path <git-arguments>
 harr mcp available

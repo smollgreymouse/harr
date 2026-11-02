@@ -10,6 +10,7 @@ else
   readonly HARR_HOSTS_SOURCE_DIR="${HARR_COMMON_DIR}/hosts"
 fi
 readonly HARR_SKILL_MARKER='<!-- harr-managed-skill-v1 -->'
+readonly HARR_ASA_CONFIG="${HARR_COMMON_DIR}/agents/asa_config.py"
 readonly HARR_POLICY_START='<!-- harr-tool-policy:start -->'
 readonly HARR_CLEAN_SNAPSHOT="${HOME}/.local/share/harr/state/pre-harr/complete"
 
@@ -82,15 +83,62 @@ remove_managed_skill() {
   fi
 }
 
+asa_config() {
+  [[ -r "$HARR_ASA_CONFIG" ]] || die "Harr Asa config helper missing: $HARR_ASA_CONFIG"
+  require_command python3
+  env HARR_CONFIG_DIR="$HARR_CONFIG_DIR" CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}" python3 "$HARR_ASA_CONFIG" "$@"
+}
+
+orchestration_enabled() {
+  if asa_config enabled >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+sync_asa_role() {
+  asa_config sync --force
+}
+
+cmd_agents_orchestration() {
+  local sub="${1:-status}"
+  shift || true
+  [[ $# -eq 0 ]] || die 'usage: harr agents orchestration {status|enable|disable}'
+  case "$sub" in
+    status) asa_config status ;;
+    enable|disable)
+      require_clean_ownership
+      asa_config "$sub"
+      cmd_agents_apply codex
+      cmd_leanctx_apply
+      ;;
+    *) die 'usage: harr agents orchestration {status|enable|disable}' ;;
+  esac
+}
+
+cmd_agents_asa() {
+  local sub="${1:-status}"
+  shift || true
+  case "$sub" in
+    status) [[ $# -eq 0 ]] || die 'usage: harr agents asa status'; asa_config status ;;
+    configure) require_clean_ownership; asa_config configure "$@" --force ;;
+    apply) [[ $# -eq 0 ]] || die 'usage: harr agents asa apply'; require_clean_ownership; sync_asa_role ;;
+    *) die 'usage: harr agents asa {status|configure|apply}' ;;
+  esac
+}
+
 render_agent_policy() {
   local agent="$1" output="$2" adapter expanded
   adapter="$(agent_adapter "$agent")"
   [[ -r "$HARR_POLICY_TEMPLATE" ]] || die "Harr policy template missing: $HARR_POLICY_TEMPLATE"
   [[ -r "$adapter" ]] || die "Harr host adapter missing: $adapter"
-  local CTX_READ='' CTX_SHELL='' CTX_SEARCH='' CTX_GLOB='' CTX_TOOLS='' CTX_CALL='' HOST_NATIVE_POLICY=''
+  local CTX_READ='' CTX_SHELL='' CTX_SEARCH='' CTX_GLOB='' CTX_TOOLS='' CTX_CALL='' HOST_ORCHESTRATION_POLICY='' HOST_NATIVE_POLICY=''
   # shellcheck disable=SC1090
   source "$adapter"
   [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" && -n "$HOST_NATIVE_POLICY" ]] || die "incomplete Harr host adapter: $adapter"
+  if [[ "$agent" != codex ]] || ! orchestration_enabled; then
+    HOST_ORCHESTRATION_POLICY=''
+  fi
   expanded="$(mktemp)"
   sed \
     -e "s|{{CTX_READ}}|${CTX_READ}|g" \
@@ -99,6 +147,7 @@ render_agent_policy() {
     -e "s|{{CTX_GLOB}}|${CTX_GLOB}|g" \
     -e "s|{{CTX_TOOLS}}|${CTX_TOOLS}|g" \
     -e "s|{{CTX_CALL}}|${CTX_CALL}|g" \
+    -e "s|{{HOST_ORCHESTRATION_POLICY}}|${HOST_ORCHESTRATION_POLICY}|g" \
     -e "s|{{HOST_NATIVE_POLICY}}|${HOST_NATIVE_POLICY}|g" \
     "$HARR_POLICY_TEMPLATE" >"$expanded"
   filter_mcp_text "$expanded" "$output"
@@ -142,13 +191,22 @@ cmd_agents_apply() {
     if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
       install_one_skill "$agent" harr-workspace
     else
-      rm -rf -- "${root}/harr-workspace"
+      remove_managed_skill "$agent" harr-workspace
     fi
     remove_managed_skill "$agent" gigacode-executor
-    if ((einherjar_enabled)); then
-      install_one_skill "$agent" einherjar-worker
+    remove_managed_skill "$agent" einherjar-worker
+    if [[ "$agent" == codex ]] && orchestration_enabled; then
+      install_one_skill "$agent" asa
     else
-      rm -rf -- "${root}/einherjar-worker"
+      remove_managed_skill "$agent" asa
+    fi
+    if [[ "$agent" == codex ]]; then
+      sync_asa_role
+    fi
+    if ((einherjar_enabled)); then
+      install_one_skill "$agent" ein
+    else
+      remove_managed_skill "$agent" ein
     fi
   done < <(agent_targets "$requested")
 }
@@ -177,9 +235,12 @@ cmd_agents_status() {
   local agent ownership=missing
   [[ -f "$HARR_CLEAN_SNAPSHOT" ]] && ownership=clean
   printf 'ownership: %s\n' "$ownership"
-  printf '%-12s %-12s %-16s %-12s %s\n' AGENT POLICY LEAN-CTX-SKILL HARR-SKILL WORKSPACE-SKILL
+  printf 'orchestration: %s\n' "$(if orchestration_enabled; then printf enabled; else printf disabled; fi)"
+  printf '%-12s %-12s %-14s %-12s %-10s %-10s %s\n' AGENT POLICY LEAN-CTX HARR ASA EIN WORKSPACE
   for agent in codex opencode; do
-    printf '%-12s %-12s %-16s %-12s %s\n' "$agent" "$(policy_state "$agent")" "$(skill_state "$agent" lean-ctx)" "$(skill_state "$agent" harr)" "$(skill_state "$agent" harr-workspace)"
+    local asa_state='n/a'
+    [[ "$agent" == codex ]] && asa_state="$(skill_state "$agent" asa)"
+    printf '%-12s %-12s %-14s %-12s %-10s %-10s %s\n' "$agent" "$(policy_state "$agent")" "$(skill_state "$agent" lean-ctx)" "$(skill_state "$agent" harr)" "$asa_state" "$(skill_state "$agent" ein)" "$(skill_state "$agent" harr-workspace)"
   done
 }
 
@@ -189,7 +250,9 @@ cmd_agents() {
   case "$command" in
     apply) cmd_agents_apply "$@" ;;
     status) cmd_agents_status "$@" ;;
-    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode]' '  harr agents status' ;;
+    orchestration) cmd_agents_orchestration "$@" ;;
+    asa) cmd_agents_asa "$@" ;;
+    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode]' '  harr agents status' '  harr agents orchestration {status|enable|disable}' '  harr agents asa status' '  harr agents asa configure [--model MODEL] [--effort EFFORT]' '  harr agents asa apply' ;;
     *) die "unknown agents command: $command (see harr help)" ;;
   esac
 }
