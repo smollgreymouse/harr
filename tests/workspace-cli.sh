@@ -5,7 +5,13 @@ REAL="${LEANCTX_TEST_BIN:?set LEANCTX_TEST_BIN to the multi-root LeanCTX develop
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 export HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/config"
 export HARR_LEANCTX_REAL="$REAL" HARR_MCP_EFFECTIVE="$ROOT/common/mcp/registry.json"
-mkdir -p "$HOME" "$TMP/repo/.git" "$TMP/extra" "$TMP/extra2"
+mkdir -p "$HOME" "$TMP/repo" "$TMP/extra" "$TMP/extra2"
+git -C "$TMP/repo" init -q
+git -C "$TMP/repo" config user.email workspace@example.invalid
+git -C "$TMP/repo" config user.name "Workspace Test"
+printf 'primary\n' >"$TMP/repo/tracked.txt"
+git -C "$TMP/repo" add tracked.txt
+git -C "$TMP/repo" commit -qm initial
 cd "$TMP/repo"
 "$ROOT/linux/harr" workspace show >"$TMP/show1.json"
 "$ROOT/linux/harr" workspace sync "$TMP/repo" "$TMP/extra" "$TMP/extra" "$TMP/extra2" >"$TMP/sync.json"
