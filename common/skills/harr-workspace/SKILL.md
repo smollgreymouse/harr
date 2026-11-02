@@ -48,7 +48,7 @@ paths = [/absolute/current/project, /absolute/extra/root, ...]
 
 `workspace_sync` only **adds** missing roots. It never removes existing roots. The server rejects filesystem root, the user home directory, and broad parents of the Workspace primary root. Harr canonicalizes paths, skips the primary root, already-present roots and duplicate inputs, and performs revisioned additions against the live Workspace store.
 
-4. Read the Workspace again with `harr-workspace::workspace_get` and report which roots were added or skipped.
+4. Read the Workspace again with `harr-workspace::workspace_get` and report which roots were added or skipped. If Harr returns Workspace `warnings`, surface them to the user together with any provided `remove_command`; do not remove a warned root automatically.
 
 ### CLI fallback
 

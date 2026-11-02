@@ -125,8 +125,27 @@ def tools() -> list[dict]:
     ]
 
 
+def warning_text(payload: dict) -> str:
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list) or not warnings:
+        return ""
+    lines = []
+    for warning in warnings:
+        if not isinstance(warning, dict):
+            continue
+        message = warning.get("message")
+        command = warning.get("remove_command")
+        if not isinstance(message, str):
+            continue
+        if isinstance(command, str):
+            lines.append(f"WARNING: {message} Remove with: {command}")
+        else:
+            lines.append(f"WARNING: {message}")
+    return "\n" + "\n".join(lines) if lines else ""
+
+
 def tool_result(payload: dict, text: str) -> dict:
-    return {"content": [{"type": "text", "text": text}], "structuredContent": payload}
+    return {"content": [{"type": "text", "text": text + warning_text(payload)}], "structuredContent": payload}
 
 
 def dispatch(request: dict) -> None:

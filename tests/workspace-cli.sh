@@ -15,28 +15,75 @@ stale_rc=$?
 set -e
 [[ $stale_rc -ne 0 ]]
 grep -qi 'revision' "$TMP/stale.err"
+
 "$ROOT/linux/harr" workspace remove "$TMP/extra2" --expected-revision 3 >"$TMP/remove-extra2.json"
 rm -rf "$TMP/extra"
-"$ROOT/linux/harr" workspace remove "$TMP/extra" --expected-revision 4 >"$TMP/remove-extra.json"
+"$ROOT/linux/harr" workspace show >"$TMP/show-stale.json"
+"$ROOT/linux/harr" workspace list >"$TMP/list-stale.json"
+
+mkdir -p "$TMP/independent"
+git -C "$TMP/independent" init -q
+git -C "$TMP/independent" config user.email workspace@example.invalid
+git -C "$TMP/independent" config user.name "Workspace Test"
+printf 'independent\n' >"$TMP/independent/tracked.txt"
+git -C "$TMP/independent" add tracked.txt
+git -C "$TMP/independent" commit -qm initial
+"$ROOT/linux/harr" workspace sync "$TMP/independent" >"$TMP/sync-with-stale.json"
+
+"$ROOT/linux/harr" workspace remove "$TMP/extra" --expected-revision 5 >"$TMP/remove-stale.json"
 mkdir -p "$TMP/extra"
-"$ROOT/linux/harr" workspace add "$TMP/extra" --expected-revision 5 >"$TMP/add.json"
+"$ROOT/linux/harr" workspace add "$TMP/extra" --expected-revision 6 >"$TMP/add.json"
 "$ROOT/linux/harr" workspace show >"$TMP/show2.json"
 "$ROOT/linux/harr" workspace list >"$TMP/list.json"
-"$ROOT/linux/harr" workspace remove "$TMP/extra" --expected-revision 6 >"$TMP/remove.json"
+"$ROOT/linux/harr" workspace remove "$TMP/extra" --expected-revision 7 >"$TMP/remove-extra.json"
+"$ROOT/linux/harr" workspace remove "$TMP/independent" --expected-revision 8 >"$TMP/remove-independent.json"
+
 python3 - "$TMP" <<'PY2'
 import json,sys
 from pathlib import Path
-p=Path(sys.argv[1]); s1=json.loads((p/'show1.json').read_text()); sync=json.loads((p/'sync.json').read_text()); add=json.loads((p/'add.json').read_text()); s2=json.loads((p/'show2.json').read_text()); ls=json.loads((p/'list.json').read_text()); rem=json.loads((p/'remove.json').read_text())
+p=Path(sys.argv[1])
+s1=json.loads((p/'show1.json').read_text())
+sync=json.loads((p/'sync.json').read_text())
+stale_show=json.loads((p/'show-stale.json').read_text())
+stale_list=json.loads((p/'list-stale.json').read_text())
+sync_stale=json.loads((p/'sync-with-stale.json').read_text())
+remove_stale=json.loads((p/'remove-stale.json').read_text())
+add=json.loads((p/'add.json').read_text())
+s2=json.loads((p/'show2.json').read_text())
+ls=json.loads((p/'list.json').read_text())
+remove_extra=json.loads((p/'remove-extra.json').read_text())
+remove_independent=json.loads((p/'remove-independent.json').read_text())
+
 assert s1['revision']==1 and s1['additional']==[]
 assert sync['revision']==3 and sync['sync']['added']==[str(p/'extra'),str(p/'extra2')]
 reasons={(x['path'],x['reason']) for x in sync['sync']['skipped']}
 assert (str((p/'repo').resolve()),'primary') in reasons
 assert (str((p/'extra').resolve()),'duplicate-input') in reasons
-assert add['revision']==6 and str(p/'extra') in add['additional']
-assert s2['revision']==6 and str(p/'extra') in s2['additional']
-assert len(ls)==1 and ls[0]['primary']==str((p/'repo').resolve())
-assert rem['revision']==7 and rem['additional']==[]
-print('PASS: harr workspace sync/show/list/add/remove with CAS conflict')
+
+warning=stale_show['warnings'][0]
+assert warning['code']=='workspace-root-missing'
+assert warning['path']==str(p/'extra')
+assert warning['state']=='missing'
+assert warning['remove_command']==f"harr workspace remove {p/'extra'}"
+row=next(item for item in stale_list if item.get('primary')==str((p/'repo').resolve()))
+assert row['warnings']==stale_show['warnings']
+
+assert sync_stale['revision']==5
+assert sync_stale['sync']['added']==[str((p/'independent').resolve())]
+assert str(p/'extra') in sync_stale['additional']
+assert str((p/'independent').resolve()) in sync_stale['additional']
+assert sync_stale['warnings'][0]['code']=='workspace-root-missing'
+
+assert remove_stale['revision']==6 and str(p/'extra') not in remove_stale['additional']
+assert 'warnings' not in remove_stale
+assert add['revision']==7 and str(p/'extra') in add['additional']
+assert s2['revision']==7 and set(s2['additional'])=={str(p/'extra'),str((p/'independent').resolve())}
+assert 'warnings' not in s2
+row=next(item for item in ls if item.get('primary')==str((p/'repo').resolve()))
+assert 'warnings' not in row
+assert remove_extra['revision']==8 and str(p/'extra') not in remove_extra['additional']
+assert remove_independent['revision']==9 and remove_independent['additional']==[]
+print('PASS: stale Workspace roots warn with cleanup command and do not block independent Git additions')
 PY2
 
 

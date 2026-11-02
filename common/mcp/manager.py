@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -793,6 +794,47 @@ def read_workspace_state(real: str | Path, store: Path) -> dict:
         raise SystemExit(f"invalid Workspace JSON from LeanCTX: {exc}") from exc
 
 
+def workspace_warnings(state: dict) -> list[dict]:
+    status_messages = {
+        "missing": ("workspace-root-missing", "Configured Workspace root is missing and inactive.", True),
+        "unavailable": ("workspace-root-unavailable", "Configured Workspace root is unavailable and inactive.", False),
+        "unsafe": ("workspace-root-unsafe", "Configured Workspace root no longer resolves to a safe active directory.", False),
+        "identity_mismatch": ("workspace-root-identity-mismatch", "Configured Git checkout identity no longer matches this Workspace root.", True),
+        "sibling_worktree": ("workspace-root-sibling-worktree", "Legacy sibling worktree is inactive Workspace authority.", True),
+    }
+    warnings: list[dict] = []
+    statuses = state.get("additional_statuses")
+    if not isinstance(statuses, list):
+        return warnings
+    for status in statuses:
+        if not isinstance(status, dict):
+            continue
+        configured = status.get("configured")
+        root_state = status.get("state")
+        if not isinstance(configured, str) or root_state not in status_messages:
+            continue
+        code, message, removable = status_messages[root_state]
+        warning = {
+            "code": code,
+            "path": configured,
+            "state": root_state,
+            "message": message,
+        }
+        if removable:
+            warning["remove_command"] = shlex.join(["harr", "workspace", "remove", configured])
+        warnings.append(warning)
+    return warnings
+
+
+def with_workspace_warnings(payload: dict) -> dict:
+    warnings = workspace_warnings(payload)
+    if warnings:
+        payload["warnings"] = warnings
+    else:
+        payload.pop("warnings", None)
+    return payload
+
+
 def workspace_command(args: argparse.Namespace) -> None:
     real = Path(args.real).expanduser().resolve()
     if not real.is_file():
@@ -809,7 +851,7 @@ def workspace_command(args: argparse.Namespace) -> None:
                     "error": str(exc),
                 })
                 continue
-            rows.append({"store": str(store), "status": "ok", **state})
+            rows.append(with_workspace_warnings({"store": str(store), "status": "ok", **state}))
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
 
@@ -825,7 +867,7 @@ def workspace_command(args: argparse.Namespace) -> None:
         else:
             payload["activePrimary"] = str(primary)
             payload["primaryStatus"] = "active"
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(json.dumps(with_workspace_warnings(payload), ensure_ascii=False, indent=2))
         return
 
     def resolve_target(raw: str, *, require_directory: bool = True) -> Path:
@@ -873,7 +915,8 @@ def workspace_command(args: argparse.Namespace) -> None:
             state = json.loads(result.stdout)
             existing.add(target_text)
             added.append(target_text)
-        print(json.dumps({"store": str(store), **state, "sync": {"added": added, "skipped": skipped}}, ensure_ascii=False, indent=2))
+        payload = {"store": str(store), **state, "sync": {"added": added, "skipped": skipped}}
+        print(json.dumps(with_workspace_warnings(payload), ensure_ascii=False, indent=2))
         return
 
     if len(args.paths) != 1:
@@ -885,7 +928,7 @@ def workspace_command(args: argparse.Namespace) -> None:
     if result.returncode != 0:
         raise SystemExit(result.stderr.strip() or result.stdout.strip() or f"workspace {operation} failed")
     updated = json.loads(result.stdout)
-    print(json.dumps({"store": str(store), **updated}, ensure_ascii=False, indent=2))
+    print(json.dumps(with_workspace_warnings({"store": str(store), **updated}), ensure_ascii=False, indent=2))
 
 
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
