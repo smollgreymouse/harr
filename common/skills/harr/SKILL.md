@@ -24,7 +24,7 @@ harr mcp configure
 harr secret status
 ```
 
-Use `harr doctor` for end-to-end failures. Repair mutates Harr-owned runtime state: run `--repair` only when the user asked to repair/restore/fix/recover. If repair is `BLOCKED` or `ROLLED_BACK`, stop and report the evidence rather than inventing a second repair path.
+Use `harr doctor NAME` for end-to-end failures. Never run `harr doctor --repair` merely because doctor reports a failure. Repair mutates Harr-owned runtime state: run `--repair` only when the user explicitly asks to repair, restore, fix, recover, or equivalent. If repair is `BLOCKED` or `ROLLED_BACK`, stop and report the evidence rather than inventing a second repair path.
 
 Do not bypass Harr with upstream installers or manual replacement of Harr-owned runtime/config files.
 
