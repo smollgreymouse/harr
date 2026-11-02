@@ -169,10 +169,10 @@ function Remove-HarrManagedSkill([string]$Target) {
         Remove-Item -LiteralPath $Target -Recurse -Force
     }
 }
-function Invoke-AsaConfig([string[]]$Args, [switch]$AllowFailure) {
+function Invoke-AsaConfig([string[]]$CommandArgs, [switch]$AllowFailure) {
     $env:HARR_CONFIG_DIR = $HarrConfig
     $env:CODEX_HOME = $CodexHome
-    return Invoke-Python -CommandArgs (@($AsaConfig) + @($Args)) -AllowFailure:$AllowFailure
+    return Invoke-Python -CommandArgs (@($AsaConfig) + @($CommandArgs)) -AllowFailure:$AllowFailure
 }
 function Test-OrchestrationEnabled {
     $code = Invoke-AsaConfig @('enabled') -AllowFailure
