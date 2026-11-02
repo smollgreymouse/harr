@@ -282,7 +282,7 @@ grep -q 'harr workspace sync' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
-grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-unified.4"' "${ROOT}/linux/files/harr-cli/components.sh"
+grep -q 'HARR_LEANCTX_BUILD="3.11.0-harr-unified.5"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'HARR_LEANCTX_REPO="smollgreymouse/lean-ctx"' "${ROOT}/linux/files/harr-cli/components.sh"
 grep -q 'references/git.md' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/harr/references/git.md" ]]

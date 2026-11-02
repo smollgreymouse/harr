@@ -10,4 +10,6 @@ The release also retains the current master improvements after 0.3.4, including 
 
 Named Ein executors remain explicit delegation targets. Their shared workflow skill is now `$ein`; legacy Harr-managed `$einherjar-worker` skill installations are migrated away without enabling orchestration.
 
-LeanCTX remains pinned to `harr-v3.11.0-unified.4@afc9715d6d5a`.
+Workspace handling now tolerates missing legacy additional roots when adding an independent Git checkout. Harr surfaces inactive stale roots as structured warnings, including a `harr workspace remove ...` cleanup command when safe; roots are never removed automatically.
+
+LeanCTX remains pinned to `harr-v3.11.0-unified.5@b1f639e99b52`.
