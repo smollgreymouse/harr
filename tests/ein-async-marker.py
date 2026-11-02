@@ -32,7 +32,18 @@ def rpc(process: subprocess.Popen, number: int, method: str, params: dict | None
 
 
 def stop(process: subprocess.Popen) -> None:
-    process.terminate()
+    if os.name == "nt":
+        # The direct Ein fixture can still own a background worker whose cwd is
+        # the temporary workspace. Kill the Windows process tree so inherited
+        # pipe/cwd handles cannot keep the JSON-RPC reader and tempdir alive.
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
