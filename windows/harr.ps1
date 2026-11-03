@@ -90,7 +90,7 @@ switch ($command) {
                     Apply-Hosts
                     Restore-AgentHarness 'codex'
                     Restore-AgentHarness 'opencode'
-                    Sync-AsaRole
+                    Apply-Agents 'codex'
                     Apply-LeanCtx
                 }
             } else { throw 'usage: harr agents harness status|enable|disable' }

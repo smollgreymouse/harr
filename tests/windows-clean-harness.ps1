@@ -164,19 +164,31 @@ if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.5'")) { throw
     foreach ($path in @(
         (Join-Path $CodexDir 'skills\harr'),
         (Join-Path $CodexDir 'skills\lean-ctx'),
-        (Join-Path $CodexDir 'skills\asa'),
         (Join-Path $CodexDir 'skills\ein'),
-        (Join-Path $CodexDir 'agents\asa-architect.toml'),
         (Join-Path $OpenCodeDir 'skills\harr'),
         (Join-Path $OpenCodeDir 'skills\lean-ctx'),
         (Join-Path $OpenCodeDir 'skills\ein')
     )) {
-        if (Test-Path $path) { throw "Harness disable left agent artifact: $path" }
+        if (Test-Path $path) { throw "Harness disable left general Harr agent artifact: $path" }
     }
+    if (-not (Test-Path (Join-Path $CodexDir 'skills\asa\SKILL.md'))) { throw 'Harness disable incorrectly removed orthogonal Asa skill' }
+    if (-not (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml'))) { throw 'Harness disable incorrectly removed orthogonal Asa role' }
     $leanText = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
-    if ($leanText -match 'skills[\\/](harr|lean-ctx|asa|ein)') { throw 'Harness disable left agent skill allow-paths in LeanCTX' }
+    if ($leanText -match 'skills[\\/](harr|lean-ctx|ein)') { throw 'Harness disable left general agent skill allow-paths in LeanCTX' }
+    if (-not $leanText.Contains($asaLeanPath)) { throw 'Harness disable removed orthogonal Asa LeanCTX allow-path' }
+
+    & $installedHarr agents orchestration disable
+    if (Test-Path (Join-Path $CodexDir 'skills\asa')) { throw 'Orchestration disable while harness-off left Asa skill' }
+    if (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml')) { throw 'Orchestration disable while harness-off left Asa role' }
+    if ((Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')) -ne $before.CodexAgents) { throw 'Orchestration toggle while harness-off changed restored Codex policy' }
+    & $installedHarr agents orchestration enable
+    if (-not (Test-Path (Join-Path $CodexDir 'skills\asa\SKILL.md'))) { throw 'Orchestration enable while harness-off did not restore Asa skill' }
+    if (-not (Test-Path (Join-Path $CodexDir 'agents\asa-architect.toml'))) { throw 'Orchestration enable while harness-off did not restore Asa role' }
+    if ((Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')) -ne $before.CodexAgents) { throw 'Orchestration enable while harness-off changed restored Codex policy' }
+
     & $installedHarr agents apply all
     if (Test-Path (Join-Path $CodexDir 'skills\harr')) { throw 'agents apply re-enabled a disabled harness' }
+    if (-not (Test-Path (Join-Path $CodexDir 'skills\asa\SKILL.md'))) { throw 'agents apply while harness-off lost Asa skill' }
 
     & $installedHarr agents harness enable
     $orchestrationStatus = (& $installedHarr agents orchestration status | Out-String)

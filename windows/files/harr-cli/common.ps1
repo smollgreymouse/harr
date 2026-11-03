@@ -207,7 +207,7 @@ function Restore-AgentSnapshotItem([string]$Name) {
 }
 function Restore-AgentHarness([string]$Agent) {
     [string[]]$items = if ($Agent -eq 'codex') {
-        @('codex-agents','codex-skill-harr','codex-skill-leanctx','codex-skill-asa','codex-skill-ein','codex-agent-asa')
+        @('codex-agents','codex-skill-harr','codex-skill-leanctx','codex-skill-ein')
     } elseif ($Agent -eq 'opencode') {
         @('opencode-agents','opencode-skill-harr','opencode-skill-leanctx','opencode-skill-ein')
     } else { throw "Unknown agent: $Agent" }
@@ -217,7 +217,20 @@ function Restore-AgentHarness([string]$Agent) {
 function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
-    if (-not (Test-AgentHarnessEnabled)) { return }
+    if (-not (Test-AgentHarnessEnabled)) {
+        foreach ($agent in $agents) {
+            if ($agent -eq 'codex') {
+                $skillRoot = Agent-SkillRoot $agent
+                if (Test-OrchestrationEnabled) {
+                    Copy-TreeFresh (Join-Path $CommonDir 'skills\asa') (Join-Path $skillRoot 'asa')
+                } else {
+                    Remove-HarrManagedSkill (Join-Path $skillRoot 'asa')
+                }
+                Sync-AsaRole
+            }
+        }
+        return
+    }
     [bool]$einherjarEnabled = $false
     if (Test-Path -LiteralPath $McpEffective) {
         $registry = Get-Content -Raw -LiteralPath $McpEffective | ConvertFrom-Json

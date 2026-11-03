@@ -15,17 +15,15 @@ function Apply-LeanCtx {
     if (Test-AgentHarnessEnabled) {
         $renderArgs += @(
             '--allow-path', (Join-Path $CodexHome 'skills\harr'),
-            '--allow-path', (Join-Path $CodexHome 'skills\lean-ctx')
-        )
-        if (Test-OrchestrationEnabled) {
-            $renderArgs += @('--allow-path', (Join-Path $CodexHome 'skills\asa'))
-        }
-        $renderArgs += @(
+            '--allow-path', (Join-Path $CodexHome 'skills\lean-ctx'),
             '--allow-path', (Join-Path $CodexHome 'skills\ein'),
             '--allow-path', (Join-Path $OpenCodeHome 'skills\harr'),
             '--allow-path', (Join-Path $OpenCodeHome 'skills\lean-ctx'),
             '--allow-path', (Join-Path $OpenCodeHome 'skills\ein')
         )
+    }
+    if (Test-OrchestrationEnabled) {
+        $renderArgs += @('--allow-path', (Join-Path $CodexHome 'skills\asa'))
     }
     Invoke-Manager $renderArgs
     Write-Host "Applied Harr LeanCTX config from selected MCP registry: $LeanConfig"

@@ -7,8 +7,6 @@ import json
 import os
 from pathlib import Path
 
-from harness_config import is_enabled as agent_harness_enabled
-
 DEFAULT_MODEL = "gpt-6.1-sol"
 DEFAULT_EFFORT = "xhigh"
 DEFAULT_ENABLED = False
@@ -116,7 +114,7 @@ def apply_role(state: dict[str, object] | None = None, *, force: bool = False) -
 
 def sync_role(state: dict[str, object] | None = None, *, force: bool = False) -> Path | None:
     state = state or load_state()
-    if bool(state["enabled"]) and agent_harness_enabled():
+    if bool(state["enabled"]):
         return apply_role(state, force=force)
     remove_managed_role()
     return None
@@ -171,8 +169,6 @@ def main() -> int:
         print(f"Asa configured: model={state['model']} effort={state['effort']}")
         if path:
             print(f"Codex role: {path}")
-        elif not agent_harness_enabled():
-            print("Agent harness disabled; Asa role not installed")
         else:
             print("Orchestration disabled; Asa role not installed")
         return 0
@@ -181,8 +177,6 @@ def main() -> int:
         path = sync_role(state, force=args.force)
         if path:
             print(f"Asa role applied: {path}")
-        elif not agent_harness_enabled():
-            print("Agent harness disabled; Harr-managed Asa role absent")
         else:
             print("Orchestration disabled; Harr-managed Asa role absent")
         return 0

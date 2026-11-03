@@ -22,13 +22,14 @@ harr agents harness disable
 harr agents harness enable
 ```
 
-When disabled, Harr restores the pre-Harr global `AGENTS.md` and managed skill
-paths, removes Harr's Asa role and direct agent-facing MCP frontdoors (Workspace
-and named Ein panels/frontdoors), and removes agent-skill allow paths from the
-LeanCTX config. The LeanCTX MCP itself stays registered, and the selected tools
-remain available behind its gateway. The Asa orchestration setting is not
-changed; re-enabling the harness restores the agent surface according to that
-stored setting.
+When disabled, Harr restores the pre-Harr global `AGENTS.md`, removes the
+general Harr/LeanCTX/Workspace/Ein skills and direct agent-facing MCP frontdoors
+(Workspace and named Ein panels/frontdoors), and removes those general skill
+allow-paths from the LeanCTX config. The LeanCTX MCP itself stays registered,
+with the same selected downstream gateway and tool metadata. Asa is orthogonal:
+if orchestration is enabled, the `$asa` skill, `asa-architect` role and Asa
+allow-path remain active even while the Harr harness is disabled; its existing
+`harr agents orchestration enable|disable` switch continues to control them.
 
 ## Economical Codex orchestration
 

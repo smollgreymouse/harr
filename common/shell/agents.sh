@@ -148,7 +148,7 @@ cmd_agents_harness() {
       harness_config disable
       cmd_hosts_apply
       while IFS= read -r agent; do restore_agent_harness "$agent"; done < <(agent_targets all)
-      sync_asa_role
+      cmd_agents_apply codex
       cmd_leanctx_apply
       ;;
     *) die 'usage: harr agents harness {status|enable|disable}' ;;
@@ -233,7 +233,7 @@ restore_agent_harness() {
   local agent="$1" key
   case "$agent" in
     codex)
-      for key in codex-agents codex-skill-harr codex-skill-workspace codex-skill-leanctx codex-skill-asa codex-skill-ein codex-agent-asa; do
+      for key in codex-agents codex-skill-harr codex-skill-workspace codex-skill-leanctx codex-skill-ein; do
         restore_agent_snapshot_item "$key"
       done
       ;;
@@ -252,6 +252,16 @@ cmd_agents_apply() {
   [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode]'
   local agent skill root
   if ! agent_harness_enabled; then
+    while IFS= read -r agent; do
+      if [[ "$agent" == codex ]]; then
+        if orchestration_enabled; then
+          install_one_skill "$agent" asa
+        else
+          remove_managed_skill "$agent" asa
+        fi
+        sync_asa_role
+      fi
+    done < <(agent_targets "$requested")
     return
   fi
   local einherjar_enabled=0
