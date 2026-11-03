@@ -78,6 +78,8 @@ grep -q 'through `ctx_shell`' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'GitLab MR/pipeline' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Grafana dashboard work' "${CODEX_HOME}/AGENTS.md"
 grep -q 'lean-ctx_ctx_tools' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+"${HOME}/.local/bin/harr" agents harness status >"${TMP}/harness.default"
+grep -q 'Agent harness: enabled' "${TMP}/harness.default"
 # New orchestration is default-off and reversible.
 "${HOME}/.local/bin/harr" agents orchestration status >"${TMP}/orchestration.default"
 grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
@@ -91,6 +93,23 @@ grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
 grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 grep -q 'root is the sole agent router' "${CODEX_HOME}/AGENTS.md"
 grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
+"${HOME}/.local/bin/harr" agents harness disable
+"${HOME}/.local/bin/harr" agents orchestration status >"${TMP}/orchestration.still-enabled"
+grep -q 'Orchestration: enabled' "${TMP}/orchestration.still-enabled"
+grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+grep -q 'OLD OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+[[ ! -e "${CODEX_HOME}/skills/harr" ]]
+[[ ! -e "${CODEX_HOME}/skills/lean-ctx" ]]
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+! grep -Fq "${CODEX_HOME}/skills/" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+"${HOME}/.local/bin/harr" agents apply all
+[[ ! -e "${CODEX_HOME}/skills/harr" ]]
+"${HOME}/.local/bin/harr" agents harness enable
+[[ -f "${CODEX_HOME}/skills/harr/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/lean-ctx/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
 "${HOME}/.local/bin/harr" agents orchestration disable
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]

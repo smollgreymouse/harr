@@ -12,6 +12,24 @@
 
 A global harness for token-efficient MCP infrastructure.
 
+## MCP-only mode
+
+The agent-facing Harr harness can be disabled independently of MCP infrastructure:
+
+```bash
+harr agents harness status
+harr agents harness disable
+harr agents harness enable
+```
+
+When disabled, Harr restores the pre-Harr global `AGENTS.md` and managed skill
+paths, removes Harr's Asa role and direct agent-facing MCP frontdoors (Workspace
+and named Ein panels/frontdoors), and removes agent-skill allow paths from the
+LeanCTX config. The LeanCTX MCP itself stays registered, and the selected tools
+remain available behind its gateway. The Asa orchestration setting is not
+changed; re-enabling the harness restores the agent surface according to that
+stored setting.
+
 ## Economical Codex orchestration
 
 Harr provides an opt-in Codex orchestration feature. It is **disabled by default**.

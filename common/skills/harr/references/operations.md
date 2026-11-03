@@ -13,6 +13,9 @@ harr leanctx apply
 harr leanctx status
 harr agents apply
 harr agents status
+harr agents harness status
+harr agents harness enable
+harr agents harness disable
 harr agents orchestration status
 harr agents orchestration enable
 harr agents orchestration disable
@@ -33,6 +36,8 @@ harr secret unset grafana
 <!-- harr-mcp:grafana:end -->
 harr secret status
 ```
+
+`harr agents harness disable` switches Harr to MCP-only mode: the pre-Harr global agent policy/skill surface is restored, direct Harr agent-facing MCP frontdoors are removed, and LeanCTX remains registered with the selected gateway tools. This switch is orthogonal to `harr agents orchestration`; the stored Asa setting is preserved and becomes effective again when the harness is re-enabled.
 
 LeanCTX and CodeGraph are always enabled. Optional MCPs are selected globally with `harr mcp configure`; the same saved selection drives LeanCTX gateway generation, runtime packages, secrets/status, service lifecycle, global routing policy and the installed Harr skill/reference set.
 

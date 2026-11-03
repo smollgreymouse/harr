@@ -16,6 +16,7 @@ harr doctor [NAME]
 harr doctor [NAME] --repair [--dry-run]
 harr agents status
 harr agents apply [all|codex|opencode]
+harr agents harness {status|enable|disable}
 harr agents orchestration {status|enable|disable}
 harr agents asa status
 harr agents asa configure [--model MODEL] [--effort EFFORT]
