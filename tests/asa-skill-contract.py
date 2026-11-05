@@ -21,7 +21,16 @@ assert "unresolved material architecture decision" in skill
 assert "already fixed the decision" in skill
 assert "merely because work is large" in skill
 assert 'asa-architect' in skill
-assert 'fork_turns: "none"' in skill
+assert 'fork_turns: "all"' in skill
+assert 'fork_turns: "none"' not in skill
+assert "exact question to resolve" in skill
+assert "competing alternatives or constraints" in skill
+assert "chosen solution and rationale" in skill
+assert "rejected alternatives" in skill
+assert "invariants and risks" in skill
+assert "unresolved questions" in skill
+assert "existing implementation owner" in skill
+assert "SAME owner" in skill
 assert "SAME architect" in skill
 assert "gpt-6.1-sol" not in skill
 assert "xhigh" not in skill.lower()
@@ -72,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert parsed["skills"]["include_instructions"] is False
 
     instructions = parsed["developer_instructions"]
-    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts"):
+    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions"):
         assert needle in instructions
 
     # Non-Harr role remains fail-closed unless an owning caller explicitly forces takeover.
