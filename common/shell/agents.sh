@@ -11,8 +11,10 @@ else
 fi
 readonly HARR_SKILL_MARKER='<!-- harr-managed-skill-v1 -->'
 readonly HARR_ASA_CONFIG="${HARR_COMMON_DIR}/agents/asa_config.py"
+readonly HARR_HARNESS_CONFIG="${HARR_COMMON_DIR}/agents/harness_config.py"
 readonly HARR_POLICY_START='<!-- harr-tool-policy:start -->'
 readonly HARR_CLEAN_SNAPSHOT="${HOME}/.local/share/harr/state/pre-harr/complete"
+readonly HARR_PRE_HARR_SNAPSHOT="${HOME}/.local/share/harr-state/pre-harr"
 
 require_clean_ownership() {
   [[ -f "$HARR_CLEAN_SNAPSHOT" ]] || die 'Harr has not taken clean ownership of the global harness; run the repository installer with --clean first'
@@ -89,6 +91,16 @@ asa_config() {
   env HARR_CONFIG_DIR="$HARR_CONFIG_DIR" CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}" python3 "$HARR_ASA_CONFIG" "$@"
 }
 
+harness_config() {
+  [[ -r "$HARR_HARNESS_CONFIG" ]] || die "Harr agent harness config helper missing: $HARR_HARNESS_CONFIG"
+  require_command python3
+  env HARR_CONFIG_DIR="$HARR_CONFIG_DIR" python3 "$HARR_HARNESS_CONFIG" "$@"
+}
+
+agent_harness_enabled() {
+  harness_config enabled >/dev/null 2>&1
+}
+
 orchestration_enabled() {
   if asa_config enabled >/dev/null 2>&1; then
     return 0
@@ -113,6 +125,33 @@ cmd_agents_orchestration() {
       cmd_leanctx_apply
       ;;
     *) die 'usage: harr agents orchestration {status|enable|disable}' ;;
+  esac
+}
+
+cmd_agents_harness() {
+  local sub="${1:-status}" agent
+  shift || true
+  [[ $# -eq 0 ]] || die 'usage: harr agents harness {status|enable|disable}'
+  case "$sub" in
+    status) harness_config status ;;
+    enable)
+      require_clean_ownership
+      if agent_harness_enabled; then harness_config status; return; fi
+      harness_config enable
+      cmd_hosts_apply
+      cmd_agents_apply all
+      cmd_leanctx_apply
+      ;;
+    disable)
+      require_clean_ownership
+      if ! agent_harness_enabled; then harness_config status; return; fi
+      harness_config disable
+      cmd_hosts_apply
+      while IFS= read -r agent; do restore_agent_harness "$agent"; done < <(agent_targets all)
+      cmd_agents_apply codex
+      cmd_leanctx_apply
+      ;;
+    *) die 'usage: harr agents harness {status|enable|disable}' ;;
   esac
 }
 
@@ -177,11 +216,54 @@ policy_state() {
   rm -f -- "$rendered"
 }
 
+restore_agent_snapshot_item() {
+  local key="$1" dir target existed
+  dir="${HARR_PRE_HARR_SNAPSHOT}/items/${key}"
+  [[ -r "${dir}/target" && -r "${dir}/existed" ]] || return 0
+  target="$(cat "${dir}/target")"
+  existed="$(cat "${dir}/existed")"
+  rm -rf -- "$target"
+  if [[ "$existed" == 1 ]]; then
+    install -d -m 0755 "$(dirname -- "$target")"
+    cp -a -- "${dir}/payload" "$target"
+  fi
+}
+
+restore_agent_harness() {
+  local agent="$1" key
+  case "$agent" in
+    codex)
+      for key in codex-agents codex-skill-harr codex-skill-workspace codex-skill-leanctx codex-skill-ein; do
+        restore_agent_snapshot_item "$key"
+      done
+      ;;
+    opencode)
+      for key in opencode-agents opencode-skill-harr opencode-skill-workspace opencode-skill-leanctx opencode-skill-ein; do
+        restore_agent_snapshot_item "$key"
+      done
+      ;;
+    *) die "unknown agent: $agent" ;;
+  esac
+}
+
 cmd_agents_apply() {
   require_clean_ownership
   local requested="${1:-all}"
   [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode]'
   local agent skill root
+  if ! agent_harness_enabled; then
+    while IFS= read -r agent; do
+      if [[ "$agent" == codex ]]; then
+        if orchestration_enabled; then
+          install_one_skill "$agent" asa
+        else
+          remove_managed_skill "$agent" asa
+        fi
+        sync_asa_role
+      fi
+    done < <(agent_targets "$requested")
+    return
+  fi
   local einherjar_enabled=0
   if grep -q '"ein_instance"' "$HARR_MCP_EFFECTIVE" 2>/dev/null; then einherjar_enabled=1; fi
   while IFS= read -r agent; do
@@ -235,6 +317,7 @@ cmd_agents_status() {
   local agent ownership=missing
   [[ -f "$HARR_CLEAN_SNAPSHOT" ]] && ownership=clean
   printf 'ownership: %s\n' "$ownership"
+  printf 'harness: %s\n' "$(if agent_harness_enabled; then printf enabled; else printf disabled; fi)"
   printf 'orchestration: %s\n' "$(if orchestration_enabled; then printf enabled; else printf disabled; fi)"
   printf '%-12s %-12s %-14s %-12s %-10s %-10s %s\n' AGENT POLICY LEAN-CTX HARR ASA EIN WORKSPACE
   for agent in codex opencode; do
@@ -250,9 +333,10 @@ cmd_agents() {
   case "$command" in
     apply) cmd_agents_apply "$@" ;;
     status) cmd_agents_status "$@" ;;
+    harness) cmd_agents_harness "$@" ;;
     orchestration) cmd_agents_orchestration "$@" ;;
     asa) cmd_agents_asa "$@" ;;
-    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode]' '  harr agents status' '  harr agents orchestration {status|enable|disable}' '  harr agents asa status' '  harr agents asa configure [--model MODEL] [--effort EFFORT]' '  harr agents asa apply' ;;
+    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode]' '  harr agents status' '  harr agents harness {status|enable|disable}' '  harr agents orchestration {status|enable|disable}' '  harr agents asa status' '  harr agents asa configure [--model MODEL] [--effort EFFORT]' '  harr agents asa apply' ;;
     *) die "unknown agents command: $command (see harr help)" ;;
   esac
 }

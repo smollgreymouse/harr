@@ -21,6 +21,7 @@ $script:Manager = Join-Path $CommonDir 'mcp\manager.py'
 $script:Selector = Join-Path $CommonDir 'mcp\selector.py'
 $script:Assets = Join-Path $CommonDir 'mcp\assets.py'
 $script:AsaConfig = Join-Path $CommonDir 'agents\asa_config.py'
+$script:HarnessConfig = Join-Path $CommonDir 'agents\harness_config.py'
 $script:McpCatalog = Join-Path $CommonDir 'mcp\registry.json'
 $script:NpmPrefix = Join-Path $HarrRoot 'share\npm'
 $script:NpmBin = Join-Path $NpmPrefix 'node_modules\.bin'
@@ -33,6 +34,7 @@ $script:SecretsDir = Join-Path $HarrConfig 'secrets'
 $script:LeanConfigDir = Join-Path $ConfigHome 'lean-ctx'
 $script:LeanConfig = Join-Path $LeanConfigDir 'config.toml'
 $script:StateRoot = Join-Path $LocalRoot 'HarrState'
+$script:PreHarr = Join-Path $StateRoot 'pre-harr'
 $script:StateHelper = Join-Path $StateRoot 'harr-state.ps1'
 $script:CleanMarker = Join-Path $StateRoot 'pre-harr\complete'
 $script:LeanCommand = Join-Path $BinDir 'lean-ctx.cmd'
@@ -174,6 +176,14 @@ function Invoke-AsaConfig([string[]]$CommandArgs, [switch]$AllowFailure) {
     $env:CODEX_HOME = $CodexHome
     return Invoke-Python -CommandArgs (@($AsaConfig) + @($CommandArgs)) -AllowFailure:$AllowFailure
 }
+function Invoke-HarnessConfig([string[]]$CommandArgs, [switch]$AllowFailure) {
+    $env:HARR_CONFIG_DIR = $HarrConfig
+    return Invoke-Python -CommandArgs (@($HarnessConfig) + @($CommandArgs)) -AllowFailure:$AllowFailure
+}
+function Test-AgentHarnessEnabled {
+    $code = Invoke-HarnessConfig @('enabled') -AllowFailure
+    return ($code -eq 0)
+}
 function Test-OrchestrationEnabled {
     $code = Invoke-AsaConfig @('enabled') -AllowFailure
     return ($code -eq 0)
@@ -181,10 +191,46 @@ function Test-OrchestrationEnabled {
 function Sync-AsaRole {
     [void](Invoke-AsaConfig @('sync','--force'))
 }
+function Restore-AgentSnapshotItem([string]$Name) {
+    $dir = Join-Path (Join-Path $PreHarr 'items') $Name
+    $targetFile = Join-Path $dir 'target.txt'
+    $existedFile = Join-Path $dir 'existed.txt'
+    if (-not (Test-Path -LiteralPath $targetFile) -or -not (Test-Path -LiteralPath $existedFile)) { return }
+    $target = (Get-Content -Raw -LiteralPath $targetFile).TrimEnd([char]13, [char]10)
+    $existed = (Get-Content -Raw -LiteralPath $existedFile).Trim()
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+    if ($existed -eq '1') {
+        $parent = Split-Path -Parent $target
+        if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+        Copy-Item -LiteralPath (Join-Path $dir 'payload') -Destination $target -Recurse -Force
+    }
+}
+function Restore-AgentHarness([string]$Agent) {
+    [string[]]$items = if ($Agent -eq 'codex') {
+        @('codex-agents','codex-skill-harr','codex-skill-leanctx','codex-skill-ein')
+    } elseif ($Agent -eq 'opencode') {
+        @('opencode-agents','opencode-skill-harr','opencode-skill-leanctx','opencode-skill-ein')
+    } else { throw "Unknown agent: $Agent" }
+    foreach ($name in $items) { Restore-AgentSnapshotItem $name }
+}
 
 function Apply-Agents([string]$Requested = 'all') {
     Require-CleanOwnership
     [string[]]$agents = if ($Requested -eq 'all') { @('codex','opencode') } elseif ($Requested -in @('codex','opencode')) { @($Requested) } else { throw 'usage: harr agents apply [all|codex|opencode]' }
+    if (-not (Test-AgentHarnessEnabled)) {
+        foreach ($agent in $agents) {
+            if ($agent -eq 'codex') {
+                $skillRoot = Agent-SkillRoot $agent
+                if (Test-OrchestrationEnabled) {
+                    Copy-TreeFresh (Join-Path $CommonDir 'skills\asa') (Join-Path $skillRoot 'asa')
+                } else {
+                    Remove-HarrManagedSkill (Join-Path $skillRoot 'asa')
+                }
+                Sync-AsaRole
+            }
+        }
+        return
+    }
     [bool]$einherjarEnabled = $false
     if (Test-Path -LiteralPath $McpEffective) {
         $registry = Get-Content -Raw -LiteralPath $McpEffective | ConvertFrom-Json

@@ -86,6 +86,9 @@ bash "${ROOT}/linux/files/state/harr-state" snapshot
 "${ROOT}/linux/harr" agents apply all
 "${ROOT}/linux/harr" hosts apply
 
+"${ROOT}/linux/harr" agents harness status >"${TMP}/harness.default"
+grep -q 'Agent harness: enabled' "${TMP}/harness.default"
+
 # Orchestration is opt-in: default/off installs neither Asa artifacts nor routing.
 "${ROOT}/linux/harr" agents orchestration status >"${TMP}/orchestration.default"
 grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
@@ -125,6 +128,100 @@ assert parsed['model'] == 'gpt-6-luna'
 assert parsed['model_reasoning_effort'] == 'high'
 assert parsed['skills']['include_instructions'] is False
 PY_ASA
+
+# The agent-harness switch must not alter the LeanCTX MCP surface or downstream gateway.
+python3 - <<'PY_LEANCTX_SURFACE' >"${TMP}/leanctx-surface.before"
+import json, os, tomllib
+from pathlib import Path
+lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
+assert 'ctx_tools' in lean['tools_enabled']
+print(json.dumps({'tools_enabled': lean['tools_enabled'], 'gateway': lean['gateway']}, sort_keys=True))
+PY_LEANCTX_SURFACE
+
+# Top-level harness disable is orthogonal to orchestration: it removes Harr-owned
+# routing policy/general skills/direct frontdoors, while Asa remains live on its own flag.
+"${ROOT}/linux/harr" agents harness disable
+"${ROOT}/linux/harr" agents harness status >"${TMP}/harness.disabled"
+grep -q 'Agent harness: disabled' "${TMP}/harness.disabled"
+"${ROOT}/linux/harr" agents orchestration status >"${TMP}/orchestration.still-enabled"
+grep -q 'Orchestration: enabled' "${TMP}/orchestration.still-enabled"
+grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+grep -q 'OLD OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+[[ ! -e "${CODEX_HOME}/skills/harr" ]]
+[[ ! -e "${CODEX_HOME}/skills/lean-ctx" ]]
+[[ ! -e "${CODEX_HOME}/skills/harr-workspace" ]]
+[[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
+[[ ! -e "${CODEX_HOME}/skills/ein" ]]
+[[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
+python3 - <<'PY_HARNESS_ASA_PATH'
+import os, tomllib
+from pathlib import Path
+lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
+assert lean['allow_paths'] == [str(Path(os.environ['CODEX_HOME']) / 'skills/asa')]
+PY_HARNESS_ASA_PATH
+! grep -Fq '[mcp_servers.harr-workspace]' "${CODEX_HOME}/config.toml"
+! grep -Fq '[mcp_servers.harr-workspace-app]' "${CODEX_HOME}/config.toml"
+! grep -Fq '"harr-workspace"' "${XDG_CONFIG_HOME}/opencode/opencode.jsonc"
+grep -Fq '[mcp_servers.lean-ctx]' "${CODEX_HOME}/config.toml"
+grep -Fq '"lean-ctx"' "${XDG_CONFIG_HOME}/opencode/opencode.jsonc"
+python3 - <<'PY_LEANCTX_SURFACE' >"${TMP}/leanctx-surface.after"
+import json, os, tomllib
+from pathlib import Path
+lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
+assert 'ctx_tools' in lean['tools_enabled']
+print(json.dumps({'tools_enabled': lean['tools_enabled'], 'gateway': lean['gateway']}, sort_keys=True))
+PY_LEANCTX_SURFACE
+cmp "${TMP}/leanctx-surface.before" "${TMP}/leanctx-surface.after"
+
+# Asa itself remains fully operable while the Harr harness is off.
+"${ROOT}/linux/harr" agents orchestration disable
+[[ ! -e "${CODEX_HOME}/skills/asa" ]]
+[[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+"${ROOT}/linux/harr" agents orchestration enable
+[[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+
+# Once disabled, Harr no longer owns the agent surface: later apply/setup paths
+# must not restore the old snapshot again or overwrite user changes.
+printf 'DISABLED USER CODEX POLICY\n' >"${CODEX_HOME}/AGENTS.md"
+printf 'DISABLED USER OPENCODE POLICY\n' >"${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+mkdir -p "${CODEX_HOME}/skills/harr"
+printf '%s\n' '# user-owned skill while Harr harness is disabled' >"${CODEX_HOME}/skills/harr/SKILL.md"
+"${ROOT}/linux/harr" agents apply all
+"${ROOT}/linux/harr" hosts apply
+"${ROOT}/linux/harr" leanctx apply
+grep -q 'DISABLED USER CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+grep -q 'DISABLED USER OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q 'user-owned skill while Harr harness is disabled' "${CODEX_HOME}/skills/harr/SKILL.md"
+! grep -Fq '[mcp_servers.harr-workspace]' "${CODEX_HOME}/config.toml"
+
+# A Harr refresh must also respect the persisted MCP-only mode.
+"${ROOT}/linux/install.sh" --harr-only
+grep -q 'DISABLED USER CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+grep -q 'DISABLED USER OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q 'user-owned skill while Harr harness is disabled' "${CODEX_HOME}/skills/harr/SKILL.md"
+! grep -Fq '[mcp_servers.harr-workspace]' "${CODEX_HOME}/config.toml"
+
+# Re-enable restores the harness and reactivates Asa because orchestration remained enabled.
+"${ROOT}/linux/harr" agents harness enable
+"${ROOT}/linux/harr" agents orchestration status >"${TMP}/orchestration.after-harness-enable"
+grep -q 'Orchestration: enabled' "${TMP}/orchestration.after-harness-enable"
+! grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
+[[ -f "${CODEX_HOME}/skills/harr/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/lean-ctx/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/harr-workspace/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
+[[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+grep -Fq '[mcp_servers.harr-workspace]' "${CODEX_HOME}/config.toml"
+grep -Fq '[mcp_servers.harr-workspace-app]' "${CODEX_HOME}/config.toml"
+grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
 # Explicit disable removes only the new orchestration feature and persists.
 "${ROOT}/linux/harr" agents orchestration disable
@@ -402,6 +499,29 @@ assert not (Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor').exists(
 assert (Path(os.environ['CODEX_HOME']) / 'skills/ein/SKILL.md').is_file()
 assert (Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/skills/ein/SKILL.md').is_file()
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker').exists()
+PY
+
+# MCP-only harness mode keeps named Ein behind LeanCTX but removes every direct/skill surface.
+"${ROOT}/linux/harr" agents harness disable
+"${ROOT}/linux/harr" ein apply
+python3 - <<'PY'
+import os, tomllib
+from pathlib import Path
+lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
+gateway_names = {server['name'] for server in lean['gateway']['servers']}
+assert {'giga-review', 'giga-builder'} <= gateway_names
+codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text())
+assert not {'harr-ein-ui', 'giga-review', 'giga-builder', 'harr-workspace', 'harr-workspace-app'} & set(codex['mcp_servers'])
+assert not (Path(os.environ['CODEX_HOME']) / 'skills/ein').exists()
+assert not (Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/skills/ein').exists()
+PY
+"${ROOT}/linux/harr" agents harness enable
+python3 - <<'PY'
+import os, tomllib
+from pathlib import Path
+codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text())
+assert {'harr-ein-ui', 'giga-review', 'giga-builder', 'harr-workspace', 'harr-workspace-app'} <= set(codex['mcp_servers'])
+assert (Path(os.environ['CODEX_HOME']) / 'skills/ein/SKILL.md').is_file()
 PY
 
 # A subsequent Harr refresh must preserve configured instance IDs.

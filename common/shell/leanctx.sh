@@ -17,25 +17,36 @@ cmd_leanctx_apply() {
   fi
   local codex_skills="${CODEX_HOME:-${HOME}/.codex}/skills"
   local opencode_skills="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
-  local allow_args=(--allow-path "${codex_skills}/harr")
-  if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
-    allow_args+=(--allow-path "${codex_skills}/harr-workspace")
+  local allow_args=()
+  if agent_harness_enabled; then
+    allow_args+=(--allow-path "${codex_skills}/harr")
+    if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
+      allow_args+=(--allow-path "${codex_skills}/harr-workspace")
+    fi
+    allow_args+=(--allow-path "${codex_skills}/lean-ctx")
+    allow_args+=(--allow-path "${codex_skills}/ein" --allow-path "${opencode_skills}/harr")
+    if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
+      allow_args+=(--allow-path "${opencode_skills}/harr-workspace")
+    fi
+    allow_args+=(--allow-path "${opencode_skills}/lean-ctx" --allow-path "${opencode_skills}/ein")
   fi
-  allow_args+=(--allow-path "${codex_skills}/lean-ctx")
   if orchestration_enabled; then
     allow_args+=(--allow-path "${codex_skills}/asa")
   fi
-  allow_args+=(--allow-path "${codex_skills}/ein" --allow-path "${opencode_skills}/harr")
-  if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
-    allow_args+=(--allow-path "${opencode_skills}/harr-workspace")
+  if (( ${#allow_args[@]} )); then
+    mcp_manager render-leanctx \
+      --base "$src" \
+      --output "$HARR_LEANCTX_CONFIG" \
+      --platform "${HARR_PLATFORM:-linux}" \
+      --runner-command harr-mcp-run \
+      "${allow_args[@]}"
+  else
+    mcp_manager render-leanctx \
+      --base "$src" \
+      --output "$HARR_LEANCTX_CONFIG" \
+      --platform "${HARR_PLATFORM:-linux}" \
+      --runner-command harr-mcp-run
   fi
-  allow_args+=(--allow-path "${opencode_skills}/lean-ctx" --allow-path "${opencode_skills}/ein")
-  mcp_manager render-leanctx \
-    --base "$src" \
-    --output "$HARR_LEANCTX_CONFIG" \
-    --platform "${HARR_PLATFORM:-linux}" \
-    --runner-command harr-mcp-run \
-    "${allow_args[@]}"
   chmod 0600 "$HARR_LEANCTX_CONFIG"
   printf 'Applied Harr LeanCTX config from selected MCP registry: %s\n' "$HARR_LEANCTX_CONFIG"
   if [[ -x "${HOME}/.local/bin/lean-ctx" ]] && ! "${HOME}/.local/bin/lean-ctx" config validate >/dev/null 2>&1; then

@@ -7,6 +7,9 @@ from pathlib import Path
 import sys
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from common.agents.harness_config import is_enabled as agent_harness_enabled
 
 MCP_TOOL_TIMEOUT_MS = 1900000
 
@@ -140,6 +143,8 @@ def workspace_server_path() -> Path:
 
 
 def workspace_control_enabled() -> bool:
+    if not agent_harness_enabled():
+        return False
     platform = os.environ.get("HARR_PLATFORM")
     return platform == "linux" if platform else sys.platform.startswith("linux")
 

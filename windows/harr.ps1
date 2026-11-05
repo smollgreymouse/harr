@@ -23,6 +23,7 @@ Harr Windows CLI
   harr install [all|leanctx|mcp]
   harr agents apply [all|codex|opencode]
   harr agents status
+  harr agents harness status|enable|disable
   harr agents orchestration status|enable|disable
   harr agents asa status
   harr agents asa configure [--model MODEL] [--effort EFFORT]
@@ -66,11 +67,38 @@ switch ($command) {
     'agents' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'apply') { Apply-Agents ($(if ($rest.Count -gt 1) { $rest[1] } else { 'all' })) }
-        elseif ($sub -eq 'status') { foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; [void](Invoke-AsaConfig @('status')) }
+        elseif ($sub -eq 'status') { Python-Lines @($HarnessConfig, 'status') | Write-Output; foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; Python-Lines @($AsaConfig, 'status') | Write-Output }
+        elseif ($sub -eq 'harness') {
+            $harnessSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
+            if ($rest.Count -gt 2) { throw 'usage: harr agents harness status|enable|disable' }
+            if ($harnessSub -eq 'status') { Python-Lines @($HarnessConfig, 'status') | Write-Output }
+            elseif ($harnessSub -eq 'enable') {
+                Require-CleanOwnership
+                if (Test-AgentHarnessEnabled) { Python-Lines @($HarnessConfig, 'status') | Write-Output }
+                else {
+                    [void](Invoke-HarnessConfig @('enable'))
+                    Apply-Hosts
+                    Apply-Agents 'all'
+                    Apply-LeanCtx
+                }
+            }
+            elseif ($harnessSub -eq 'disable') {
+                Require-CleanOwnership
+                if (-not (Test-AgentHarnessEnabled)) { Python-Lines @($HarnessConfig, 'status') | Write-Output }
+                else {
+                    [void](Invoke-HarnessConfig @('disable'))
+                    Apply-Hosts
+                    Restore-AgentHarness 'codex'
+                    Restore-AgentHarness 'opencode'
+                    Apply-Agents 'codex'
+                    Apply-LeanCtx
+                }
+            } else { throw 'usage: harr agents harness status|enable|disable' }
+        }
         elseif ($sub -eq 'orchestration') {
             $orchSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
             if ($rest.Count -gt 2) { throw 'usage: harr agents orchestration status|enable|disable' }
-            if ($orchSub -eq 'status') { [void](Invoke-AsaConfig @('status')) }
+            if ($orchSub -eq 'status') { Python-Lines @($AsaConfig, 'status') | Write-Output }
             elseif ($orchSub -in @('enable','disable')) {
                 Require-CleanOwnership
                 [void](Invoke-AsaConfig @($orchSub))
@@ -84,9 +112,10 @@ switch ($command) {
             if ($rest.Count -gt 2) { $asaArgs += @($rest[2..($rest.Count - 1)]) }
             if ($asaSub -eq 'configure') { Require-CleanOwnership; $asaArgs += '--force' }
             elseif ($asaSub -eq 'apply') { Require-CleanOwnership; $asaArgs = @('sync','--force') }
-            [void](Invoke-AsaConfig $asaArgs)
+            if ($asaSub -eq 'status') { Python-Lines (@($AsaConfig) + $asaArgs) | Write-Output }
+            else { [void](Invoke-AsaConfig $asaArgs) }
         }
-        else { throw 'usage: harr agents apply [all|codex|opencode] | harr agents status | harr agents orchestration status|enable|disable | harr agents asa {status|configure|apply}' }
+        else { throw 'usage: harr agents apply [all|codex|opencode] | harr agents status | harr agents harness status|enable|disable | harr agents orchestration status|enable|disable | harr agents asa {status|configure|apply}' }
     }
     'hosts' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
@@ -159,6 +188,7 @@ switch ($command) {
         Write-Host '== MCP selection =='; Mcp-Available; Write-Host ''
         Components-Status
         Hosts-Status
+        [void](Invoke-HarnessConfig @('status'))
         foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }
         Secret-Command status
         Mcp-Status

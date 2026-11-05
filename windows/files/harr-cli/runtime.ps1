@@ -10,19 +10,21 @@ function Apply-LeanCtx {
         '--base', (Join-Path $CommonDir 'leanctx\config.base.toml'),
         '--output', $LeanConfig,
         '--platform', 'windows',
-        '--runner-command', 'harr-mcp-run',
-        '--allow-path', (Join-Path $CodexHome 'skills\harr'),
-        '--allow-path', (Join-Path $CodexHome 'skills\lean-ctx')
+        '--runner-command', 'harr-mcp-run'
     )
+    if (Test-AgentHarnessEnabled) {
+        $renderArgs += @(
+            '--allow-path', (Join-Path $CodexHome 'skills\harr'),
+            '--allow-path', (Join-Path $CodexHome 'skills\lean-ctx'),
+            '--allow-path', (Join-Path $CodexHome 'skills\ein'),
+            '--allow-path', (Join-Path $OpenCodeHome 'skills\harr'),
+            '--allow-path', (Join-Path $OpenCodeHome 'skills\lean-ctx'),
+            '--allow-path', (Join-Path $OpenCodeHome 'skills\ein')
+        )
+    }
     if (Test-OrchestrationEnabled) {
         $renderArgs += @('--allow-path', (Join-Path $CodexHome 'skills\asa'))
     }
-    $renderArgs += @(
-        '--allow-path', (Join-Path $CodexHome 'skills\ein'),
-        '--allow-path', (Join-Path $OpenCodeHome 'skills\harr'),
-        '--allow-path', (Join-Path $OpenCodeHome 'skills\lean-ctx'),
-        '--allow-path', (Join-Path $OpenCodeHome 'skills\ein')
-    )
     Invoke-Manager $renderArgs
     Write-Host "Applied Harr LeanCTX config from selected MCP registry: $LeanConfig"
 }

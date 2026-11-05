@@ -18,6 +18,7 @@ CLI:
   harr hosts status
   harr agents apply [all|codex|opencode]
   harr agents status
+  harr agents harness {status|enable|disable}
   harr agents orchestration {status|enable|disable}
   harr agents asa status
   harr agents asa configure [--model MODEL] [--effort EFFORT]

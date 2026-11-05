@@ -14,6 +14,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from common.agents.harness_config import is_enabled as agent_harness_enabled
+
 SERVER_NAME = "lean-ctx"
 DEFAULT_TOOLS_APPROVAL_MODE = "auto"
 MCP_TOOL_TIMEOUT_SEC = 1900
@@ -420,7 +422,7 @@ def apply_named_ein_apps() -> None:
     from common.mcp.ein_instances import read
 
     data = read()
-    enabled = [item for item in data["instances"] if item.get("enabled", True)]
+    enabled = [item for item in data["instances"] if item.get("enabled", True)] if agent_harness_enabled() else []
     config_root = Path(os.environ.get("HARR_CONFIG_DIR") or (Path.home() / ".config/harr"))
     text = load_config_text()
     existing = parse_config(text).get("mcp_servers", {})
@@ -479,7 +481,7 @@ def named_ein_apps_are_managed(config: dict[str, Any]) -> bool:
     servers = config.get("mcp_servers")
     if not isinstance(servers, dict):
         return False
-    enabled = [item for item in read()["instances"] if item.get("enabled", True)]
+    enabled = [item for item in read()["instances"] if item.get("enabled", True)] if agent_harness_enabled() else []
     expected_names = {item["id"] for item in enabled}
     config_root = Path(os.environ.get("HARR_CONFIG_DIR") or (Path.home() / ".config/harr"))
 
@@ -536,6 +538,8 @@ def workspace_server_path() -> Path:
 
 
 def workspace_control_enabled() -> bool:
+    if not agent_harness_enabled():
+        return False
     platform = os.environ.get("HARR_PLATFORM")
     return platform == "linux" if platform else sys.platform.startswith("linux")
 
