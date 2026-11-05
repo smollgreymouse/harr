@@ -6,6 +6,8 @@ The Codex orchestration feature is **opt-in and disabled by default**. When disa
 
 When enabled, sequential implementation remains in the root; native workers are reserved for genuinely independent parallel scopes. Unresolved material architecture decisions route through the configurable `asa-architect` role, while the root remains the sole agent router. A worker that escalates a material decision retains ownership of its scope and resumes after the decision instead of being replaced.
 
+Asa now launches its architect with native Multi-Agent V2 `fork_turns: "all"`: the configured architect model inherits the root's available conversation context rather than a manually assembled compact decision packet. Calls must specify the exact architectural question and return a concrete decision, alternatives, invariants, risks, and unresolved points to the original implementation owner. Follow-up evidence is sent to the same architect with `followup_task`, avoiding redundant full-history forks. Cache reuse is opportunistic, and Harr does not compact the parent conversation solely for Asa token savings. This improvement was verified with an isolated Codex Free Luna-parent/Terra-child full-history role override test; the actual Sol model was not benchmarked.
+
 The release also retains the current master improvements after 0.3.4, including Codex Ein completion notifications, package-upgrade runtime consistency, status read-only behavior, Codex memory routing, and Windows Ein transport portability fixes.
 
 Named Ein executors remain explicit delegation targets. Their shared workflow skill is now `$ein`; legacy Harr-managed `$einherjar-worker` skill installations are migrated away without enabling orchestration.
