@@ -17,7 +17,7 @@ EIN_META = ROOT / "common/skills/ein/agents/openai.yaml"
 SCHEMA = ROOT / "common/mcp/ein_tool_schema.json"
 CODEX_ENV = ROOT / "common/hosts/codex.env"
 OPENCODE_ENV = ROOT / "common/hosts/opencode.env"
-ADAPTERS = ("gigacode", "opencode", "codex", "custom")
+ADAPTERS = ("gigacode", "opencode", "codex", "zcode", "custom")
 HOST_SURFACES = ("codex", "opencode", "windows", "macos", "linux")
 
 
@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix="harr-ein-policy-matrix-") as tmp_raw:
     tmp = Path(tmp_raw)
     cases = [("none", [])]
     cases += [(f"sole-{adapter}", [server(f"only-{adapter}")]) for adapter in ADAPTERS]
-    cases += [("multiple-mixed", [server("gigacode"), server("opencode"), server("codex"), server("custom")])]
+    cases += [("multiple-mixed", [server(adapter) for adapter in ADAPTERS])]
     for platform in HOST_SURFACES:
         for case, registry in cases:
             policy, harr_skill, skill_dir = render(tmp, registry, f"{platform}-{case}")

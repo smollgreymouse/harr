@@ -30,12 +30,15 @@ spec.loader.exec_module(server)
 from common.executor.backends import (
     BackendResumeRequest,
     BackendStartRequest,
+    get_backend_adapter,
+    get_builtin_backend_names,
     load_einherjar_config,
     text_candidates_from_jsonl,
 )
 from common.executor.adapters.gigacode import GigaCodeAdapter
 from common.executor.adapters.opencode import OpenCodeAdapter
 from common.executor.adapters.codex import CodexAdapter
+from common.executor.adapters.zcode import ZCodeAdapter
 from common.executor.protocol import parse_worker_handoff
 
 # Tool contract.
@@ -47,7 +50,7 @@ assert server.TOOLS[0]["inputSchema"]["properties"]["action"]["enum"] == [
 
 server_source = SERVER_PATH.read_text(encoding="utf-8")
 assert "shell=True" not in server_source
-for vendor in ("gigacode", "opencode", "codex"):
+for vendor in ("gigacode", "opencode", "codex", "zcode"):
     assert f'backend == "{vendor}"' not in server_source
 if sys.platform.startswith("linux"):
     owner = {"pid": os.getpid(), "start_ticks": server._owner_identity(os.getpid())}
@@ -99,6 +102,62 @@ with patch("common.executor.adapters.codex.shutil.which", return_value="/bin/cod
     rargv = adapter.resume_command(resume)
     assert rargv[rargv.index("exec") + 1] == "resume"
     assert "vendor-session" in rargv
+
+# ZCode uses the Agent CLI's named prompt/resume options, never a positional
+# task or "latest session" selector. Prompts stay one argv item, including Unicode.
+assert "zcode" in get_builtin_backend_names()
+assert isinstance(get_backend_adapter("zcode"), ZCodeAdapter)
+with patch.dict(os.environ, {"HARR_EIN_EXECUTABLE": "zcode-console"}):
+    with patch("common.executor.adapters.zcode.shutil.which", return_value="/bin/zcode") as which:
+        adapter = ZCodeAdapter()
+        caps = adapter.probe()
+        which.assert_called_with("zcode-console")
+        assert caps.found and caps.resumable and caps.structured_events
+        assert not caps.progress_messages and not caps.prompt_stdin
+        assert "executable" not in caps.public_dict()
+        prompt = 'Задача\n"quotes" $(literal); --resume other'
+        request = BackendStartRequest(prompt, workspace)
+        base = ["/bin/zcode", "--cwd", str(workspace), "--mode", "yolo",
+                "--output-format", "stream-json", "--no-color"]
+        assert adapter.start_command(request) == [*base, "--prompt", prompt]
+        assert adapter.resume_command(resume) == [
+            *base, "--resume", "vendor-session", "--prompt", "delta",
+        ]
+        assert "You are an implementation worker" in adapter.prepare_prompt("task")
+        assert adapter.stdin_text(prompt) is None
+    with patch("common.executor.adapters.zcode.shutil.which", return_value=None):
+        assert not adapter.probe().found
+        try:
+            adapter.start_command(start)
+            raise AssertionError("missing ZCode executable accepted")
+        except FileNotFoundError:
+            pass
+
+# Only the closing ZCode result can supply the handoff or vendor session id.
+# An interrupted/malformed stream must not promote a tool/user/reasoning payload.
+zcode_response = json.dumps(done)
+zcode_noise = "\n".join([
+    "not JSON",
+    json.dumps({"type": "tool.result", "sessionId": "wrong-tool", "response": zcode_response}),
+    json.dumps({"type": "message", "role": "user", "text": zcode_response}),
+    json.dumps({"type": "reasoning", "text": zcode_response}),
+    json.dumps({"type": "event", "data": {"type": "result", "sessionId": "nested", "response": zcode_response}}),
+])
+adapter = ZCodeAdapter()
+assert adapter.final_output(zcode_noise, zcode_response) == ""
+assert adapter.extract_vendor_session_id(zcode_noise, '{"sessionId":"stderr"}') is None
+assert adapter.progress_messages(zcode_noise) == []
+zcode_stream = zcode_noise + "\n" + json.dumps({
+    "type": "result", "sessionId": "sess-zcode", "response": zcode_response,
+}) + '\n{"type":'
+assert adapter.final_output(zcode_stream, "") == zcode_response
+assert adapter.extract_vendor_session_id(zcode_stream, "") == "sess-zcode"
+handoff, bad = parse_worker_handoff(adapter.final_output(zcode_stream, ""), 0, "")
+assert not bad and handoff["status"] == "DONE"
+for malformed in ({"type": "result"}, {"type": "result", "sessionId": 123, "response": {"text": zcode_response}}):
+    assert adapter.final_output(json.dumps(malformed), "") == ""
+    assert adapter.extract_vendor_session_id(json.dumps(malformed), "") is None
+assert adapter.final_output(zcode_stream + '\n{"type":"result","response":"last"}', "") == "last"
 
 # Structured vendor-session parsing.
 assert CodexAdapter().extract_vendor_session_id(
