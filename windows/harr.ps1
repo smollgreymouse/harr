@@ -67,14 +67,14 @@ switch ($command) {
     'agents' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'apply') { Apply-Agents ($(if ($rest.Count -gt 1) { $rest[1] } else { 'all' })) }
-        elseif ($sub -eq 'status') { [void](Invoke-HarnessConfig @('status')); foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; [void](Invoke-AsaConfig @('status')) }
+        elseif ($sub -eq 'status') { Python-Lines @($HarnessConfig, 'status') | Write-Output; foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; [void](Invoke-AsaConfig @('status')) }
         elseif ($sub -eq 'harness') {
             $harnessSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
             if ($rest.Count -gt 2) { throw 'usage: harr agents harness status|enable|disable' }
-            if ($harnessSub -eq 'status') { [void](Invoke-HarnessConfig @('status')) }
+            if ($harnessSub -eq 'status') { Python-Lines @($HarnessConfig, 'status') | Write-Output }
             elseif ($harnessSub -eq 'enable') {
                 Require-CleanOwnership
-                if (Test-AgentHarnessEnabled) { [void](Invoke-HarnessConfig @('status')) }
+                if (Test-AgentHarnessEnabled) { Python-Lines @($HarnessConfig, 'status') | Write-Output }
                 else {
                     [void](Invoke-HarnessConfig @('enable'))
                     Apply-Hosts
@@ -84,7 +84,7 @@ switch ($command) {
             }
             elseif ($harnessSub -eq 'disable') {
                 Require-CleanOwnership
-                if (-not (Test-AgentHarnessEnabled)) { [void](Invoke-HarnessConfig @('status')) }
+                if (-not (Test-AgentHarnessEnabled)) { Python-Lines @($HarnessConfig, 'status') | Write-Output }
                 else {
                     [void](Invoke-HarnessConfig @('disable'))
                     Apply-Hosts

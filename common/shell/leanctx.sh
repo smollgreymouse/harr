@@ -33,12 +33,20 @@ cmd_leanctx_apply() {
   if orchestration_enabled; then
     allow_args+=(--allow-path "${codex_skills}/asa")
   fi
-  mcp_manager render-leanctx \
-    --base "$src" \
-    --output "$HARR_LEANCTX_CONFIG" \
-    --platform "${HARR_PLATFORM:-linux}" \
-    --runner-command harr-mcp-run \
-    "${allow_args[@]}"
+  if (( ${#allow_args[@]} )); then
+    mcp_manager render-leanctx \
+      --base "$src" \
+      --output "$HARR_LEANCTX_CONFIG" \
+      --platform "${HARR_PLATFORM:-linux}" \
+      --runner-command harr-mcp-run \
+      "${allow_args[@]}"
+  else
+    mcp_manager render-leanctx \
+      --base "$src" \
+      --output "$HARR_LEANCTX_CONFIG" \
+      --platform "${HARR_PLATFORM:-linux}" \
+      --runner-command harr-mcp-run
+  fi
   chmod 0600 "$HARR_LEANCTX_CONFIG"
   printf 'Applied Harr LeanCTX config from selected MCP registry: %s\n' "$HARR_LEANCTX_CONFIG"
   if [[ -x "${HOME}/.local/bin/lean-ctx" ]] && ! "${HOME}/.local/bin/lean-ctx" config validate >/dev/null 2>&1; then
