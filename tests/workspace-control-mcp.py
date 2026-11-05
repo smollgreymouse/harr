@@ -49,6 +49,15 @@ raise SystemExit(2)
         got=rpc(p,3,'tools/call',{'name':'workspace_get','arguments':{'project':str(repo)}})['result']['structuredContent']; assert got['revision']==1 and got['primary']==str(repo)
         synced=rpc(p,4,'tools/call',{'name':'workspace_sync','arguments':{'project':str(repo),'paths':[str(repo),str(extra)]}})['result']['structuredContent']
         assert synced['beforeRevision']==1 and synced['revision']==2 and synced['sync']['added']==[str(extra)],synced
+        # A checkout created during a running session is a newly known root.
+        # Reuse the existing add-only MCP rather than changing the primary root.
+        checkout=base/'new-checkout'; checkout.mkdir()
+        registered=rpc(p,9,'tools/call',{'name':'workspace_sync','arguments':{'project':str(repo),'paths':[str(checkout)]}})['result']['structuredContent']
+        assert registered['sync']['added']==[str(checkout)] and registered['primary']==str(repo),registered
+        reread=rpc(p,10,'tools/call',{'name':'workspace_get','arguments':{'project':str(repo)}})['result']['structuredContent']
+        assert str(checkout) in reread['additional'] and str(extra) in reread['additional'],reread
+        repeated=rpc(p,11,'tools/call',{'name':'workspace_sync','arguments':{'project':str(repo),'paths':[str(checkout)]}})['result']['structuredContent']
+        assert repeated['sync']['added']==[] and repeated['revision']==reread['revision'],repeated
         current=json.loads(state.read_text()); current['warnings']=[{'code':'workspace-root-missing','path':'/gone','state':'missing','message':'Configured Workspace root is missing and inactive.','remove_command':'harr workspace remove /gone'}]; state.write_text(json.dumps(current))
         warned=rpc(p,8,'tools/call',{'name':'workspace_get','arguments':{'project':str(repo)}})['result']
         assert warned['structuredContent']['warnings'][0]['code']=='workspace-root-missing',warned

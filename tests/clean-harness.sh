@@ -260,6 +260,9 @@ done
 grep -q '^\[mcp_servers\.harr-workspace\]$' "${CODEX_HOME}/config.toml"
 grep -q '^\[mcp_servers\.harr-workspace\.tools\.workspace_get\]$' "${CODEX_HOME}/config.toml"
 grep -q '^\[mcp_servers\.harr-workspace\.tools\.workspace_sync\]$' "${CODEX_HOME}/config.toml"
+grep -Fq 'Immediately after a successful `git worktree add`' "${CODEX_HOME}/AGENTS.md"
+grep -Fq 'harr-workspace::workspace_sync' "${CODEX_HOME}/AGENTS.md"
+grep -Fq 'Newly created Git worktrees' "${CODEX_HOME}/skills/harr-workspace/SKILL.md"
 grep -q '^\[mcp_servers\.harr-workspace-app\]$' "${CODEX_HOME}/config.toml"
 grep -q '^\[mcp_servers\.harr-workspace-app\.tools\.show_harr_workspace\]$' "${CODEX_HOME}/config.toml"
 

@@ -1,12 +1,12 @@
 ---
 name: harr-workspace
-description: Synchronize the current agent session's already-known working folders with the Harr/LeanCTX Workspace. Use when the user asks to add, import, attach, or sync this Codex/OpenCode session's working folders, roots, repositories, or add-dir paths into Harr.
+description: Synchronize the current agent session's already-known working folders with the Harr/LeanCTX Workspace. Use when the user asks to add, import, attach, or sync this Codex/OpenCode session's roots, or when the agent creates a Git worktree/checkout that it will work in.
 ---
 <!-- harr-managed-skill-v1 -->
 
 # Harr Workspace session sync
 
-Use this skill when the user asks the current agent/client to add **its own working folders** to Harr.
+Use this skill when the user asks the current agent/client to add **its own working folders** to Harr, or when an authorized task creates a new Git worktree/checkout that the agent must investigate or edit.
 
 ## Source of paths
 
@@ -14,11 +14,20 @@ Use only directories that are already explicit in the current session context:
 
 - the current project/workspace root;
 - additional workspace roots or working directories supplied by the host to this session (for example Codex extra/add-dir roots or OpenCode workspace roots);
-- paths explicitly named by the user in the current request.
+- paths explicitly named by the user in the current request;
+- the exact path returned by a successful Git worktree/checkout creation performed for the current user-authorized task.
 
 Do **not** discover candidates by walking `$HOME`, listing sibling repositories, searching mounted filesystems, parsing unrelated process state, or guessing paths that were not already known to this session.
 
 If the host exposes only the current working directory and no additional roots, sync only that directory and report that no other session roots were available.
+
+## Newly created Git worktrees
+
+After a successful `git worktree add` / `harr git worktree add`, if the agent will work in that checkout, register its exact absolute directory **before** the first LeanCTX source search/read or shell command in the checkout. A worktree is not implicitly registered merely because its source repository is a Workspace root.
+
+Use the **existing** direct `harr-workspace::workspace_get` and add-only `harr-workspace::workspace_sync`; pass `project` as the original, already-registered project root and `paths` as the new checkout path. Then confirm through `workspace_get` that the exact root is active. Do not derive `project` from the new, not-yet-authorized checkout or route Workspace control through `ctx_shell`. Do not sync `/tmp` or another broad parent in place of the exact checkout.
+
+If registration or verification fails, report the blocker and do not investigate the checkout with native search/read/shell as a fallback. An existing root remains unchanged. Do not register new worktrees unrelated to the authorized task.
 
 ## Execution boundary
 
