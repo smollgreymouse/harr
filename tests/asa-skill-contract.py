@@ -86,8 +86,8 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert parsed["model"] == "gpt-6-luna"
     assert parsed["model_reasoning_effort"] == "high"
     assert parsed["skills"]["include_instructions"] is False
-assert "compact decision packets" not in parsed["description"]
-assert "full-history architecture decisions" in parsed["description"]
+    assert "compact decision packets" not in parsed["description"]
+    assert "full-history architecture decisions" in parsed["description"]
 
     instructions = parsed["developer_instructions"]
     for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts"):
