@@ -67,7 +67,7 @@ switch ($command) {
     'agents' {
         $sub = if ($rest.Count) { $rest[0] } else { 'status' }
         if ($sub -eq 'apply') { Apply-Agents ($(if ($rest.Count -gt 1) { $rest[1] } else { 'all' })) }
-        elseif ($sub -eq 'status') { Python-Lines @($HarnessConfig, 'status') | Write-Output; foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; [void](Invoke-AsaConfig @('status')) }
+        elseif ($sub -eq 'status') { Python-Lines @($HarnessConfig, 'status') | Write-Output; foreach ($agent in @('codex','opencode')) { Write-Host "$agent policy: $(Policy-State $agent)" }; Python-Lines @($AsaConfig, 'status') | Write-Output }
         elseif ($sub -eq 'harness') {
             $harnessSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
             if ($rest.Count -gt 2) { throw 'usage: harr agents harness status|enable|disable' }
@@ -98,7 +98,7 @@ switch ($command) {
         elseif ($sub -eq 'orchestration') {
             $orchSub = if ($rest.Count -gt 1) { $rest[1] } else { 'status' }
             if ($rest.Count -gt 2) { throw 'usage: harr agents orchestration status|enable|disable' }
-            if ($orchSub -eq 'status') { [void](Invoke-AsaConfig @('status')) }
+            if ($orchSub -eq 'status') { Python-Lines @($AsaConfig, 'status') | Write-Output }
             elseif ($orchSub -in @('enable','disable')) {
                 Require-CleanOwnership
                 [void](Invoke-AsaConfig @($orchSub))
@@ -112,7 +112,8 @@ switch ($command) {
             if ($rest.Count -gt 2) { $asaArgs += @($rest[2..($rest.Count - 1)]) }
             if ($asaSub -eq 'configure') { Require-CleanOwnership; $asaArgs += '--force' }
             elseif ($asaSub -eq 'apply') { Require-CleanOwnership; $asaArgs = @('sync','--force') }
-            [void](Invoke-AsaConfig $asaArgs)
+            if ($asaSub -eq 'status') { Python-Lines (@($AsaConfig) + $asaArgs) | Write-Output }
+            else { [void](Invoke-AsaConfig $asaArgs) }
         }
         else { throw 'usage: harr agents apply [all|codex|opencode] | harr agents status | harr agents harness status|enable|disable | harr agents orchestration status|enable|disable | harr agents asa {status|configure|apply}' }
     }
