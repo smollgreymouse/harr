@@ -6,10 +6,11 @@ description: Use for an unresolved material architecture decision involving publ
 
 # Asa
 
-When this skill applies, do not choose the material architecture in the root.
+When an unresolved material architecture decision arises, do not choose it in the root.
 
-Spawn `asa-architect` with `fork_turns: "none"`. Send only a compact decision packet: goal, exact decision required, fixed constraints/invariants, and concrete evidence. Do not send the root transcript or broad code dumps.
+1. Spawn `asa-architect` with `fork_turns: "all"`.
+2. Ask the exact question to resolve, including competing alternatives or constraints that make the decision necessary.
+3. Asa must return the chosen solution and rationale; rejected alternatives and why; invariants and risks the implementation owner must preserve; and explicit unresolved questions, if any.
+4. Return the decision to the existing implementation owner. The SAME owner continues the work.
 
-If the architect asks for evidence, gather only the requested facts and continue the SAME architect.
-
-Return the decision to the implementation owner that already has the code context.
+If essential evidence is missing, gather the specific missing facts and continue the SAME architect. Do not substitute generic advice for a decision.
