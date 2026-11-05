@@ -32,6 +32,13 @@ assert "unresolved questions" in skill
 assert "existing implementation owner" in skill
 assert "SAME owner" in skill
 assert "SAME architect" in skill
+assert "reuse its existing" in skill
+assert "Do not spawn a second Asa for the same decision." in skill
+assert "followup_task" in skill
+assert "do not re-fork the parent history" in skill
+assert "Do not compact the parent conversation" in skill
+assert "Prompt-cache reuse is opportunistic, not guaranteed." in skill
+assert "independent new architecture question" in skill
 assert "gpt-6.1-sol" not in skill
 assert "xhigh" not in skill.lower()
 
@@ -79,9 +86,11 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert parsed["model"] == "gpt-6-luna"
     assert parsed["model_reasoning_effort"] == "high"
     assert parsed["skills"]["include_instructions"] is False
+assert "compact decision packets" not in parsed["description"]
+assert "full-history architecture decisions" in parsed["description"]
 
     instructions = parsed["developer_instructions"]
-    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions"):
+    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts"):
         assert needle in instructions
 
     # Non-Harr role remains fail-closed unless an owning caller explicitly forces takeover.
