@@ -32,6 +32,9 @@ assert "distinguish observed facts from assumptions" in skill
 assert "Root must not independently reread" in skill
 assert "SAME Worker for delegated scope" in skill
 assert "Full forked history is contextual" in skill
+assert "An explicit user request may ask Asa to independently analyze" in skill
+assert "root (or the existing Worker for its owned scope) must first locate and supply" in skill
+assert "not to independently search the repository" in skill
 assert "exact question to resolve" in skill
 assert "competing alternatives or constraints" in skill
 assert "chosen solution and rationale" in skill
@@ -55,7 +58,9 @@ host = HOST.read_text(encoding="utf-8")
 assert "root must first investigate the relevant code and contracts" in host
 assert "correct checkout/worktree" in host
 assert "verified evidence packet" in host
-assert "Asa is a decision-maker, not a code investigator." in host
+assert "does not investigate repository evidence by default" in host
+assert "an explicit user request may delegate independent analysis" in host
+assert "still locates that material" in host
 assert "SAME Worker without duplicating its inspection" in host
 
 meta = META.read_text(encoding="utf-8")
@@ -106,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert "full-history architecture decisions" in parsed["description"]
 
     instructions = parsed["developer_instructions"]
-    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts", "Do not implement, edit, spawn agents, or inspect/search the repository", "verified evidence packet", "Full inherited history does not replace", "existing scope owner"):
+    for needle in ("Do not implement", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts", "Do not implement, edit, or spawn agents", "By default, do not investigate source code", "If the user explicitly asks", "analyze the material located and supplied by the caller", "does not authorize independent repository search", "verified evidence packet", "Full inherited history does not replace", "existing scope owner"):
         assert needle in instructions
 
     # Non-Harr role remains fail-closed unless an owning caller explicitly forces takeover.
