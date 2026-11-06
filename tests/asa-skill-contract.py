@@ -27,23 +27,30 @@ assert 'fork_turns: "none"' not in skill
 assert "Make the decision evidence-ready" in skill
 assert "normal Harr Workspace/tool-routing policy" in skill
 assert "registered through the normal Harr Workspace flow" in skill
-assert "do not create a second packet" in skill
+assert "do not retransmit a second full evidence packet" in skill
+assert "must not invent, rank, compare, or choose architecture alternatives" in skill
+assert "tool output or may no longer be durable after compaction" in skill
 assert "Worker's compact evidence handoff" in skill
 assert "Root must not independently reread" in skill
 assert "SAME Worker for delegated scope" in skill
-assert "concise fact anchors" in skill
+assert "concise verified fact anchors" in skill
 assert "does not inherit the Worker's private history" in skill
 assert "Explicit user-directed analysis" in skill
 assert "manual override" in skill
 assert "Explicit invocation does not waive evidence preparation" in skill
 assert "make the request evidence-ready" in skill
+assert "root must not perform that deep analysis first" in skill
 assert "Discovery and evidence acquisition remain with the scope owner" in skill
 assert "does not require the analysis step itself to be an architecture decision" in skill
 assert "exact read/view operation" in skill
 assert "must not broaden the task into repository discovery" in skill
 assert "returns the analysis the user requested" in skill
+assert "discovers a new material architecture decision" in skill
+assert "exact escalation question for the user" in skill
+assert "Root surfaces that question to the user" in skill
 assert "exact question to resolve" in skill
-assert "competing alternatives or constraints" in skill
+assert "Include alternatives only when they were already supplied" in skill
+assert "must not manufacture or evaluate alternatives before Asa" in skill
 assert "chosen solution and rationale" in skill
 assert "rejected alternatives" in skill
 assert "invariants and risks" in skill
@@ -64,11 +71,15 @@ assert "xhigh" not in skill.lower()
 host = HOST.read_text(encoding="utf-8")
 assert "normal Harr Workspace/tool-routing policy" in host
 assert "full inherited history" in host
-assert "do not create a second packet" in host
+assert "do not retransmit a duplicate full evidence packet" in host
+assert "must not invent, rank, compare, or choose architecture alternatives" in host
+assert "tool output or may be non-durable after compaction" in host
 assert "compact handoff" in host
 assert "explicitly asks Asa herself to analyze" in host
 assert "still prepares the relevant evidence/constraints" in host
 assert "locates the exact material" in host
+assert "does not perform that requested deep analysis first" in host
+assert "root asks the user before continuing the SAME Asa" in host
 assert "without broadening into repository discovery" in host
 assert "explicit project path" not in host
 
@@ -117,20 +128,26 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert parsed["model_reasoning_effort"] == "high"
     assert parsed["skills"]["include_instructions"] is False
     assert "compact decision packets" not in parsed["description"]
-    assert "full-history architecture decisions" in parsed["description"]
+    assert "architecture decisions and bounded explicit analysis" in parsed["description"]
 
     instructions = parsed["developer_instructions"]
     for needle in (
         "architect-grade decision and bounded-analysis specialist",
         "Do not implement, edit, or spawn agents",
         "Default architecture mode",
-        "do not demand a duplicate packet",
+        "do not demand a duplicate full packet",
+        "decisive tool-output facts or facts at risk after compaction",
         "Worker's compact evidence handoff",
         "Explicit-analysis mode",
         "caller must still prepare the surrounding evidence and constraints",
-        "exact read/view operation",
+        "must not perform the requested deep analysis first",
+        "narrow exact Harr/LeanCTX read",
+        "do not use shell, search, glob, or repository exploration",
+        "Do not change Workspace authority",
+        "exact viewer/read operation",
         "caller owns discovery",
         "instead of inventing a design decision",
+        "do not choose it; return the exact escalation question",
         "request the exact missing fact or material",
         "targeted follow-up facts/material",
     ):

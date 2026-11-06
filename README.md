@@ -37,8 +37,7 @@ Harr provides an opt-in Codex orchestration feature. It is **disabled by default
 When enabled, Harr installs an auto-discoverable `$asa` skill for unresolved
 material architecture decisions and a private Codex `asa-architect` role. The
 recommended economical profile keeps the long-lived chat on Luna and spends the
-architect model on material decisions and explicit bounded analysis. Root-owned evidence is gathered in the root
-and inherited by Asa through the full-history fork without a duplicate packet;
+architect model on material decisions and explicit bounded analysis. Root gathers facts and constraints but does not pre-architect material choices. Root-owned evidence is inherited through the full-history fork without a duplicate full packet; concise verified anchors carry decisive tool-output/compaction-sensitive facts;
 Worker-owned evidence crosses the ownership boundary as a compact handoff. An
 explicit user request may also delegate bounded analysis of selected code, images,
 or other material to Asa, while root or the delegated scope owner still prepares
