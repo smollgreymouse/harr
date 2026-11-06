@@ -24,17 +24,21 @@ assert "merely because work is large" in skill
 assert 'asa-architect' in skill
 assert 'fork_turns: "all"' in skill
 assert 'fork_turns: "none"' not in skill
-assert "verified evidence packet" in skill
-assert "root must first investigate" in skill
-assert "correct checkout/worktree" in skill
-assert "explicit project path" in skill
-assert "distinguish observed facts from assumptions" in skill
+assert "Make the decision evidence-ready" in skill
+assert "normal Harr Workspace/tool-routing policy" in skill
+assert "registered through the normal Harr Workspace flow" in skill
+assert "do not create a second packet" in skill
+assert "Worker's compact evidence handoff" in skill
 assert "Root must not independently reread" in skill
 assert "SAME Worker for delegated scope" in skill
-assert "Full forked history is contextual" in skill
-assert "An explicit user request may ask Asa to independently analyze" in skill
-assert "root (or the existing Worker for its owned scope) must first locate and supply" in skill
-assert "not to independently search the repository" in skill
+assert "concise fact anchors" in skill
+assert "does not inherit the Worker's private history" in skill
+assert "Explicit user-directed analysis" in skill
+assert "manual override" in skill
+assert "does not require the analysis step itself to be an architecture decision" in skill
+assert "exact read/view operation" in skill
+assert "must not broaden the task into repository discovery or search" in skill
+assert "returns the analysis the user requested" in skill
 assert "exact question to resolve" in skill
 assert "competing alternatives or constraints" in skill
 assert "chosen solution and rationale" in skill
@@ -47,7 +51,7 @@ assert "SAME architect" in skill
 assert "reuse its existing" in skill
 assert "Do not spawn a second Asa for the same decision." in skill
 assert "followup_task" in skill
-assert "do not re-fork the parent history" in skill
+assert "do not re-fork the parent history" in skill.lower()
 assert "Do not compact the parent conversation" in skill
 assert "Prompt-cache reuse is opportunistic, not guaranteed." in skill
 assert "independent new architecture question" in skill
@@ -55,13 +59,14 @@ assert "gpt-6.1-sol" not in skill
 assert "xhigh" not in skill.lower()
 
 host = HOST.read_text(encoding="utf-8")
-assert "root must first investigate the relevant code and contracts" in host
-assert "correct checkout/worktree" in host
-assert "verified evidence packet" in host
-assert "does not investigate repository evidence by default" in host
-assert "an explicit user request may delegate independent analysis" in host
-assert "still locates that material" in host
-assert "SAME Worker without duplicating its inspection" in host
+assert "normal Harr Workspace/tool-routing policy" in host
+assert "full inherited history" in host
+assert "do not create a second packet" in host
+assert "compact handoff" in host
+assert "explicitly asks Asa herself to analyze" in host
+assert "locates/identifies the exact material" in host
+assert "without broadening into repository discovery" in host
+assert "explicit project path" not in host
 
 meta = META.read_text(encoding="utf-8")
 assert "allow_implicit_invocation: true" in meta
@@ -111,7 +116,19 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert "full-history architecture decisions" in parsed["description"]
 
     instructions = parsed["developer_instructions"]
-    for needle in ("Do not implement", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts", "Do not implement, edit, or spawn agents", "By default, do not investigate source code", "If the user explicitly asks", "analyze the material located and supplied by the caller", "does not authorize independent repository search", "verified evidence packet", "Full inherited history does not replace", "existing scope owner"):
+    for needle in (
+        "architect-grade decision and bounded-analysis specialist",
+        "Do not implement, edit, or spawn agents",
+        "Default architecture mode",
+        "do not demand a duplicate packet",
+        "Worker's compact evidence handoff",
+        "Explicit-analysis mode",
+        "exact read/view operation",
+        "caller owns discovery",
+        "instead of inventing a design decision",
+        "request the exact missing fact or material",
+        "targeted follow-up facts/material",
+    ):
         assert needle in instructions
 
     # Non-Harr role remains fail-closed unless an owning caller explicitly forces takeover.
