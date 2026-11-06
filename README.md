@@ -35,14 +35,22 @@ allow-path remain active even while the Harr harness is disabled; its existing
 
 Harr provides an opt-in Codex orchestration feature. It is **disabled by default**.
 When enabled, Harr installs an auto-discoverable `$asa` skill for unresolved
-material architecture decisions and a private Codex `asa-architect` role. The
-recommended economical profile keeps the long-lived chat on Luna and spends the
-architect model on material decisions and explicit bounded analysis. Root gathers facts and constraints but does not pre-architect material choices. Root-owned evidence is inherited through the full-history fork without a duplicate full packet; concise verified anchors carry decisive tool-output/compaction-sensitive facts;
-Worker-owned evidence crosses the ownership boundary as a compact handoff. An
-explicit user request may also delegate bounded analysis of selected code, images,
-or other material to Asa, while root or the delegated scope owner still prepares
-the relevant evidence/constraints and locates that material. Sequential implementation stays in that
-Luna root; native workers are reserved for genuinely independent parallel scopes.
+material architecture decisions and a private Codex `asa-architect` role.
+
+The long-lived chat stays on Luna. Asa is one persistent Sol-backed architect child
+for the whole root conversation, not a fresh child per decision. The first Asa spawn
+uses full inherited root history; later automatic material decisions and explicit
+user dialogue are routed back to the same canonical Asa. Root remains the only
+router and relays explicit Asa answers to the user.
+
+Every Asa invocation is evidence-first. Root gathers root-owned repository/runtime/
+contract facts and exact material locators without pre-architecting material choices.
+Worker-owned evidence crosses as a compact handoff. The first full-history fork does
+not need a duplicate root packet; later follow-ups carry only verified new root facts,
+material, or constraints learned after Asa's initial fork. Asa may deeply analyze
+caller-selected material but does not perform repository discovery or gather missing
+surrounding evidence herself. Sequential implementation stays in the Luna root;
+native workers are reserved for genuinely independent parallel scopes.
 
 Enable or disable the feature explicitly; model/effort may be configured while it
 is disabled without activating it:

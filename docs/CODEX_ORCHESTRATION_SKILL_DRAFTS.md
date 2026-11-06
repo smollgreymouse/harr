@@ -68,9 +68,9 @@ No mandatory plan file is part of the protocol. A plan file may be used when one
 | large or code-heavy sequential task | Luna root |
 | two or more genuinely independent scopes | root decomposes -> parallel stock workers -> root integrates |
 | worker needs ordinary local design choice | worker decides inside its bounded scope |
-| root reaches unresolved material decision | compact evidence -> `$asa` -> Luna root continues |
-| worker reaches unresolved material decision | worker pauses -> compact evidence -> root routes only -> `$asa` -> root forwards decision -> SAME worker continues |
-| user explicitly invokes `$asa` | fresh architect immediately |
+| root reaches unresolved material decision | root prepares evidence -> SAME persistent `$asa` -> Luna root continues |
+| worker reaches unresolved material decision | worker pauses -> compact evidence -> root routes only -> SAME persistent `$asa` -> root forwards decision -> SAME worker continues |
+| user explicitly invokes/addresses `$asa` | scope owner prepares evidence -> root routes to SAME persistent Asa -> root faithfully relays Asa answer |
 | user explicitly delegates to Ein | selected Ein session owns the delegated scope |
 | Ein reports material escalation | compact evidence -> `$asa` -> resume same Ein session |
 | independent review is warranted | fresh reviewer after implementation is stable |
@@ -79,49 +79,47 @@ Task **size** is deliberately not an Asa trigger.
 
 ## `$asa` audit
 
-The Luna-root PR has the right core idea. Keep `$asa` small and auto-discoverable.
+Asa is one persistent architectural interlocutor behind the Luna root. Stock Codex
+does not allow direct user input to a Multi-Agent V2 child, so root remains the
+transport for both automatic material-decision calls and explicit user dialogue.
 
-The description is the routing classifier, so it must distinguish **materiality** from mere task size. The body should only enforce the behavior that stock Codex does not already provide.
+The first spawn uses a stable V2 identity:
 
-Proposed skill:
-
-```md
----
-name: asa
-description: Use for a material architecture decision involving public/cross-module contracts, protocol/schema compatibility, ownership/lifetime/concurrency, persistence/recovery, security/trust boundaries, subsystem boundaries, or genuinely non-local trade-offs. Do not use merely because work is large, code-heavy, or mechanical.
----
-
-When this skill applies, do not choose the material architecture in the root.
-
-Send `asa-architect` a compact packet: goal, exact decision required, fixed
-constraints/invariants, and concrete evidence. Use fresh context; do not send
-the root transcript or broad code dumps.
-
-If the architect needs evidence, gather only the requested facts and follow up
-the SAME architect.
-
-Return the decision to the implementation owner that already has the code
-context.
+```text
+task_name="asa"
+agent_type="asa-architect"
+fork_turns="all"
 ```
 
-### Asa architect
+Later requests use `followup_task(target="asa", ...)`. The stable task path is the
+persistent identity across root turns and cold resume; do not infer absence merely
+because a cold child is not returned by `list_agents`. A request that expects an Asa
+answer must wait for the child completion notification before root proceeds.
 
-Recommended default remains Sol 6.1 XHigh, configurable through Harr.
+Evidence ownership remains strict. Every automatic or explicit invocation is
+evidence-ready first. Root gathers root-owned facts, constraints and exact material
+locators but does not pre-architect a material decision or perform deep analysis that
+the user explicitly assigned to Asa. Worker-owned evidence crosses as a compact
+handoff, and root does not reread delegated code.
 
-The role should be even narrower than the previous draft:
+The initial `fork_turns="all"` copies root history only at spawn time. It therefore
+avoids a duplicate full packet on the first call, but a persistent Asa does not
+automatically inherit later root turns. Subsequent follow-ups carry only the verified
+delta that Asa has not already received: new root-owned facts/material/constraints,
+plus the exact question. Old inherited history is not resent.
 
-```toml
-developer_instructions = """
-You are Harr's material-decision specialist.
-Do not implement, edit, spawn agents, or broadly inspect the repository.
-Answer only the decision requested from the supplied evidence.
-Prefer existing contracts and the smallest coherent change.
-If evidence is insufficient, request the exact missing facts.
-Return the decision plus the invariants/risks the implementation owner must keep.
-"""
-```
+For explicit user dialogue, root preserves the user wording and acts as a transparent
+router after evidence preparation. A question such as "Asa, why did you choose that?"
+must reach the same Asa that made the earlier decision. Conversely, an automatic
+material decision after a manual Asa discussion also routes to that same child.
 
-Reuse the same architect only while resolving the **same decision episode**. A later independent architecture question gets a fresh architect so expensive Sol context does not accumulate.
+Asa may deeply analyze caller-selected code, images or artifacts, including a narrow
+exact read/view of a supplied locator, but she does not perform repository discovery
+or gather surrounding evidence herself. If explicit analysis discovers a new material
+architecture decision that the user did not ask Asa to resolve, Asa returns the exact
+escalation question and root asks the user before continuing the same Asa.
+
+The role remains configurable; the recommended default is Sol 6.1 XHigh.
 
 ## `$ein` audit
 
