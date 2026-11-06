@@ -147,7 +147,7 @@ with tempfile.TemporaryDirectory(prefix='ein-ui-harness-') as tmp:
     # One real detached fake job, opened by the direct MCP App after start.
     fake=base/'fake_agent.py'
     fake.write_text('import json\nprint(json.dumps({"status":"DONE","summary":"panel-connected","changed":[],"verified":[{"criterion":"smoke","check":"fake","result":"PASS","evidence":"0"}],"self_review":{"criteria_complete":True,"diff_scope_clean":True,"unverified":[]},"escalation":None,"blockers":[]}))\n')
-    config['instances'].append({'id':'fake-panel','adapter':'custom','enabled':True,'definition':{'adapter':'command-template','start':[sys.executable,str(fake),'{prompt}']}})
+    config['instances'].append({'id':'fake-panel','adapter':'custom','enabled':True,'definition':{'adapter':'command-template','start':[sys.executable,str(fake),'{prompt}','{session_id}'],'resume':[sys.executable,str(fake),'{prompt}','{session_id}']}})
     (config_root/'einherjar/instances.json').write_text(json.dumps(config))
     import time
     mcp=ROOT/'common/mcp/einherjar_server.py'

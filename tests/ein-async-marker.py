@@ -85,7 +85,8 @@ print(json.dumps({
             "enabled": True,
             "definition": {
                 "adapter": "command-template",
-                "start": [sys.executable, str(fake), "{prompt}"],
+                "start": [sys.executable, str(fake), "{prompt}", "{session_id}"],
+                "resume": [sys.executable, str(fake), "{prompt}", "{session_id}"],
             },
         }],
     }

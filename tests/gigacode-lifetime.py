@@ -637,6 +637,7 @@ with tempfile.TemporaryDirectory(prefix="gigacode-lt-") as tmpdir:
     with patch.object(srv, "_write_state", side_effect=observe_write), \
          patch.object(srv, "_owner_identity", return_value="owner-start"), \
          patch.object(srv, "STARTUP_CONFIRM_TIMEOUT_SEC", 0.0), \
+         patch.object(srv, "_workspace_provenance", return_value={"git": False}), \
          patch.object(srv.subprocess, "Popen", side_effect=start_worker), \
          patch.object(srv, "_pid_alive", return_value=True):
         launch_result = srv.launch_detached_job(launch_sid, [], "prompt", 0)

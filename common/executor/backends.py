@@ -79,7 +79,7 @@ class BackendAdapter(ABC):
         return None
 
     def prepare_prompt(self, prompt: str) -> str:
-        """Wrap a task with the Harr worker contract unless the adapter has a native system-prompt route."""
+        """Wrap a task with the Harr executor contract unless the adapter has a native system-prompt route."""
         from common.executor.protocol import WORKER_CONTRACT
         return WORKER_CONTRACT + "\n\n# Delegated task\n\n" + prompt
 

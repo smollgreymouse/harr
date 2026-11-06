@@ -1,6 +1,6 @@
 {
   "name": "ein",
-  "description": "Use this named Ein worker only when the user explicitly instructs you to delegate work to an executor. Never choose an executor automatically, even when only one instance is configured. The backend is fixed for this named instance.",
+  "description": "Root-only MCP transport to this named Ein external executor. Use start only after the user explicitly delegates a bounded scope to this executor. Never choose or start an executor automatically. Resume on the SAME session is the required transport continuation for decisions/corrections/evidence within that already-authorized scope.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -14,19 +14,19 @@
           "wait",
           "cancel"
         ],
-        "description": "start/resume return RUNNING without blocking conversation. No automatic wait/poll. status only on demand; optional wait blocks up to 1500s; messages on request; cancel explicitly."
+        "description": "start/resume return STARTING/RUNNING without blocking conversation. Only root calls actions. ESCALATE returns to root and continuation goes back through resume on the SAME session. No automatic polling; status/messages/wait only on explicit user request or recovery. cancel is explicit abandonment of active execution."
       },
       "plan_path": {
         "type": "string",
-        "description": "For start: existing implementation plan path inside the workspace. Use either plan_path or prompt, not both."
+        "description": "For start: existing self-contained implementation plan path inside the workspace. Use either plan_path or prompt, not both."
       },
       "session_id": {
         "type": "string",
-        "description": "For resume/cancel/status/messages/wait: session id returned by a prior start."
+        "description": "For resume/cancel/status/messages/wait: Harr session id returned by a prior start. Resume must target the SAME session for the delegated scope."
       },
       "prompt": {
         "type": "string",
-        "description": "For start: direct task when no plan file exists. For resume: only new planner decision/correction/evidence."
+        "description": "For start: self-contained execution contract with goal, bounded scope, fixed decisions/constraints, acceptance criteria, and required validation. For resume: only the complete delta for the SAME session (decision/correction, invariants, disposition of existing edits when relevant, acceptance/validation delta)."
       },
       "timeout_sec": {
         "type": "integer",
@@ -37,18 +37,18 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 1500,
-        "description": "Only for explicitly desired blocking wait: default/max 1500s (25min). Never short-loop polling. Timeout returns RUNNING, does not cancel."
+        "description": "Only for explicitly desired blocking wait: default/max 1500s (25min). Never short-loop polling. Timeout returns RUNNING/STARTING and does not cancel or release scope ownership."
       },
       "after_revision": {
         "type": "integer",
         "minimum": 0,
-        "description": "For messages: return assistant messages newer than this revision. Omit to return the latest messages."
+        "description": "For messages: return assistant progress messages newer than this revision. Omit to return the latest messages."
       },
       "message_limit": {
         "type": "integer",
         "minimum": 1,
         "maximum": 50,
-        "description": "For messages: maximum number of assistant messages to return. Default 8."
+        "description": "For messages: maximum number of assistant progress messages to return. Default 8."
       }
     },
     "required": [

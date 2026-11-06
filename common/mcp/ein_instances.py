@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Named Ein MCP setup and effective registry expansion.
 
-Setup never runs an agent. Every enabled instance receives one MCP namespace,
+Setup never runs an executor. Every enabled instance receives one MCP namespace,
 with a fixed adapter and a common `ein` tool contract.
 """
 
@@ -85,7 +85,10 @@ def validate(data: object) -> dict:
             raise ValueError(f"Ein {name}: invalid secret environment references")
         if adapter == "custom":
             from common.executor.backends import validate_custom_backend
-            errors = validate_custom_backend(name, item.get("definition"))
+            definition = item.get("definition")
+            errors = validate_custom_backend(name, definition)
+            if isinstance(definition, dict) and "resume" not in definition:
+                errors.append(f"Ein {name}: custom executor must support resume")
             if errors:
                 raise ValueError("; ".join(errors))
         elif item.get("definition") is not None:
@@ -199,7 +202,7 @@ def expanded_servers(base: list[dict], config: dict | None = None) -> list[dict]
         base.append({
             "name": name,
             "label": item.get("display_name", name),
-            "description": f"Named Ein {item['adapter']} external worker.",
+            "description": f"Named Ein {item['adapter']} external executor.",
             "required": False,
             "transport": "stdio",
             "lifecycle": "on-demand",
@@ -254,7 +257,7 @@ def parse_secret_env(items: list[str]) -> dict[str, str]:
 def configure_wizard() -> None:
     script = str(Path(__file__).resolve())
     while True:
-        print("\nHarr Ein workers (MCP names are chosen by you)")
+        print("\nHarr Ein executors (MCP names are chosen by you)")
         for item in read()["instances"]:
             state = "enabled" if item.get("enabled", True) else "disabled"
             print(f"  {item['id']:<24} {item['adapter']:<12} {state}")
