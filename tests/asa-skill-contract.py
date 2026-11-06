@@ -35,9 +35,12 @@ assert "concise fact anchors" in skill
 assert "does not inherit the Worker's private history" in skill
 assert "Explicit user-directed analysis" in skill
 assert "manual override" in skill
+assert "Explicit invocation does not waive evidence preparation" in skill
+assert "make the request evidence-ready" in skill
+assert "Discovery and evidence acquisition remain with the scope owner" in skill
 assert "does not require the analysis step itself to be an architecture decision" in skill
 assert "exact read/view operation" in skill
-assert "must not broaden the task into repository discovery or search" in skill
+assert "must not broaden the task into repository discovery" in skill
 assert "returns the analysis the user requested" in skill
 assert "exact question to resolve" in skill
 assert "competing alternatives or constraints" in skill
@@ -64,7 +67,8 @@ assert "full inherited history" in host
 assert "do not create a second packet" in host
 assert "compact handoff" in host
 assert "explicitly asks Asa herself to analyze" in host
-assert "locates/identifies the exact material" in host
+assert "still prepares the relevant evidence/constraints" in host
+assert "locates the exact material" in host
 assert "without broadening into repository discovery" in host
 assert "explicit project path" not in host
 
@@ -123,6 +127,7 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
         "do not demand a duplicate packet",
         "Worker's compact evidence handoff",
         "Explicit-analysis mode",
+        "caller must still prepare the surrounding evidence and constraints",
         "exact read/view operation",
         "caller owns discovery",
         "instead of inventing a design decision",

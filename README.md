@@ -41,8 +41,8 @@ architect model on material decisions and explicit bounded analysis. Root-owned 
 and inherited by Asa through the full-history fork without a duplicate packet;
 Worker-owned evidence crosses the ownership boundary as a compact handoff. An
 explicit user request may also delegate bounded analysis of selected code, images,
-or other material to Asa, while root or the delegated scope owner remains
-responsible for locating that material. Sequential implementation stays in that
+or other material to Asa, while root or the delegated scope owner still prepares
+the relevant evidence/constraints and locates that material. Sequential implementation stays in that
 Luna root; native workers are reserved for genuinely independent parallel scopes.
 
 Enable or disable the feature explicitly; model/effort may be configured while it
