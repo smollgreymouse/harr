@@ -40,12 +40,13 @@ material architecture decisions and a private Codex `asa-architect` role.
 The long-lived chat stays on Luna. Asa is one persistent Sol-backed architect child
 for the whole root conversation, not a fresh child per decision. The first Asa spawn
 uses full inherited root history; later automatic material decisions and explicit
-user dialogue are routed back to the same canonical Asa. Root remains the only
-router and relays explicit Asa answers to the user.
+user dialogue are routed back to the same Asa. This contract requires the stock
+Multi-Agent V2 tool surface and does not silently downgrade to V1. Root remains the
+only router and relays explicit Asa answers to the user.
 
 Every Asa invocation is evidence-first. Root gathers root-owned repository/runtime/
 contract facts and exact material locators without pre-architecting material choices.
-Worker-owned evidence crosses as a compact handoff. The first full-history fork does
+Worker/Ein-owned evidence crosses as a compact handoff from that same delegated owner. The first full-history fork does
 not need a duplicate root packet; later follow-ups carry only verified new root facts,
 material, or constraints learned after Asa's initial fork. Asa may deeply analyze
 caller-selected material but does not perform repository discovery or gather missing

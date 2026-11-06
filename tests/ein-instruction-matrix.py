@@ -58,6 +58,9 @@ def render(tmp, registry, platform):
 shared = EIN_SKILL.read_text(encoding="utf-8")
 assert "session owns its delegated scope" in shared
 assert "SAME Ein session" in shared
+assert "SAME Ein session remains the evidence owner" in shared
+assert "SAME persistent Asa" in shared
+assert "without rereading the delegated scope" in shared
 assert "Action arguments" in shared and "MCP tool" in shared
 assert "plan_path" not in shared
 assert "einherjar-worker" not in shared

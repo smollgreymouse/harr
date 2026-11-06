@@ -10,7 +10,7 @@ While an Ein session is active, that session owns its delegated scope. Do not in
 
 Judge terminal handoff evidence against the requested outcome. Ask only for specific missing proof.
 
-For a material design escalation, obtain the decision through Asa and resume the SAME Ein session with only that decision or new evidence.
+For a material design escalation, the SAME Ein session remains the evidence owner: use its compact handoff/evidence, let root route that handoff through the SAME persistent Asa without rereading the delegated scope, then resume the SAME Ein session with only Asa's decision/invariants or specifically requested new evidence.
 
 Use the same session for corrections in the same phase. Start fresh for a genuinely new phase or independent review, transferring only validated facts and constraints.
 

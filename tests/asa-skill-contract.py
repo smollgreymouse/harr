@@ -28,10 +28,11 @@ assert "Every Asa invocation, automatic or explicit, must be evidence-ready firs
 assert "normal Harr Workspace/tool-routing policy" in skill
 assert "registered through the normal Harr Workspace flow" in skill
 assert "must not invent, rank, compare, or choose architecture alternatives" in skill
-assert "Worker's compact evidence handoff" in skill
+assert "compact evidence handoff" in skill
+assert "SAME Ein after Asa decides" in skill
+assert "does not inherit Worker or Ein private history" in skill
 assert "Root must not independently reread" in skill
 assert "SAME Worker for narrowly missing facts" in skill
-assert "does not inherit the Worker's private history" in skill
 assert 'fork_turns: "all"' in skill
 assert 'fork_turns: "none"' not in skill
 assert "do not retransmit a second full root evidence packet" in skill
@@ -41,11 +42,19 @@ assert "new root-owned facts/material/constraints" in skill
 assert 'task_name="asa"' in skill
 assert 'agent_type="asa-architect"' in skill
 assert 'followup_task(target="asa"' in skill
+assert "requires Multi-Agent V2" in skill
+assert "do not silently fall back to V1" in skill
+assert "V1 cannot preserve both the full-history fork" in skill
+assert "older contract under a different task name" in skill
+assert "reuse that exact existing target" in skill
 assert "normal cold-resume path for a persisted V2 child" in skill
 assert "list_agents" in skill
 assert "before spawning anything" in skill
 assert "canonical target exists but cannot be resumed" in skill
 assert "do not silently create a second Asa" in skill
+assert "mode=architecture-decision" in skill
+assert "mode=user-dialogue" in skill
+assert "mode=explicit-analysis" in skill
 assert "Wait for Asa's completion notification" in skill
 assert "wait_agent" in skill
 assert "never synthesize Asa's answer yourself" in skill
@@ -84,6 +93,13 @@ assert "one persistent architect child per root conversation" in host
 assert "full inherited root history only at spawn time" in host
 assert "verified new root-owned facts/material/constraints" in host
 assert "compact handoff" in host
+assert "Multi-Agent V2 tool surface" in host
+assert "do not fall back to V1" in host
+assert "pre-existing asa-architect" in host
+assert "mode=architecture-decision" in host
+assert "mode=user-dialogue" in host
+assert "mode=explicit-analysis" in host
+assert "Worker/Ein evidence" in host
 assert "absence from list_agents is not proof" in host
 assert "wait for the Asa completion notification" in host
 assert "transparently routes the user request to the SAME Asa" in host
@@ -149,7 +165,11 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
         "authoritative deltas plus the current request",
         "Default architecture mode",
         "facts learned after your initial fork",
-        "Worker's compact evidence handoff",
+        "Worker or Ein compact evidence handoff",
+        "Each routed request declares one mode",
+        "mode=architecture-decision",
+        "mode=user-dialogue",
+        "mode=explicit-analysis",
         "Routed user-dialogue mode",
         "answer that user question directly",
         "Preserve continuity with your earlier decisions/analysis",

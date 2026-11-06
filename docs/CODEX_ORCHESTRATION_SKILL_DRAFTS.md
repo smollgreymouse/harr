@@ -91,16 +91,17 @@ agent_type="asa-architect"
 fork_turns="all"
 ```
 
-Later requests use `followup_task(target="asa", ...)`. The stable task path is the
+Later requests use `followup_task` on the same target. The stable task path is the
 persistent identity across root turns and cold resume; do not infer absence merely
-because a cold child is not returned by `list_agents`. A request that expects an Asa
+because a cold child is not returned by `list_agents`. This contract requires stock
+Multi-Agent V2; V1 cannot preserve both the full-history fork and the Asa role. A request that expects an Asa
 answer must wait for the child completion notification before root proceeds.
 
 Evidence ownership remains strict. Every automatic or explicit invocation is
 evidence-ready first. Root gathers root-owned facts, constraints and exact material
 locators but does not pre-architect a material decision or perform deep analysis that
-the user explicitly assigned to Asa. Worker-owned evidence crosses as a compact
-handoff, and root does not reread delegated code.
+the user explicitly assigned to Asa. Worker/Ein-owned evidence crosses as a compact
+handoff from that same delegated owner, and root does not reread delegated code.
 
 The initial `fork_turns="all"` copies root history only at spawn time. It therefore
 avoids a duplicate full packet on the first call, but a persistent Asa does not
@@ -108,7 +109,8 @@ automatically inherit later root turns. Subsequent follow-ups carry only the ver
 delta that Asa has not already received: new root-owned facts/material/constraints,
 plus the exact question. Old inherited history is not resent.
 
-For explicit user dialogue, root preserves the user wording and acts as a transparent
+Each Asa request declares its mode (architecture-decision, user-dialogue, or
+explicit-analysis). For explicit user dialogue, root preserves the user wording and acts as a transparent
 router after evidence preparation. A question such as "Asa, why did you choose that?"
 must reach the same Asa that made the earlier decision. Conversely, an automatic
 material decision after a manual Asa discussion also routes to that same child.
