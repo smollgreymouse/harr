@@ -13,6 +13,7 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "common/skills/asa/SKILL.md"
 META = ROOT / "common/skills/asa/agents/openai.yaml"
+HOST = ROOT / "common/hosts/codex.env"
 HELPER = ROOT / "common/agents/asa_config.py"
 
 skill = SKILL.read_text(encoding="utf-8")
@@ -23,6 +24,14 @@ assert "merely because work is large" in skill
 assert 'asa-architect' in skill
 assert 'fork_turns: "all"' in skill
 assert 'fork_turns: "none"' not in skill
+assert "verified evidence packet" in skill
+assert "root must first investigate" in skill
+assert "correct checkout/worktree" in skill
+assert "explicit project path" in skill
+assert "distinguish observed facts from assumptions" in skill
+assert "Root must not independently reread" in skill
+assert "SAME Worker for delegated scope" in skill
+assert "Full forked history is contextual" in skill
 assert "exact question to resolve" in skill
 assert "competing alternatives or constraints" in skill
 assert "chosen solution and rationale" in skill
@@ -41,6 +50,13 @@ assert "Prompt-cache reuse is opportunistic, not guaranteed." in skill
 assert "independent new architecture question" in skill
 assert "gpt-6.1-sol" not in skill
 assert "xhigh" not in skill.lower()
+
+host = HOST.read_text(encoding="utf-8")
+assert "root must first investigate the relevant code and contracts" in host
+assert "correct checkout/worktree" in host
+assert "verified evidence packet" in host
+assert "Asa is a decision-maker, not a code investigator." in host
+assert "SAME Worker without duplicating its inspection" in host
 
 meta = META.read_text(encoding="utf-8")
 assert "allow_implicit_invocation: true" in meta
@@ -90,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     assert "full-history architecture decisions" in parsed["description"]
 
     instructions = parsed["developer_instructions"]
-    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts"):
+    for needle in ("Do not implement", "Do not implement, edit, spawn agents", "exact missing facts", "inherited conversation", "chosen solution and rationale", "rejected alternatives", "invariants and risks", "unresolved questions", "targeted follow-up facts", "Do not implement, edit, spawn agents, or inspect/search the repository", "verified evidence packet", "Full inherited history does not replace", "existing scope owner"):
         assert needle in instructions
 
     # Non-Harr role remains fail-closed unless an owning caller explicitly forces takeover.
