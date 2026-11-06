@@ -60,7 +60,7 @@ assert "session owns the delegated scope" in shared
 assert "SAME Ein session" in shared
 assert "SAME Ein session remains the evidence owner" in shared
 assert "SAME persistent Asa" in shared
-assert "without rereading the delegated scope" in shared
+assert "must not reread or re-analyze the delegated scope" in shared
 assert "Action arguments" in shared and "MCP tool" in shared
 assert "only the root may invoke it" in shared
 assert "transport continuation" in shared
