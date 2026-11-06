@@ -2,23 +2,23 @@
 
 > Status: reference contract for Harr external CLI-agent adapters
 >
-> Scope: defines the stable boundary between the Harr Einherjar worker core and
+> Scope: defines the stable boundary between the Harr Einherjar executor core and
 > vendor-specific command-line agent adapters. New CLI agents should be wrapped
-> against this contract without changing planner-facing MCP semantics.
+> against this contract without changing root-facing MCP semantics.
 
 ## 1. Purpose
 
-Einherjar is Harr's generic worker bridge for delegating an already-decided
+Einherjar is Harr's generic external-executor bridge for delegating an already-decided
 implementation or verification task to an external console agent.
 
-The planner-facing protocol is intentionally independent from any particular
+The root-facing protocol is intentionally independent from any particular
 agent CLI. GigaCode, OpenCode, Codex CLI, future local agents, and user-defined
-command-template agents are all backends behind the same Harr worker contract.
+command-template agents are all backends behind the same Harr executor contract.
 
 The architecture is:
 
 ```text
-planner
+root
   |
   | <instance-name>::ein
   v
@@ -36,7 +36,7 @@ Einherjar core
   +--> future adapter
 ```
 
-The planner must never need to know vendor session ids, vendor event schemas,
+Root must never need to know vendor session ids, vendor event schemas,
 CLI flags, transcript locations, or process-management details.
 
 ## 2. Responsibility boundary
@@ -49,7 +49,7 @@ CLI flags, transcript locations, or process-management details.
 - start/resume/status/messages/wait/cancel semantics.
 - timeout and cancellation policy.
 - workspace root.
-- worker system contract.
+- executor system contract.
 - final Harr handoff validation.
 - conversion of backend failures into backend-neutral Harr failures.
 - binding each generated named instance to its configured adapter.
@@ -70,7 +70,7 @@ CLI flags, transcript locations, or process-management details.
 
 ### Backend adapter must NOT own
 
-- planner policy.
+- root orchestration policy.
 - architecture decisions.
 - scope expansion.
 - Harr session ids.
@@ -96,9 +96,9 @@ Rules:
 1. Public `resume/status/messages/wait/cancel` use only the Harr session id.
 2. The instance id and configured adapter are frozen when the Harr session starts.
 3. The vendor session id is opaque to core and callers.
-4. A backend adapter may return no vendor session id only if it declares itself
-   stateless/non-resumable.
-5. Resume must never silently switch instance or adapter.
+4. The generic backend abstraction may represent a stateless/non-resumable CLI, but such a backend cannot be published as a named Ein executor because same-session continuation is mandatory.
+5. A named Ein executor must provide a resumable vendor session identity.
+6. Resume must never silently switch instance or adapter.
 
 ## 4. Required adapter API
 
@@ -114,7 +114,7 @@ class BackendAdapter(Protocol):
     def start_command(self, request: BackendStartRequest) -> list[str]: ...
     def resume_command(self, request: BackendResumeRequest) -> list[str]: ...
 
-    # Default preparation prepends the Harr WORKER_CONTRACT. An adapter may
+    # Default preparation prepends the Harr executor contract (the internal constant remains WORKER_CONTRACT for compatibility). An adapter may
     # override this only when it has a native system-prompt route (GigaCode).
     def prepare_prompt(self, prompt: str) -> str: ...
     def stdin_text(self, prompt: str) -> str | None: ...
@@ -159,17 +159,18 @@ Recommended future extensions:
 - persistent_session
 - model_selection
 
-Do not add planner-visible vendor-specific booleans.
+Do not add root-visible vendor-specific booleans.
 
 ## 6. Start contract
 
 Core provides:
 
 - workspace path;
-- worker prompt;
+- a root-supplied self-contained execution contract (goal, bounded scope, fixed decisions/constraints, acceptance criteria, required validation);
+- executor prompt;
 - Harr session id;
 - timeout;
-- worker contract text;
+- executor contract text;
 - backend options already validated.
 
 Adapter returns a launch description. Prefer data over side effects.
@@ -202,15 +203,13 @@ If `resumable=true`, the adapter must be able to continue the same vendor
 session given:
 
 - opaque vendor session id;
-- planner delta prompt;
+- root delta prompt for the SAME delegated scope;
 - workspace;
 - timeout/backend options.
 
 Resume must preserve the existing agent context where the backend supports it.
 
-If `resumable=false`, core must not pretend otherwise. A later stateless
-recovery mode may start a new process from a compact recovery bundle, but it is
-a separate capability and must be reported explicitly.
+If `resumable=false`, core must not pretend otherwise and Harr must not publish that backend as a named Ein executor. A future stateless recovery mode would be a different transport contract, not a substitute for same-session resume.
 
 ## 8. Prompt transport
 
@@ -262,8 +261,8 @@ Rules:
 - command values are arrays only;
 - unknown placeholders are rejected;
 - shell metacharacters have no special meaning;
-- resume is optional;
-- absence of resume means the backend is non-resumable;
+- the generic command-template parser can describe a missing resume command for diagnostics, but a named Ein instance requires `resume`;
+- absence of resume means the backend is non-resumable and therefore invalid for named Ein publication;
 - recursive invocation of Einherjar itself must be rejected where detectable.
 
 If a CLI needs complex session discovery, event parsing, auth handshakes, or
@@ -286,8 +285,8 @@ Adapters normalize vendor output to a small common shape:
 
 Rules:
 
-- tool-call payloads are not planner progress text.
-- raw debug logs are not planner progress text.
+- tool-call payloads are not root progress text.
+- raw debug logs are not root progress text.
 - reasoning/internal chain-of-thought must not be surfaced.
 - duplicate messages must be suppressible by sequence/revision.
 - malformed vendor events are ignored or converted to diagnostics; they must not
@@ -301,7 +300,7 @@ Preferred order:
 1. explicit CLI-provided session id in structured output;
 2. documented session id event;
 3. documented backend state file/transcript lookup;
-4. no session id -> backend is treated as non-resumable.
+4. no session id -> backend is treated as non-resumable and cannot back a named Ein instance.
 
 Do not scrape unstable human-formatted terminal banners if a structured route
 exists.
@@ -311,7 +310,7 @@ them unless the vendor contract explicitly guarantees UUIDs.
 
 ## 12. Final output contract
 
-The backend's final model response must contain the Harr worker handoff.
+The backend's final model response must contain the Harr executor handoff.
 
 Current handoff statuses:
 
@@ -319,7 +318,7 @@ Current handoff statuses:
 - `ESCALATE`
 - `FAILED`
 
-Core validates the packet. Adapter only obtains the backend's final response.
+Core validates the packet. Adapter only obtains the backend's final response. `ESCALATE` always returns to root; Ein never routes it onward. Root decides the next step and any continuation returns through `resume` on the SAME Harr session.
 
 A backend-specific parser may strip transport wrappers, but must not invent
 missing semantic fields or reinterpret a failed task as DONE.
@@ -332,7 +331,7 @@ active.
 Examples:
 
 ```text
-External worker exited with code 2.
+External executor exited with code 2.
 Backend executable not found: opencode.
 Backend did not return a parseable Harr handoff.
 Selected backend does not support resume.
@@ -347,7 +346,13 @@ different documented transport.
 
 Required behavior:
 
-- detached worker survives the individual MCP tool call;
+- detached executor survives the individual MCP tool call;
+- root is the only model-side caller of named Ein actions;
+- `STARTING`/`RUNNING` retain delegated-scope ownership in the Ein session;
+- `ESCALATE` pauses execution but retains scope ownership until the SAME session is resumed;
+- `DONE` returns ownership to root;
+- cancellation/failure may leave partial edits and must never imply a clean workspace merely from an empty handoff `changed` list;
+- the bridge captures trusted workspace provenance before and after execution so root can detect workspace-state drift;
 - process tree can be terminated on explicit cancel;
 - positive hard timeout can terminate the process;
 - timeout=0 means no automatic hard timeout;
@@ -373,7 +378,7 @@ keys or login tokens must never be embedded in this registry.
 At runtime Harr may generate a private per-instance compatibility configuration
 for the existing Einherjar core. That generated file is an implementation
 detail: callers must not edit it, select a different backend through it, or
-treat its legacy `default_backend` field as planner-visible configuration.
+treat its legacy `default_backend` field as root-visible configuration.
 
 Instance ids and adapter ids are separate stable identifiers. Harr session
 state persists both so resume cannot silently move to another named instance or
@@ -510,7 +515,7 @@ During migration:
 - reuse the established GigaCode adapter semantics for cancellation, startup
   confirmation, handoff validation, and progress behavior;
 - never auto-start or auto-select the migrated instance: delegation still
-  requires a direct user instruction.
+  requires a direct user instruction before `start`; same-session `resume` inside that delegated scope is transport continuation.
 
 ## 21. Security invariants
 
@@ -536,6 +541,6 @@ A CLI is "supported by Einherjar" only when:
 - resume is tested if declared;
 - cancellation/failure paths are bounded;
 - final Harr handoff extraction is tested;
-- its adapter does not leak vendor concepts into the planner-facing protocol.
+- its adapter does not leak vendor concepts into the root-facing protocol.
 
 Finding an executable in PATH is discovery, not support.

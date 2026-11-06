@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Private GigaCode execution/session runtime used by named Ein instances.
+"""Private GigaCode executor/session runtime used by named Ein instances.
 
 The MCP boundary is intentionally narrow:
 - action=start: launch a detached persistent GigaCode session from plan_path or prompt.
 - action=resume: launch a detached continuation of that same session.
 - action=status: read progress or the final handoff without waiting.
 
-GigaCode must return a planner-ready structured handoff. In particular,
-ESCALATE responses contain enough code evidence for the planner to decide
+GigaCode must return a root-ready structured handoff. In particular,
+ESCALATE responses contain enough code evidence for root to decide
 what to do next without reopening the source merely to rediscover the mismatch.
 """
 
@@ -72,17 +72,17 @@ def _validate_session_id(session_id: object) -> str | None:
     return session_id
 
 WORKER_CONTRACT = r"""
-You are an implementation worker. The caller is a more capable planner and owns
+You are an implementation executor. The root caller owns
 architecture, root-cause decisions, scope changes, and ambiguous design choices.
 
-Your job is to execute an already-decided plan faithfully and cheaply.
+Your job is to execute an already-decided bounded contract faithfully and cheaply.
 
 Before editing:
 1. Read the complete plan.
 2. Read only enough repository code to validate the plan's important anchors,
    symbols, call paths, and assumptions.
 3. If a material plan assumption does not match the code, STOP BEFORE EDITING
-   and return ESCALATE. Do not redesign the solution yourself.
+   and return ESCALATE to root. Do not redesign the solution yourself or route the escalation to another agent.
 
 During implementation:
 - Stay inside the plan's scope and design.
@@ -109,7 +109,7 @@ surrounding prose. Use this schema:
 
 {
   "status": "DONE" | "ESCALATE" | "FAILED",
-  "summary": "short planner-facing summary",
+  "summary": "short root-facing summary",
   "changed": [
     {"path": "relative/path", "what": "specific change"}
   ],
@@ -140,7 +140,7 @@ surrounding prose. Use this schema:
       }
     ],
     "impact": "why continuing would require changing the plan or architecture",
-    "decision_needed": "one concrete decision/question the planner must resolve",
+    "decision_needed": "one concrete decision/question root must resolve",
     "options": [
       {"option": "possible next direction", "consequence": "what choosing it changes"}
     ]
@@ -150,22 +150,21 @@ surrounding prose. Use this schema:
   ]
 }
 
-Rules for the handoff:
+Rules for the root-facing handoff:
 - DONE: escalation must be null; blockers and self_review.unverified must be
   empty; every acceptance criterion must appear in verified with result=PASS;
   self_review.criteria_complete and self_review.diff_scope_clean must both be true.
-- ESCALATE: provide enough evidence for the planner to reason without rereading
+- ESCALATE: provide enough evidence for root to reason without rereading
   the cited source just to understand the mismatch. Prefer exact symbols,
   paths, line ranges, and a tiny decisive snippet. State expected vs observed,
   impact, and the exact decision needed. Do not dump whole files.
 - ESCALATE options must be neutral decision branches grounded in observed facts.
   Do NOT invent missing behavior, APIs, algorithms, data, target symbols, or
   implementation details. If a corrected design/target is unknown, say that the
-  planner must provide it rather than proposing a plausible substitute.
+  root must provide it rather than proposing a plausible substitute.
 - FAILED: use for execution/tool/environment failures that do not require an
   architectural decision. Include the failed command/check and compact evidence.
-- For verification commands, include the exit/result outcome. Do not make the
-  parent rerun a check merely to know whether it passed.
+- For verification commands, include the exit/result outcome. Do not make root rerun a check merely to know whether it passed.
 - Keep the whole JSON compact. Evidence should be sufficient, not exhaustive.
 - Never claim a check passed unless you actually performed it.
 """.strip()
@@ -373,6 +372,58 @@ def _recorded_pid_running(state: dict) -> bool:
     )
 
 
+def _tracked_diff_sha256(root: Path) -> str | None:
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            ["git", "-C", str(root), "diff", "--no-ext-diff", "--binary", "HEAD", "--"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        digest = hashlib.sha256()
+        if proc.stdout is not None:
+            while True:
+                chunk = proc.stdout.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        try:
+            return digest.hexdigest() if proc.wait(timeout=30) == 0 else None
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            return None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        return None
+
+
+def _workspace_provenance(root: Path = ROOT) -> dict:
+    base = {"root": str(root), "git": False}
+    try:
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10)
+        if top.returncode != 0:
+            return base
+        head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
+        status = subprocess.run(["git", "-C", str(root), "status", "--porcelain=v1", "-z"], capture_output=True, timeout=15)
+        raw = status.stdout if status.returncode == 0 else b""
+        tracked_diff_sha256 = _tracked_diff_sha256(root)
+        entries = [x for x in raw.split(b"\0") if x]
+        value = {"root": str(root), "git": True, "git_root": top.stdout.strip(), "head": head.stdout.strip() if head.returncode == 0 else None, "dirty": bool(raw), "status_sha256": hashlib.sha256(raw).hexdigest(), "tracked_diff_sha256": tracked_diff_sha256, "status_entries": [x.decode("utf-8", errors="replace") for x in entries[:50]], "status_truncated": len(entries) > 50}
+        value["fingerprint"] = hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        return value
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return base
+
+
+def _runtime_provenance(state: dict) -> dict:
+    start = state.get("workspace_start") if isinstance(state.get("workspace_start"), dict) else None
+    current = state.get("workspace_final") if isinstance(state.get("workspace_final"), dict) else _workspace_provenance()
+    return {"start": start, "current": current, "changed_since_start": bool(start and current and start.get("fingerprint") != current.get("fingerprint"))}
+
+
 def _handoff_payload(session_id: str, state: dict, *, startup_confirmed: bool | None = None) -> dict:
     payload = {
         "session_id": session_id,
@@ -382,6 +433,7 @@ def _handoff_payload(session_id: str, state: dict, *, startup_confirmed: bool | 
             "job_id": state.get("job_id"),
             "elapsed_sec": state.get("elapsed_sec"),
             "exit_code": state.get("exit_code"),
+            "provenance": _runtime_provenance(state),
         },
     }
     if startup_confirmed is not None:
@@ -1151,7 +1203,7 @@ def run_gigacode(
                 stderr = stderr_path.read_text(encoding="utf-8", errors="replace").strip()
                 events = _tail_chat_events(session_id)
                 cancel_summary = (
-                    f"GigaCode was manually cancelled by the planner. "
+                    f"GigaCode was manually cancelled by root. "
                     f"Session remains resumable: {session_id}. "
                     f"Last events: {json.dumps(events[-5:], ensure_ascii=False)}"
                 )
@@ -1282,7 +1334,7 @@ def cancel_tool(arguments: dict) -> dict:
 
     _append_runtime_log(
         session_id,
-        f"CANCEL_REQUEST job={job_id} from planner",
+        f"CANCEL_REQUEST job={job_id} from root",
     )
     if not _request_cancel(session_id, job_id):
         return text_result({
@@ -1409,6 +1461,7 @@ def launch_detached_job(
         "worker_pid": None,
         "cwd": str(ROOT),
         "started_epoch": time.time(),
+        "workspace_start": _workspace_provenance(),
         "elapsed_sec": 0.0,
         "timeout_sec": timeout_sec,
         "chat_start_offset": baseline_chat_size,
@@ -1570,6 +1623,7 @@ def run_detached_job(job_path_arg: str) -> int:
             "worker_pid": os.getpid(),
             "exit_code": exit_code,
             "handoff": handoff,
+            "workspace_final": _workspace_provenance(),
         },
     )
     _append_runtime_log(
@@ -1622,7 +1676,7 @@ def parse_worker_handoff(output: str, exit_code: int, stderr: str) -> tuple[dict
     if exit_code != 0:
         payload = {
             "status": "FAILED",
-            "summary": "GigaCode process failed before producing a usable handoff.",
+            "summary": "GigaCode executor turn ended without a usable handoff; workspace may contain partial edits.",
             "changed": [],
             "verified": [],
             "escalation": None,
@@ -1638,13 +1692,13 @@ def parse_worker_handoff(output: str, exit_code: int, stderr: str) -> tuple[dict
     if handoff is None:
         payload = {
             "status": "FAILED",
-            "summary": "GigaCode violated the worker handoff protocol.",
+            "summary": "GigaCode violated the executor handoff protocol.",
             "changed": [],
             "verified": [],
             "escalation": None,
             "blockers": [{
                 "kind": "other",
-                "detail": "worker returned no parseable JSON handoff",
+                "detail": "executor returned no parseable JSON handoff",
                 "evidence": output[-4000:],
             }],
         }
@@ -1655,7 +1709,7 @@ def parse_worker_handoff(output: str, exit_code: int, stderr: str) -> tuple[dict
     if missing or handoff.get("status") not in {"DONE", "ESCALATE", "FAILED"}:
         payload = {
             "status": "FAILED",
-            "summary": "GigaCode returned an invalid worker handoff object.",
+            "summary": "GigaCode returned an invalid executor handoff object.",
             "changed": [],
             "verified": [],
             "escalation": None,
@@ -1691,7 +1745,7 @@ def parse_worker_handoff(output: str, exit_code: int, stderr: str) -> tuple[dict
         if escalation_missing or not evidence_ok or not decision_ok:
             payload = {
                 "status": "FAILED",
-                "summary": "GigaCode escalated without a complete planner-ready handoff.",
+                "summary": "GigaCode escalated without a complete root-ready handoff.",
                 "changed": handoff.get("changed") if isinstance(handoff.get("changed"), list) else [],
                 "verified": handoff.get("verified") if isinstance(handoff.get("verified"), list) else [],
                 "escalation": None,
@@ -1775,13 +1829,13 @@ def start_tool(arguments: dict) -> dict:
         plan = resolve_plan(plan_path)
         worker_prompt = (
             f"Read the complete implementation plan from {plan}. "
-            "Perform the preflight required by your worker contract, then execute it if valid. "
+            "Perform the preflight required by your executor contract, then execute it if valid. "
             "Return only the required JSON handoff."
         )
     else:
         worker_prompt = (
-            "Execute this direct planner task under the same worker contract. "
-            "Treat the supplied task as the complete plan: validate material assumptions before editing, "
+            "Execute this self-contained root-provided contract under the same executor contract. "
+            "Treat the supplied task as the complete bounded contract: validate material assumptions before editing, "
             "escalate instead of redesigning if they do not match the repository, and return only the required JSON handoff.\n\n"
             + direct_prompt.strip()
         )
@@ -1802,8 +1856,8 @@ def resume_tool(arguments: dict) -> dict:
     if session_id is None:
         raise ValueError("resume requires a valid UUID session_id")
     prompt = (
-        "Continue the same task and worker contract. "
-        "The planner provides only new information below. Apply it to the existing session context.\n\n"
+        "Continue the SAME delegated scope and executor contract. This is a root transport continuation. "
+        "Root provides only the complete decision/correction delta below, including invariants, disposition of existing edits when relevant, and acceptance/validation changes. Apply it to the existing session context.\n\n"
         + arguments["prompt"].strip()
         + "\n\nReturn only the required JSON handoff."
     )

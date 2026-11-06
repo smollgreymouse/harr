@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='harr-ein-named-') as tmp:
 print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[],"verified":[{"criterion":"fake","check":"fake run","result":"PASS","evidence":"exit 0"}],"self_review":{"criteria_complete":True,"diff_scope_clean":True,"unverified":[]},"escalation":None,"blockers":[]}))
 ''')
     definition=base/'definition.json'
-    definition.write_text(json.dumps({'adapter':'command-template','start':[PYTHON,str(fake),'{prompt}']}))
+    definition.write_text(json.dumps({'adapter':'command-template','start':[PYTHON,str(fake),'{prompt}','{session_id}'],'resume':[PYTHON,str(fake),'{prompt}','{session_id}']}))
     cli=[PYTHON,str(ROOT/'common/mcp/ein_instances.py')]
     def run(*args,ok=True):
         p=subprocess.run([*cli,*args],env=env,cwd=work,text=True,encoding='utf-8',capture_output=True)
@@ -100,6 +100,9 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
         return p.stdout
     # Direct Codex frontdoors reserve Harr-owned host namespaces.
     run('add','--id','harr-ein-ui','--adapter','opencode',ok=False)
+    nonresumable=base/'nonresumable.json'
+    nonresumable.write_text(json.dumps({'adapter':'command-template','start':[PYTHON,str(fake),'{prompt}']}))
+    run('add','--id','no-resume','--adapter','custom','--definition-file',str(nonresumable),ok=False)
 
     def failure_evidence(instance_id,session_id):
         cache=(legacy_cache if instance_id=='gigacode' else
@@ -142,8 +145,8 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     run('add','--id','fake-one','--adapter','custom','--definition-file',str(definition),ok=False)
     run('add','--id','codegraph','--adapter','opencode',ok=False)
     assert 'fake-one' in run('list') and 'fake-two' in run('list')
-    run('edit','fake-two','--display-name','Second worker')
-    assert json.loads(run('show','fake-two'))['display_name']=='Second worker'
+    run('edit','fake-two','--display-name','Second executor')
+    assert json.loads(run('show','fake-two'))['display_name']=='Second executor'
     selection=base/'home/.config/harr/mcp-selection.json'
     effective=base/'home/.config/harr/mcp-registry.json'
     select=[PYTHON,str(ROOT/'common/mcp/selector.py'),'--catalog',str(ROOT/'common/mcp/registry.json'),'--selection',str(selection),'--effective',str(effective),'--spec','none']
@@ -214,6 +217,8 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
                 if status['status']!='RUNNING':break
                 time.sleep(.2)
             assert status['status']=='DONE',(name,status,failure_evidence(name,sid))
+            assert 'runtime' in status and 'provenance' in status['runtime'], (name,status)
+            assert 'current' in status['runtime']['provenance'], (name,status)
             assert status['summary']==('fake GigaCode completed' if name=='gigacode' else 'named fake worker done')
             print(name,'MCP tools + lifecycle PASS')
         finally:

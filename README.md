@@ -57,7 +57,7 @@ harr agents asa configure --model gpt-6.1-sol --effort xhigh
 Harr does not change the model of an already-running chat. Named external
 executors use the shared `$ein` workflow when configured.
 
-## Named Ein CLI workers (PR #39)
+## Named Ein CLI executors (PR #39)
 
 Harr manages any number of **user-named Ein MCP instances**. Every instance has a
 fixed adapter (`gigacode`, `opencode`, `codex`, or a custom command-template)
@@ -66,7 +66,7 @@ with its own runtime state and configuration. Each publishes the **same**
 legacy GigaCode action and argument schema. The GigaCode adapter reuses its
 established bridge for startup confirmation, lifecycle and Desktop progress.
 
-At first interactive `harr setup`, choose **Configure named Ein workers**,
+At first interactive `harr setup`, choose **Configure named Ein executors**,
 or manage them later:
 
 ```bash
@@ -75,7 +75,7 @@ harr ein add --id opencode-builder --adapter opencode
 harr ein add --id opencode-reviewer --adapter opencode
 harr ein add --id gigacode --adapter gigacode
 harr ein list
-harr ein edit opencode-reviewer --display-name "Review worker"
+harr ein edit opencode-reviewer --display-name "Review executor"
 harr ein test opencode-builder       # checks executable availability, no model calls
 harr ein apply                       # publish gateway, skill/policy, named Desktop panels
 ```
@@ -87,7 +87,7 @@ Use `harr ein disable NAME`, `enable NAME` or `remove NAME` to manage instances.
 
 For an arbitrary CLI, use
 `harr ein add --id NAME --adapter custom --definition-file custom.json`;
-its `start`/`resume` commands must be JSON argv arrays (no shell expansion).
+its `start`/`resume` commands must be JSON argv arrays (no shell expansion), and custom Ein executors must be resumable so escalation/correction can return to the SAME session.
 Optional `--executable PATH` overrides a built-in executable and
 `--secret-env ENV=SECRET_FILE` references a file in Harr's private `secrets/`
 directory without putting its contents into the instances config.
@@ -100,7 +100,7 @@ cache namespace and is exposed only as `gigacode::ein`.
 Codex Desktop also registers every enabled named Ein **directly** under its
 user-chosen MCP name. A `start`/`resume` call leaves a compact inline marker;
 the marker watches that exact `job_id` and attempts a neutral completion
-`ui/message` when the worker reaches a terminal state. A persistent atomic claim
+`ui/message` when the executor reaches a terminal state. A persistent atomic claim
 prevents concurrent markers from sending the same completion, while a failed
 delivery releases its claim for a later retry. The UI protocol has no idempotency
 key, so a lost acknowledgement can still produce a duplicate; this is best-effort
@@ -115,7 +115,7 @@ suspension or Desktop restart.
 All named instances still share the opt-in read-only monitor
 `harr-ein-ui::show_ein_live`. It displays an existing session and transcript but
 never starts a run and no longer owns completion delivery. The monitor does not
-open or focus automatically on worker start or completion. OpenCode and gateway
+open or focus automatically on executor start or completion. OpenCode and gateway
 fallback continue to reach named Ein through LeanCTX.
 
 See `docs/EINHERJAR_NAMED_INSTANCES_DESIGN.md` for the migration rationale and validation record.
@@ -320,7 +320,7 @@ Grafana also requires `uvx` in `PATH`; Harr uses it on demand and does not globa
 
 Kibana also uses uvx; Harr pins the smollgreymouse/kibana-agent fork to a commit that supports API-key auth and the MCP v1 SDK.
 
-Executors are not part of the optional MCP checklist. Configure user-named workers separately with `harr ein configure` or `harr ein add --id NAME --adapter ...`. Each enabled instance is published behind LeanCTX as `<instance>::ein`, and the generated policy still requires a direct user instruction before delegation. The GigaCode adapter requires the external `gigacode` CLI to be installed and authenticated in its normal environment; Harr does not own provider authentication.
+Executors are not part of the optional MCP checklist. Configure user-named executors separately with `harr ein configure` or `harr ein add --id NAME --adapter ...`. Each enabled instance is published behind LeanCTX as `<instance>::ein`, and the generated policy still requires a direct user instruction before delegation. The GigaCode adapter requires the external `gigacode` CLI to be installed and authenticated in its normal environment; Harr does not own provider authentication.
 
 Check the whole harness:
 
@@ -863,9 +863,9 @@ See common/skills/harr/references/kibana.md for pinned-runtime and routing detai
 
 
 
-### Named Ein CLI workers
+### Named Ein CLI executors
 
-Ein is Harr's backend-neutral planner→worker bridge. Executors are configured
+Ein is Harr's backend-neutral root→external-executor MCP bridge. Executors are configured
 as **user-named instances**, independently from the service MCP checklist:
 
 ```text
@@ -883,9 +883,8 @@ Every enabled instance exposes exactly one public tool behind LeanCTX:
 ```
 
 The public actions are `start|resume|status|messages|wait|cancel`. The adapter
-is fixed in the instance configuration; there is no planner-visible backend
-selector and no singleton `einherjar::worker`. A direct user instruction is
-required before any delegation, even when only one instance is configured.
+is fixed in the instance configuration; there is no root-visible backend
+selector and no singleton `einherjar::worker`. Only root may invoke a named Ein tool. A direct user instruction is required before `start`, even when only one instance is configured; `resume` on the SAME session for the SAME delegated scope is transport continuation and does not require a second delegation prompt.
 
 Instance configuration lives under
 `~/.config/harr/einherjar/instances.json` (or the Harr/XDG config root).

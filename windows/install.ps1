@@ -91,7 +91,7 @@ elseif ($explicitMcp) { $selectorArgs += @('--spec', $Mcp) }
 elseif ($ConfigureMcp -or $firstInstall) { $selectorArgs += '--configure' }
 Invoke-Selector $selectorArgs
 if (($firstInstall -or $ConfigureMcp) -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
-    $answer = Read-Host 'Configure named Ein CLI workers now? [y/N]'
+    $answer = Read-Host 'Configure named Ein CLI executors now? [y/N]'
     if ($answer -match '^(?i:y|yes)$') {
         [string[]]$cmd = @(Resolve-Python)
         $pyexe = $cmd[0]

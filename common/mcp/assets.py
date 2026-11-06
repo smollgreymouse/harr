@@ -40,7 +40,7 @@ def ein_policy(tools: list[str]) -> str:
     if not tools:
         return ''
     lines = [
-        '- Named Ein workflow: `$ein`. Available Ein tools: ' + ', '.join('`' + name + '`' for name in tools) + '.',
+        '- Named Ein workflow: `$ein`. Root-only external-executor transport: only the root may invoke named Ein tools; native subagents/workers must never invoke them. Available Ein tools: ' + ', '.join('`' + name + '`' for name in tools) + '.',
     ]
     return '\n'.join(lines) + '\n'
 
@@ -75,7 +75,7 @@ def filter_skill(args: argparse.Namespace) -> None:
         skill = args.output / 'SKILL.md'
         if skill.exists():
             with skill.open('a', encoding='utf-8') as out:
-                out.write('\n## Named Ein workers\n\nWorkflow: `$ein`. Available MCP tools: ' + ', '.join('`' + t + '`' for t in tools) + '.\n')
+                out.write('\n## Named Ein executors\n\nWorkflow: `$ein`. Available MCP tools: ' + ', '.join('`' + t + '`' for t in tools) + '.\n')
     for server in catalog:
         reference = server.get("skill_reference")
         if reference and str(server["name"]) not in active:
@@ -88,7 +88,7 @@ def filter_skill(args: argparse.Namespace) -> None:
     if retired_reference.exists():
         retired_reference.unlink()
     if tools:
-        # A named worker uses the generic reference even without legacy singleton.
+        # A named Ein executor uses the generic reference even without the legacy singleton.
         source_ref = args.source / 'references' / 'einherjar.md'
         target = args.output / 'references' / 'einherjar.md'
         if source_ref.exists():

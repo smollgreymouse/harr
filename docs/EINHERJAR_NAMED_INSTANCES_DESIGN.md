@@ -8,7 +8,7 @@ Harr setup owns *any number* of independently named Einherjar instances. An inst
 
 ## Short public API name
 
-The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherjar` remains the conceptual/documentation name, not something users must type. Setup displays **Ein workers**. The existing, user-chosen MCP server name is not changed by this abbreviation; its canonical tool is `ein` for every instance. Do not expose `harr einherjar` as the required spelling. The shared orchestration skill is `$ein`; Harr removes the legacy managed `$einherjar-worker` skill during agent apply.
+The public Harr CLI namespace is **`harr ein`** (short for Einherjar). `Einherjar` remains the conceptual/documentation name, not something users must type. Setup displays **Ein executors**. The existing, user-chosen MCP server name is not changed by this abbreviation; its canonical tool is `ein` for every instance. Do not expose `harr einherjar` as the required spelling. The shared orchestration skill is `$ein`; Harr removes the legacy managed `$einherjar-worker` skill during agent apply.
 
 ## Identity model
 
@@ -66,20 +66,20 @@ Use separate protected `environment_refs` to Harr secret store; never inline sec
 
 ## Setup interaction
 
-Add **Ein workers…** as a repeatable section in initial `harr setup` and `harr mcp configure`, not as N fixed catalog entries. Every Add flow starts by **asking the user to name the MCP server**, before selecting its adapter; the UI never quietly assigns `gigacode`, `opencode-2`, etc. The explicit MCP name determines the gateway namespace and is distinct from the optional friendly label. Setup loop:
+Add **Ein executors…** as a repeatable section in initial `harr setup` and `harr mcp configure`, not as N fixed catalog entries. Every Add flow starts by **asking the user to name the MCP server**, before selecting its adapter; the UI never quietly assigns `gigacode`, `opencode-2`, etc. The explicit MCP name determines the gateway namespace and is distinct from the optional friendly label. Setup loop:
 
 ```
-Harr setup  >  External workers (Ein)
+Harr setup  >  External executors (Ein)
 
   NAME              ADAPTER      API                   ENABLED
   gigacode          GigaCode     ein-v1   yes
   opencode-fast     OpenCode     ein-v1   yes
   opencode-review   OpenCode     ein-v1   yes
 
-  [A] Add worker    [E] Edit    [D] Disable    [R] Remove
+  [A] Add executor    [E] Edit    [D] Disable    [R] Remove
   [T] Test selected [Enter] Continue
 
-Add worker:
+Add executor:
   MCP server name [required, unique]: ...
   Display name [optional]:           ...
   Adapter [GigaCode/OpenCode/Codex/Custom]: ...
@@ -106,7 +106,7 @@ Non-interactive parity:
 2. Per-instance MCP launcher: `harr-mcp-run --einherjar-instance ID` (or equivalent manager action) resolves immutable identity and loads config, then starts shared Einherjar engine with a compatibility-aware tool facade. Never trust user-provided `instance_id` in each tool call.
 3. Namespaced cache: `.../harr/einherjar/<instance-id>/<workspace-hash>/<session-uuid>`; session metadata pins adapter id, instance id and config generation at creation. Updating an instance affects new sessions only; explicit action required for existing sessions. No cross-instance UUID lookups, cancel, resume or shared process control.
 4. Tools published only for enabled instances. One shared skill and one shared policy template enumerate the *actual enabled instance tool names*. No separate per-adapter skills or behavior forks; the retired `$gigacode-executor` skill is removed rather than installed as a second alias. Preserve user-authored policy and unrelated MCP settings.
-5. If several workers use the same adapter, their executable args, environment, permissions, concurrency limits and session lifecycles remain independent; optional per-workspace concurrency conflict protection prevents two workers editing the same scope simultaneously.
+5. If several executors use the same adapter, their executable args, environment, permissions, concurrency limits and session lifecycles remain independent; optional per-workspace concurrency conflict protection prevents two executors editing the same scope simultaneously.
 
 ## Codex Desktop async marker and live-panel integration
 
@@ -147,7 +147,7 @@ All enabled Ein instances still share **one read-only opt-in monitor**,
 its resource is `ui://harr-ein-ui/live.html`. The server verifies instance/session
 ownership and keeps transcript polling app-only. The live panel is monitor-only:
 it does not own completion claims, does not send `ui/message`, and is never opened
-automatically on worker start or completion.
+automatically on executor start or completion.
 
 Current Codex Desktop builds suspend an ordinary inline MCP App after roughly
 300 seconds continuously outside the viewport. Harr does not auto-open a fullscreen
@@ -185,7 +185,7 @@ Treat the pre-feature `gigacode_server.py` as an executable contract. `interface
 - one canonical shared Einherjar skill that subsumes the old `gigacode-executor/SKILL.md` behavior; remove the retired `$gigacode-executor` skill and migrate generated routing/documentation to `gigacode::ein` without divergent instructions;
 - existing tests `tests/gigacode-bridge.py`, `tests/gigacode-lifetime.py`, MCP app tests and Desktop/UI streaming coverage must pass through the **new façade**, not only through the unchanged legacy server.
 
-There are *known differences now*: PR #39 Einherjar has `backend` and `backends` action in public schema; it returns RUNNING based on a different startup path and does not implement the full legacy live-progress surface. Therefore **do not replace legacy GigaCode with the generic worker directly**. Implement the single `GigaCodeCompatibleFacade` used by **every** named instance and close parity gaps, or reuse the legacy MCP adapter over the new core until its behavior is demonstrably equivalent. No removal of old implementation before differential tests pass.
+There are *known differences now*: PR #39 Einherjar has `backend` and `backends` action in public schema; it returns RUNNING based on a different startup path and does not implement the full legacy live-progress surface. Therefore **do not replace legacy GigaCode with the generic executor directly**. Implement the single `GigaCodeCompatibleFacade` used by **every** named instance and close parity gaps, or reuse the legacy MCP adapter over the new core until its behavior is demonstrably equivalent. No removal of old implementation before differential tests pass.
 
 ## Implementation sequence / acceptance
 

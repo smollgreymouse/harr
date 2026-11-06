@@ -25,7 +25,7 @@ def server(name):
     return {
         "name": name,
         "label": name,
-        "description": f"Named Ein {name} worker. Use only after direct user instruction.",
+        "description": f"Named Ein {name} external executor. Use only after direct user instruction.",
         "required": False,
         "transport": "stdio",
         "lifecycle": "on-demand",
@@ -56,19 +56,28 @@ def render(tmp, registry, platform):
 
 
 shared = EIN_SKILL.read_text(encoding="utf-8")
-assert "session owns its delegated scope" in shared
+assert "session owns the delegated scope" in shared
 assert "SAME Ein session" in shared
 assert "Action arguments" in shared and "MCP tool" in shared
-assert "plan_path" not in shared
+assert "only the root may invoke it" in shared
+assert "transport continuation" in shared
+assert "Every `ESCALATE` returns to root" in shared
+assert "never routes an escalation anywhere itself" in shared
+assert "STARTING" in shared and "RUNNING" in shared and "FAILED" in shared and "DONE" in shared
+assert "workspace as potentially partially modified" in shared
+assert "self-contained execution contract" in shared
+assert "disposition of any already-made edits" in shared
+assert "status/progress/waiting" in shared
+assert "plan_path" in shared
 assert "einherjar-worker" not in shared
 meta = EIN_META.read_text(encoding="utf-8")
 assert "allow_implicit_invocation: false" in meta
 
 schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-assert "explicitly instructs" in schema["description"]
+assert "Root-only MCP transport" in schema["description"]
 actions = schema["inputSchema"]["properties"]["action"]["enum"]
 assert actions == ["start", "resume", "status", "messages", "wait", "cancel"]
-assert "No automatic wait/poll" in schema["inputSchema"]["properties"]["action"]["description"]
+assert "No automatic polling" in schema["inputSchema"]["properties"]["action"]["description"]
 
 with tempfile.TemporaryDirectory(prefix="harr-ein-policy-matrix-") as tmp_raw:
     tmp = Path(tmp_raw)
@@ -81,6 +90,8 @@ with tempfile.TemporaryDirectory(prefix="harr-ein-policy-matrix-") as tmp_raw:
             available = sorted(f"{item['name']}::ein" for item in registry)
             if available:
                 assert "$ein" in policy and "$ein" in harr_skill, (platform, case)
+                assert "Root-only external-executor transport" in policy, (platform, case)
+                assert "native subagents/workers must never invoke them" in policy, (platform, case)
                 assert all(tool in policy and tool in harr_skill for tool in available), (platform, case)
                 assert "start|resume|status|messages|wait|cancel" not in policy
                 assert "not authorization" not in policy
@@ -97,7 +108,7 @@ ein_reference = (HARR_SKILL / "references/einherjar.md").read_text()
 assert "Codex Desktop Ein app routing" in codex_policy
 assert "OpenCode and other hosts keep Harr-managed MCP calls behind LeanCTX" in codex_policy
 assert "Codex Desktop Ein app routing" not in opencode_policy
-assert "use it for user-authorized `start` and `resume` calls" in ein_reference
+assert "use it for user-authorized `start` and same-session `resume` calls" in ein_reference
 assert "LeanCTX gateway for status, messages, wait, cancel" in ein_reference
 
 print(f"Ein instruction matrix: PASS ({len(HOST_SURFACES)} host surfaces x {len(cases)} instance/backend cases)")

@@ -1,4 +1,4 @@
-"""Worker contract and handoff validation shared by Einherjar backends.
+"""Executor contract and handoff validation shared by Einherjar backends.
 
 This protocol is derived from the proven legacy GigaCode bridge. The legacy
 `gigacode` MCP stays independent in this compatibility-first PR; Einherjar uses
@@ -10,17 +10,17 @@ from __future__ import annotations
 import json
 
 WORKER_CONTRACT = r"""
-You are an implementation worker. The caller is a more capable planner and owns
+You are an implementation executor. The root caller owns
 architecture, root-cause decisions, scope changes, and ambiguous design choices.
 
-Your job is to execute an already-decided plan faithfully and cheaply.
+Your job is to execute an already-decided bounded contract faithfully and cheaply.
 
 Before editing:
 1. Read the complete plan.
 2. Read only enough repository code to validate the plan's important anchors,
    symbols, call paths, and assumptions.
 3. If a material plan assumption does not match the code, STOP BEFORE EDITING
-   and return ESCALATE. Do not redesign the solution yourself.
+   and return ESCALATE to root. Do not redesign the solution yourself or route the escalation to another agent.
 
 During implementation:
 - Stay inside the plan's scope and design.
@@ -47,7 +47,7 @@ surrounding prose. Use this schema:
 
 {
   "status": "DONE" | "ESCALATE" | "FAILED",
-  "summary": "short planner-facing summary",
+  "summary": "short root-facing summary",
   "changed": [
     {"path": "relative/path", "what": "specific change"}
   ],
@@ -78,7 +78,7 @@ surrounding prose. Use this schema:
       }
     ],
     "impact": "why continuing would require changing the plan or architecture",
-    "decision_needed": "one concrete decision/question the planner must resolve",
+    "decision_needed": "one concrete decision/question root must resolve",
     "options": [
       {"option": "possible next direction", "consequence": "what choosing it changes"}
     ]
@@ -88,22 +88,21 @@ surrounding prose. Use this schema:
   ]
 }
 
-Rules for the handoff:
+Rules for the root-facing handoff:
 - DONE: escalation must be null; blockers and self_review.unverified must be
   empty; every acceptance criterion must appear in verified with result=PASS;
   self_review.criteria_complete and self_review.diff_scope_clean must both be true.
-- ESCALATE: provide enough evidence for the planner to reason without rereading
+- ESCALATE: provide enough evidence for root to reason without rereading
   the cited source just to understand the mismatch. Prefer exact symbols,
   paths, line ranges, and a tiny decisive snippet. State expected vs observed,
   impact, and the exact decision needed. Do not dump whole files.
 - ESCALATE options must be neutral decision branches grounded in observed facts.
   Do NOT invent missing behavior, APIs, algorithms, data, target symbols, or
   implementation details. If a corrected design/target is unknown, say that the
-  planner must provide it rather than proposing a plausible substitute.
+  root must provide it rather than proposing a plausible substitute.
 - FAILED: use for execution/tool/environment failures that do not require an
   architectural decision. Include the failed command/check and compact evidence.
-- For verification commands, include the exit/result outcome. Do not make the
-  parent rerun a check merely to know whether it passed.
+- For verification commands, include the exit/result outcome. Do not make root rerun a check merely to know whether it passed.
 - Keep the whole JSON compact. Evidence should be sufficient, not exhaustive.
 - Never claim a check passed unless you actually performed it.
 """.strip()
@@ -144,7 +143,7 @@ def extract_json_object(output: str) -> dict | None:
 
 
 def is_worker_handoff_text(text: str) -> bool:
-    """Return True if *text* contains a valid worker handoff JSON object."""
+    """Return True if *text* contains a valid executor handoff JSON object."""
     value = extract_json_object(text)
     return isinstance(value, dict) and value.get("status") in {"DONE", "ESCALATE", "FAILED"}
 
@@ -152,7 +151,7 @@ def is_worker_handoff_text(text: str) -> bool:
 def parse_worker_handoff(
     output: str, exit_code: int, stderr: str
 ) -> tuple[dict, bool]:
-    """Parse a worker handoff JSON object from *output*.
+    """Parse an executor handoff JSON object from *output*.
 
     Returns (parsed_dict, is_error).  The bool is True when the handoff is
     FAILED or the contract was violated.
@@ -160,7 +159,7 @@ def parse_worker_handoff(
     if exit_code != 0:
         payload = {
             "status": "FAILED",
-            "summary": "Worker process failed before producing a usable handoff.",
+            "summary": "External executor turn ended without a usable handoff; workspace may contain partial edits.",
             "changed": [],
             "verified": [],
             "escalation": None,
@@ -178,14 +177,14 @@ def parse_worker_handoff(
     if handoff is None:
         payload = {
             "status": "FAILED",
-            "summary": "Worker violated the handoff protocol.",
+            "summary": "External executor violated the handoff protocol.",
             "changed": [],
             "verified": [],
             "escalation": None,
             "blockers": [
                 {
                     "kind": "other",
-                    "detail": "worker returned no parseable JSON handoff",
+                    "detail": "executor returned no parseable JSON handoff",
                     "evidence": output[-4000:],
                 }
             ],
@@ -197,7 +196,7 @@ def parse_worker_handoff(
     if missing or handoff.get("status") not in {"DONE", "ESCALATE", "FAILED"}:
         payload = {
             "status": "FAILED",
-            "summary": "Worker returned an invalid handoff object.",
+            "summary": "Executor returned an invalid handoff object.",
             "changed": [],
             "verified": [],
             "escalation": None,
@@ -240,7 +239,7 @@ def parse_worker_handoff(
         if escalation_missing or not evidence_ok or not decision_ok:
             payload = {
                 "status": "FAILED",
-                "summary": "Worker escalated without a complete planner-ready handoff.",
+                "summary": "Executor escalated without a complete root-ready handoff.",
                 "changed": (
                     handoff.get("changed")
                     if isinstance(handoff.get("changed"), list)
@@ -311,7 +310,7 @@ def parse_worker_handoff(
         if done_errors:
             payload = {
                 "status": "FAILED",
-                "summary": "Worker returned DONE without a complete self-verification handoff.",
+                "summary": "Executor returned DONE without a complete self-verification handoff.",
                 "changed": (
                     handoff.get("changed")
                     if isinstance(handoff.get("changed"), list)

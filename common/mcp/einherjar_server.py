@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Harr Einherjar: generic detached worker bridge for external agent CLIs."""
+"""Harr Einherjar: generic detached MCP bridge for external executor CLIs."""
 
 from __future__ import annotations
 
@@ -66,9 +66,9 @@ OUTPUT_LOCK = threading.Lock()
 TOOLS = [{
     "name": "ein" if INSTANCE_ID else "worker",
     "description": (
-        "Use only after the user directly instructs you to delegate work to this named executor. "
+        "Root-only transport. Use start only after the user directly instructs you to delegate a bounded scope to this named executor. "
         "Never choose an instance or backend automatically. Delegate a bounded implementation/verification contract "
-        "to an external CLI agent through "
+        "to an external CLI executor through "
         "Harr Einherjar. start/resume are detached; status is nonblocking; wait blocks inside the "
         "bridge; messages is opt-in progress; cancel is explicit. "
         "Harr session ids are backend-neutral and vendor session ids never leave the bridge."
@@ -385,6 +385,72 @@ def _adapter_from_state(state: dict):
     return get_backend_adapter(backend, cfg) if cfg is not None else get_backend_adapter(backend)
 
 
+def _tracked_diff_sha256(root: Path) -> str | None:
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            ["git", "-C", str(root), "diff", "--no-ext-diff", "--binary", "HEAD", "--"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        digest = hashlib.sha256()
+        if proc.stdout is not None:
+            while True:
+                chunk = proc.stdout.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        try:
+            return digest.hexdigest() if proc.wait(timeout=30) == 0 else None
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            return None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        return None
+
+
+def _workspace_provenance(root: Path = ROOT) -> dict:
+    """Trusted, bounded workspace identity captured by the bridge itself."""
+    base = {"root": str(root), "git": False}
+    try:
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10)
+        if top.returncode != 0:
+            return base
+        head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
+        status = subprocess.run(["git", "-C", str(root), "status", "--porcelain=v1", "-z"], capture_output=True, timeout=15)
+        tracked_diff_sha256 = _tracked_diff_sha256(root)
+        raw = status.stdout if status.returncode == 0 else b""
+        entries = [x.decode("utf-8", errors="replace") for x in raw.split(b"\0") if x][:50]
+        value = {
+            "root": str(root), "git": True,
+            "git_root": top.stdout.strip(),
+            "head": head.stdout.strip() if head.returncode == 0 else None,
+            "dirty": bool(raw),
+            "status_sha256": hashlib.sha256(raw).hexdigest(),
+            "tracked_diff_sha256": tracked_diff_sha256,
+            "status_entries": entries,
+            "status_truncated": len([x for x in raw.split(b"\0") if x]) > 50,
+        }
+        value["fingerprint"] = hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+        return value
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return base
+
+
+def _runtime_provenance(state: dict) -> dict:
+    start = state.get("workspace_start") if isinstance(state.get("workspace_start"), dict) else None
+    current = state.get("workspace_final") if isinstance(state.get("workspace_final"), dict) else _workspace_provenance()
+    return {
+        "start": start,
+        "current": current,
+        "changed_since_start": bool(start and current and start.get("fingerprint") != current.get("fingerprint")),
+    }
+
+
 def _progress_messages(state: dict) -> list[dict]:
     raw = state.get("stdout_path")
     if not isinstance(raw, str):
@@ -427,6 +493,7 @@ def status_tool(arguments: dict) -> dict:
                 "phase": state.get("phase"), "job_id": state.get("job_id"),
                 "elapsed_sec": state.get("elapsed_sec"), "exit_code": state.get("exit_code"),
                 "resumable": bool(state.get("vendor_session_id")),
+                "provenance": _runtime_provenance(state),
             },
         })
     running = _recorded_pid_running(state)
@@ -445,9 +512,9 @@ def status_tool(arguments: dict) -> dict:
             )
         return text_result({
             "session_id": session_id, "backend": state.get("backend"), "status": "FAILED",
-            "summary": "Detached external worker stopped without a final handoff.",
+            "summary": "Detached external executor stopped without a final handoff.",
             "changed": [], "verified": [], "escalation": None,
-            "blockers": [{"kind": "tool", "detail": "worker process is no longer running", "evidence": f"phase={state.get('phase')}; job_id={state.get('job_id')}"}],
+            "blockers": [{"kind": "tool", "detail": "executor process is no longer running", "evidence": f"phase={state.get('phase')}; job_id={state.get('job_id')}"}],
             "runtime": {"phase": state.get("phase"), "job_id": state.get("job_id")},
         }, is_error=True)
     return text_result({
@@ -512,7 +579,7 @@ def wait_tool(arguments: dict, progress_token: object = None) -> dict:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             payload["wait"] = {"timed_out": True, "waited_sec": round(time.monotonic() - start, 1)}
-            payload["summary"] = "External worker is still executing; the detached job continues."
+            payload["summary"] = "External executor is still executing; the detached job continues."
             return text_result(payload)
         time.sleep(min(1.0, remaining))
 
@@ -530,7 +597,7 @@ def cancel_tool(arguments: dict) -> dict:
     if not isinstance(job_id, str) or not job_id:
         return text_result({"session_id": session_id, "status": "FAILED", "summary": "Session has no active job."}, is_error=True)
     if not _recorded_pid_running(state):
-        return text_result({"session_id": session_id, "status": "ALREADY_STOPPED", "summary": "Worker is not running."})
+        return text_result({"session_id": session_id, "status": "ALREADY_STOPPED", "summary": "Executor is not running."})
     _request_cancel(session_id, job_id)
     _append_log(session_id, f"CANCEL_REQUEST job={job_id}")
     return text_result({"session_id": session_id, "status": "CANCEL_REQUESTED", "job_id": job_id})
@@ -582,7 +649,7 @@ def _run_turn(spec: dict) -> int:
             Path(spec["job_path"]).unlink()
         except (KeyError, OSError):
             pass
-        handoff = _failed_handoff("External worker could not be started.", str(exc))
+        handoff = _failed_handoff("External executor could not be started.", str(exc))
         _write_state(session_id, {**state, "phase": "finished", "exit_code": 127, "handoff": handoff})
         return 0
 
@@ -698,13 +765,13 @@ def _run_turn(spec: dict) -> int:
         if not vendor_session_id:
             vendor_session_id = adapter.extract_vendor_session_id(stdout, stderr)
         if terminal_reason == "owner_disconnected":
-            handoff = _failed_handoff("External worker was cancelled because its owning MCP process exited.", "owner disconnected", stderr)
+            handoff = _failed_handoff("External executor was cancelled because its owning MCP process exited.", "owner disconnected", stderr)
             exit_code = -15
         elif terminal_reason == "cancelled":
-            handoff = _failed_handoff("External worker was cancelled.", "manual cancellation", stderr)
+            handoff = _failed_handoff("External executor was cancelled; workspace may contain partial edits.", "manual cancellation; inspect trusted runtime provenance before reusing the scope", stderr)
             exit_code = -15
         elif terminal_reason == "timed_out":
-            handoff = _failed_handoff("External worker exceeded the requested hard timeout.", f"timeout after {timeout_sec}s", stderr)
+            handoff = _failed_handoff("External executor exceeded the requested hard timeout; workspace may contain partial edits.", f"timeout after {timeout_sec}s; inspect trusted runtime provenance before reuse", stderr)
             exit_code = 124
         else:
             final = adapter.final_output(stdout, stderr)
@@ -713,6 +780,7 @@ def _run_turn(spec: dict) -> int:
         final_state = {
             **state, "phase": "finished", "elapsed_sec": elapsed, "exit_code": exit_code,
             "vendor_session_id": vendor_session_id, "handoff": handoff,
+            "workspace_final": _workspace_provenance(),
         }
         if terminal_reason == "owner_disconnected":
             final_state["cancel_reason"] = "owner_disconnected"
@@ -766,6 +834,7 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
         "backend_config": backend_config, "vendor_session_id": vendor_session_id,
         "worker_pid": None, "worker_log": str(worker_log), "cwd": str(ROOT), "started_epoch": time.time(),
         "elapsed_sec": 0.0, "timeout_sec": timeout_sec, "startup_confirmed": False,
+        "workspace_start": _workspace_provenance(),
     }
     _write_state(session_id, state)
     with worker_log.open("a", encoding="utf-8") as log_handle:
@@ -800,14 +869,14 @@ def launch_job(session_id: str, backend: str, backend_config: dict | None, promp
     if _pid_alive(current.get("worker_pid")) or _pid_alive(current.get("pid")) or _pid_alive(worker.pid):
         return {
             "session_id": session_id, "backend": backend, "status": "STARTING",
-            "summary": f"Einherjar backend {backend} worker is starting.", "job_id": job_id,
+            "summary": f"Einherjar backend {backend} executor is starting.", "job_id": job_id,
             "runtime": {"phase": current.get("phase"), "timeout_sec": timeout_sec, "startup_confirmed": False},
         }
     return {
         "session_id": session_id, "backend": backend, "status": "FAILED",
-        "summary": "Detached Einherjar worker stopped during startup.",
+        "summary": "Detached Einherjar executor stopped during startup.",
         "changed": [], "verified": [], "escalation": None,
-        "blockers": [{"kind": "tool", "detail": "worker stopped during startup", "evidence": f"job_id={job_id}"}],
+        "blockers": [{"kind": "tool", "detail": "executor stopped during startup", "evidence": f"job_id={job_id}"}],
     }
 
 
@@ -828,13 +897,15 @@ def start_tool(arguments: dict) -> dict:
     if plan_path:
         plan = resolve_plan(plan_path)
         prompt = (
-            f"Read the complete implementation plan from {plan}. Perform the worker-contract preflight, "
+            f"Read the complete implementation plan from {plan}. Perform the executor-contract preflight, "
             "execute it if valid, and return only the required JSON handoff."
         )
     else:
         prompt = (
-            "Execute this direct planner task under the worker contract. Validate material assumptions before "
-            "editing; escalate instead of redesigning; return only the required JSON handoff.\n\n"
+            "Execute this self-contained root-provided contract under the executor contract. "
+            "The contract must already define the goal, bounded scope, fixed design decisions/constraints, "
+            "acceptance criteria, and required validation. Validate material assumptions before editing; "
+            "escalate to root instead of redesigning; return only the required JSON handoff.\n\n"
             + direct_prompt.strip()
         )
     return text_result(launch_job(
@@ -857,8 +928,10 @@ def resume_tool(arguments: dict) -> dict:
     if not adapter.probe().resumable:
         raise ValueError(f"backend {state.get('backend')} does not support resume")
     prompt = (
-        "Continue the same task and worker contract. Apply only the planner delta below to the existing "
-        "session context. Return only the required JSON handoff.\n\n" + arguments["prompt"].strip()
+        "Continue the SAME delegated scope and executor contract. This is a root transport continuation. "
+        "Apply only the complete delta below to the existing session context: decision/correction, invariants, "
+        "disposition of already-made edits when relevant, and acceptance/validation delta. "
+        "Return only the required JSON handoff.\n\n" + arguments["prompt"].strip()
     )
     return text_result(launch_job(
         session_id, state["backend"], state.get("backend_config"), prompt,
@@ -893,6 +966,8 @@ def _validate_arguments(arguments: dict) -> None:
     if action == "resume":
         if not isinstance(arguments.get("session_id"), str) or not isinstance(arguments.get("prompt"), str):
             raise ValueError("resume requires session_id and prompt strings")
+        if not arguments["prompt"].strip():
+            raise ValueError("resume prompt must be non-empty")
     if action in {"status", "messages", "wait", "cancel"} and not isinstance(arguments.get("session_id"), str):
         raise ValueError(f"{action} requires session_id")
 

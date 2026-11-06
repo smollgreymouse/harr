@@ -290,10 +290,10 @@ while True:
 assert state["status"] == "DONE", state
 rows = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
 assert rows[0]["mode"] == "start"
-assert "You are an implementation worker" in rows[0]["args"][-1]
+assert "You are an implementation executor" in rows[0]["args"][-1]
 assert rows[1]["mode"] == "resume"
 assert rows[1]["args"][0] == "vendor-123"
-assert "You are an implementation worker" in rows[1]["args"][-1]
+assert "You are an implementation executor" in rows[1]["args"][-1]
 
 # Cancellation of a detached sleeping CLI.
 sleeping = json.loads(server.start_tool({"action": "start", "prompt": "SLEEP fixture"})["content"][0]["text"])
@@ -316,5 +316,8 @@ while True:
     time.sleep(0.05)
 assert final["status"] == "FAILED"
 assert "cancel" in final["summary"].lower()
+assert "partial edits" in final["summary"].lower()
+assert "provenance" in final.get("runtime", {})
+assert "current" in final["runtime"]["provenance"]
 
 print("Einherjar bridge/adapters: PASS")
