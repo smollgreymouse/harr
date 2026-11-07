@@ -286,11 +286,22 @@ def workspace_primary_binding(state: dict) -> dict | None:
 def git_admin_generation(git_dir: Path) -> str | None:
     if os.name != "posix":
         return None
+    marker = (
+        git_dir / "commondir"
+        if (git_dir / "commondir").is_file()
+        else git_dir / "description"
+        if (git_dir / "description").is_file()
+        else git_dir
+    )
     try:
-        stat = git_dir.stat()
+        stat = marker.stat()
     except OSError:
         return None
-    return f"unix:{stat.st_dev}:{stat.st_ino}"
+    ctime_ns = stat.st_ctime_ns
+    return (
+        f"unix:{stat.st_dev}:{stat.st_ino}:"
+        f"{ctime_ns // 1_000_000_000}:{ctime_ns % 1_000_000_000}"
+    )
 
 
 def binding_matches_checkout(binding: dict, primary: Path) -> bool:
