@@ -85,10 +85,40 @@ verify_sha256() {
   [[ "$actual" == "$expected" ]] || die "LeanCTX checksum mismatch: expected $expected, got $actual"
 }
 
+package_linux_dir() {
+  [[ "${HARR_INSTALL_TYPE:-source}" == package ]] || return 1
+  (cd -- "${CLI_LIB_DIR}/../.." && pwd)
+}
+
+package_leanctx_binary() {
+  local linux_dir
+  linux_dir="$(package_linux_dir)" || return 1
+  printf '%s/vendor/lean-ctx/lean-ctx\n' "$linux_dir"
+}
+
+leanctx_real_binary() {
+  if [[ "${HARR_INSTALL_TYPE:-source}" == package ]]; then
+    package_leanctx_binary
+  else
+    printf '%s/lean-ctx/%s/lean-ctx\n' "$HARR_VENDOR_DIR" "$HARR_LEANCTX_BUILD"
+  fi
+}
+
+leanctx_wrapper_source() {
+  if [[ "${HARR_INSTALL_TYPE:-source}" == package ]]; then
+    local linux_dir
+    linux_dir="$(package_linux_dir)" || return 1
+    printf '%s/files/leanctx/lean-ctx-wrapper\n' "$linux_dir"
+  else
+    printf '%s/../leanctx/lean-ctx-wrapper\n' "$CLI_LIB_DIR"
+  fi
+}
+
 install_leanctx_wrapper() {
-  local wrapper_src="${HARR_LIBEXEC_DIR}/leanctx/lean-ctx-wrapper"
-  local target="${HOME}/.local/bin/lean-ctx"
-  local backup_dir="${HARR_LIBEXEC_DIR}/backup"
+  local wrapper_src target backup_dir
+  wrapper_src="$(leanctx_wrapper_source)"
+  target="${HOME}/.local/bin/lean-ctx"
+  backup_dir="${HARR_LIBEXEC_DIR}/backup"
 
   [[ -x "$wrapper_src" ]] || die "LeanCTX wrapper missing: $wrapper_src"
   install -d -m 0755 "${HOME}/.local/bin" "$backup_dir"
@@ -100,10 +130,52 @@ install_leanctx_wrapper() {
     fi
   fi
 
+  if [[ "${HARR_INSTALL_TYPE:-source}" == package ]]; then
+    local real content tmp
+    real="$(package_leanctx_binary)"
+    printf -v content '#!/usr/bin/env bash\n# HARR_LEANCTX_WRAPPER=1\n# HARR_PACKAGE_LEANCTX_LAUNCHER=1\nset -Eeuo pipefail\nexport HARR_LEANCTX_REAL=%q\nexec %q "$@"' "$real" "$wrapper_src"
+    if [[ -r "$target" && "$(cat -- "$target")" == "$content" ]]; then
+      return
+    fi
+    tmp="${target}.tmp.$$"
+    printf '%s\n' "$content" >"$tmp"
+    chmod 0755 "$tmp"
+    mv -f -- "$tmp" "$target"
+    return
+  fi
+
   install -m 0755 "$wrapper_src" "$target"
 }
 
+validate_package_leanctx_runtime() {
+  [[ "${HARR_INSTALL_TYPE:-source}" == package ]] || return 0
+  local real identity
+  real="$(package_leanctx_binary)"
+  [[ -x "$real" ]] || die "Packaged Harr LeanCTX binary missing: $real"
+  identity="$("$real" --version 2>/dev/null || true)"
+  [[ "$identity" == *"Harr build ${HARR_LEANCTX_ID},"* ]] || \
+    die "Packaged Harr LeanCTX identity mismatch: expected ${HARR_LEANCTX_ID}"
+}
+
+sync_package_leanctx_runtime() {
+  [[ "${HARR_INSTALL_TYPE:-source}" == package ]] || return 0
+  # A bare package install must remain non-invasive until `harr setup`. During
+  # upgrades, however, an already managed Harr launcher must follow the package
+  # atomically on the first Harr invocation. Never replace an unrelated user
+  # `lean-ctx` executable here.
+  local target="${HOME}/.local/bin/lean-ctx"
+  if [[ -e "$target" ]] && grep -q '^# HARR_LEANCTX_WRAPPER=1$' "$target" 2>/dev/null; then
+    install_leanctx_wrapper
+  fi
+}
+
 install_leanctx() {
+  if [[ "${HARR_INSTALL_TYPE:-source}" == package ]]; then
+    validate_package_leanctx_runtime
+    install_leanctx_wrapper
+    return
+  fi
+
   require_command curl
   require_command tar
 
@@ -118,9 +190,10 @@ install_leanctx() {
     return
   fi
 
-  # Packaged Harr releases ship the exact, workflow-verified LeanCTX binary.
-  local bundled="${HARR_BUNDLED_LEANCTX:-/usr/lib/harr/linux/vendor/lean-ctx/lean-ctx}"
-  if [[ -x "$bundled" ]]; then
+  # Portable/source distributions may carry a verified LeanCTX binary next to
+  # the installer. They still own a user-scoped runtime, unlike package mode.
+  local bundled="${HARR_BUNDLED_LEANCTX:-}"
+  if [[ -n "$bundled" && -x "$bundled" ]]; then
     "$bundled" --version | grep -Fq "Harr build ${HARR_LEANCTX_ID}," || die 'bundled LeanCTX identity mismatch'
     install -d -m 0755 "$version_dir"
     install -m 0755 "$bundled" "$real_bin"
@@ -164,7 +237,8 @@ cmd_install_components() {
 }
 
 cmd_components_status() {
-  local lean_actual='' lean_identity='' lean_real="${HARR_VENDOR_DIR}/lean-ctx/${HARR_LEANCTX_BUILD}/lean-ctx"
+  local lean_actual='' lean_identity='' lean_real
+  lean_real="$(leanctx_real_binary)"
   if [[ -x "$lean_real" ]]; then lean_identity="$("$lean_real" --version 2>/dev/null || true)"; lean_actual="$(printf '%s\n' "$lean_identity" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"; fi
 
   printf '%-16s %-18s %-16s %s\n' COMPONENT EXPECTED STATE INSTALLED

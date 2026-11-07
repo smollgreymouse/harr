@@ -4,7 +4,7 @@ workspace_real_binary() {
   if [[ -n "${HARR_LEANCTX_REAL:-}" ]]; then
     printf '%s\n' "$HARR_LEANCTX_REAL"
   else
-    printf '%s/lean-ctx/%s/lean-ctx\n' "$HARR_VENDOR_DIR" "$HARR_LEANCTX_BUILD"
+    leanctx_real_binary
   fi
 }
 

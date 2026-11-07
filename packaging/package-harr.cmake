@@ -114,8 +114,11 @@ file(CHMOD "${DEB_ROOT}/usr/bin/harr" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_E
 
 file(WRITE "${DEB_ROOT}/usr/share/doc/harr/INSTALL.md" [=[# Harr after package installation
 
-The Debian package installs Harr itself but does not silently alter the user's
-global agent configuration or select optional MCPs.
+The Debian package installs Harr and its pinned LeanCTX binary under `/usr/lib/harr`.
+It does not silently alter the user's global agent configuration or select
+optional MCPs. After an upgrade, an existing Harr-managed `~/.local/bin/lean-ctx`
+launcher is migrated to the new package-owned LeanCTX on the first `harr`
+invocation; unrelated user LeanCTX installations are left untouched.
 
 Run as the normal user:
 

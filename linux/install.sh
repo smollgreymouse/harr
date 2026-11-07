@@ -152,7 +152,11 @@ install_runtime_files() {
   install -m 0755 "${FILES_DIR}/mcp/harr-mcp-run" "${BIN_DIR}/harr-mcp-run"
   install -m 0755 "${FILES_DIR}/mcp/codegraph-cli" "${BIN_DIR}/codegraph"
   install -m 0755 "${FILES_DIR}/state/harr-state" "${STATE_LIB_DIR}/harr-state"
-  install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
+  if [[ "$install_type" == package ]]; then
+    rm -f -- "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
+  else
+    install -m 0755 "${FILES_DIR}/leanctx/lean-ctx-wrapper" "${LEANCTX_LIB_DIR}/lean-ctx-wrapper"
+  fi
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${MCP_UNIT_TEMPLATE}" "${SYSTEMD_USER_DIR}/${MCP_UNIT_TEMPLATE}"
   install -m 0644 "${SYSTEMD_SOURCE_DIR}/${GIT_HOST_UNIT}" "${SYSTEMD_USER_DIR}/${GIT_HOST_UNIT}"
   python3 "${COMMON_LIB_DIR}/git_host/git_host.py" init --secret-file "${SECRETS_DIR}/git-host-capability"
