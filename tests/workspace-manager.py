@@ -11,6 +11,18 @@ with tempfile.TemporaryDirectory(prefix='harr-workspace-manager-') as td:
     fake=base/'leanctx'
     fake.write_text('''#!/usr/bin/env python3\nimport json,sys,uuid\nfrom pathlib import Path\na=sys.argv[1:]\nif a[:2]==["workspace-admin","create"]:\n p=Path(a[2]); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps({"id":str(uuid.uuid4()),"revision":1,"primary":str(Path(a[3]).resolve()),"additional":[]})); p.chmod(0o600); sys.exit(0)\nif a[:2]==["workspace-admin","show"]:\n print(Path(a[2]).read_text()); sys.exit(0)\nif a[:2]==["workspace-admin","reconcile"]:\n print(Path(a[2]).read_text()); sys.exit(0)\nsys.exit(2)\n'''); fake.chmod(0o755)
     os.environ['HOME']=str(home); os.environ['XDG_CONFIG_HOME']=str(cfg)
+    gitdir=base/'git-admin'; gitdir.mkdir(); marker=gitdir/'description'; marker.write_text('fixture')
+    marker_stat=marker.stat(); marker_ctime_ns=marker_stat.st_ctime_ns
+    assert m.git_admin_generation(gitdir) == (
+        f"unix:{marker_stat.st_dev}:{marker_stat.st_ino}:"
+        f"{marker_ctime_ns // 1_000_000_000}:{marker_ctime_ns % 1_000_000_000}"
+    )
+    linked_gitdir=base/'linked-git-admin'; linked_gitdir.mkdir(); linked_marker=linked_gitdir/'commondir'; linked_marker.write_text('../..')
+    linked_stat=linked_marker.stat(); linked_ctime_ns=linked_stat.st_ctime_ns
+    assert m.git_admin_generation(linked_gitdir) == (
+        f"unix:{linked_stat.st_dev}:{linked_stat.st_ino}:"
+        f"{linked_ctime_ns // 1_000_000_000}:{linked_ctime_ns % 1_000_000_000}"
+    )
     assert m.workspace_root(child)==repo.resolve()
     store=m.ensure_workspace_store(fake,repo)
     state=json.loads(store.read_text())
