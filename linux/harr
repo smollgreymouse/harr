@@ -37,6 +37,11 @@ source "${HARR_COMMON_DIR}/shell/doctor.sh"
 source "${CLI_LIB_DIR}/mcp.sh"
 source "${CLI_LIB_DIR}/uninstall.sh"
 
+# Package upgrades are atomic for the Harr-owned LeanCTX binary. The only
+# user-level migration is a tiny stable launcher; legacy copied wrappers are
+# replaced on the first Harr invocation after upgrading the package.
+sync_package_leanctx_runtime
+
 command="${1:-help}"
 shift || true
 

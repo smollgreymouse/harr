@@ -113,8 +113,32 @@ jobs:
           dpkg-deb -x "$deb" "$root"
           grep -q 'HARR_INSTALL_TYPE=package' "$root/usr/bin/harr"
           clean_home=$(mktemp -d)
-          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/lib/harr/linux/harr" version
-          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/lib/harr/linux/harr" setup --help | grep -q 'Harr Linux setup'
+          # Exercise the real Debian entrypoint so package-mode semantics are
+          # covered; calling the internal CLI directly would silently test source mode.
+          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/bin/harr" version
+          test ! -e "$clean_home/.local/bin/lean-ctx"
+          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/bin/harr" setup --help | grep -q 'Harr Linux setup'
+
+          # Simulate an existing managed launcher from the previous package.
+          # The first Harr invocation after upgrade must replace it with the
+          # thin package launcher and must not copy the package binary into HOME.
+          mkdir -p "$clean_home/.local/bin"
+          cat >"$clean_home/.local/bin/lean-ctx" <<'EOF_OLD_LEANCTX'
+          #!/usr/bin/env bash
+          # HARR_LEANCTX_WRAPPER=1
+          exit 99
+          EOF_OLD_LEANCTX
+          chmod 0755 "$clean_home/.local/bin/lean-ctx"
+          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" "$root/usr/bin/harr" version >/dev/null
+          grep -q '^# HARR_PACKAGE_LEANCTX_LAUNCHER=1$' "$clean_home/.local/bin/lean-ctx"
+          expected_leanctx_id=$(sed -n 's/^readonly HARR_LEANCTX_ID="\(.*\)"$/\1/p' "$root/usr/lib/harr/linux/files/harr-cli/components.sh")
+          expected_leanctx_build=$(sed -n 's/^readonly HARR_LEANCTX_BUILD="\(.*\)"$/\1/p' "$root/usr/lib/harr/linux/files/harr-cli/components.sh")
+          test -n "$expected_leanctx_id"
+          test -n "$expected_leanctx_build"
+          HOME="$clean_home" XDG_CONFIG_HOME="$clean_home/.config" \
+            "$clean_home/.local/bin/lean-ctx" --version \
+            | grep -Fq "Harr build ${expected_leanctx_id},"
+          test ! -e "$clean_home/.local/libexec/harr/vendor/lean-ctx/${expected_leanctx_build}/lean-ctx"
           if grep -q '/tools/codex-scheduler/' /tmp/harr-tar-listing; then
             echo 'Main Harr tarball must not contain Codex Scheduler sources' >&2
             exit 1

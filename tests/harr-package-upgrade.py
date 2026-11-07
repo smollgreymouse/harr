@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -34,6 +35,35 @@ def check_hosts(command, env):
     report = json.loads(result.stdout)
     host = next(item for item in report["checks"] if item["id"] == "host.codex")
     assert host["status"] == "PASS", host
+
+
+def configure_packaged_leanctx(source: Path, fixture: Path, build: str, tag: str, sha: str) -> str:
+    build_id = f"{tag}@{sha}"
+    components = source / "linux/files/harr-cli/components.sh"
+    text = components.read_text()
+    text = re.sub(r'^readonly HARR_LEANCTX_BUILD="[^"]+"$', f'readonly HARR_LEANCTX_BUILD="{build}"', text, flags=re.M)
+    text = re.sub(r'^readonly HARR_LEANCTX_ID="[^"]+"$', f'readonly HARR_LEANCTX_ID="{build_id}"', text, flags=re.M)
+    text = re.sub(r'^readonly HARR_LEANCTX_RELEASE_TAG="[^"]+"$', f'readonly HARR_LEANCTX_RELEASE_TAG="{tag}"', text, flags=re.M)
+    components.write_text(text)
+    wrapper = source / "linux/files/leanctx/lean-ctx-wrapper"
+    wrapper_text = re.sub(
+        r'^readonly HARR_LEANCTX_BUILD="[^"]+"$',
+        f'readonly HARR_LEANCTX_BUILD="{build}"',
+        wrapper.read_text(),
+        flags=re.M,
+    )
+    wrapper.write_text(wrapper_text)
+    fixture.write_text(
+        "#!/bin/sh\n"
+        "if [ \"${1:-}\" = --version ]; then\n"
+        f"  echo 'lean-ctx 3.11.0 (Harr build {build_id}, https://github.com/yvgude/lean-ctx)'\n"
+        "  exit 0\n"
+        "fi\n"
+        "echo 'fake packaged LeanCTX only supports --version' >&2\n"
+        "exit 2\n"
+    )
+    fixture.chmod(0o755)
+    return build_id
 
 
 with tempfile.TemporaryDirectory(prefix="harr-package-upgrade-") as td:
@@ -84,18 +114,42 @@ with tempfile.TemporaryDirectory(prefix="harr-package-upgrade-") as td:
 
     output = tmp / "output"
     package_root = tmp / "package"
+    bundled_leanctx = tmp / "lean-ctx-fixture"
     arch = run(["dpkg", "--print-architecture"], env).stdout.strip()
 
     def install_package(version):
         (source / "VERSION").write_text(version + "\n")
         run(["cmake", f"-DHARR_SOURCE_DIR={source}", f"-DHARR_VERSION={version}", f"-DHARR_ARCH={arch}",
              f"-DHARR_OUTPUT_DIR={output}", f"-DHARR_TEMP_DIR={tmp / 'staging'}",
+             f"-DHARR_BUNDLED_LEANCTX={bundled_leanctx}",
              "-P", str(ROOT / "packaging/package-harr.cmake")], env)
         run(["dpkg-deb", "-x", str(output / f"harr_{version}_{arch}.deb"), str(package_root)], env)
 
+    old_build = "3.11.0-harr-test.1"
+    old_tag = "harr-v3.11.0-test.1"
+    old_id = configure_packaged_leanctx(source, bundled_leanctx, old_build, old_tag, "111111111111")
     install_package("0.0.2")
     package = package_root / "usr/bin/harr"
     assert not package.is_symlink(), "Exercise the actual shell entrypoint shipped by the deb"
+
+    # Merely installing/running the package before setup must not take over an
+    # unrelated user LeanCTX. Auto-sync is migration-only for an existing
+    # Harr-managed launcher.
+    fresh_home = tmp / "fresh-home"
+    fresh_bin = fresh_home / ".local/bin"
+    fresh_bin.mkdir(parents=True)
+    foreign_leanctx = fresh_bin / "lean-ctx"
+    foreign_leanctx.write_text("#!/bin/sh\necho foreign-leanctx\n")
+    foreign_leanctx.chmod(0o755)
+    foreign_before = foreign_leanctx.read_bytes()
+    fresh_env = dict(env)
+    fresh_env.update(HOME=str(fresh_home), XDG_CONFIG_HOME=str(fresh_home / ".config"),
+                     CODEX_HOME=str(fresh_home / ".codex"),
+                     PATH=f"{fakebin}:{fresh_bin}:{env['PATH']}")
+    assert run([str(package), "version"], fresh_env).stdout.strip() == "Harr 0.0.2"
+    assert foreign_leanctx.read_bytes() == foreign_before
+    assert not (fresh_home / ".local/libexec/harr/vendor/lean-ctx").exists()
+
     run([str(package), "setup", "--harr-only"], env)
     assert (home / ".local/libexec/harr/common").resolve() == package_root / "usr/lib/harr/common"
     assert (home / ".local/libexec/harr/cli").resolve() == package_root / "usr/lib/harr/linux/files/harr-cli"
@@ -113,12 +167,44 @@ with tempfile.TemporaryDirectory(prefix="harr-package-upgrade-") as td:
     expected_server = package_root / "usr/lib/harr/common/mcp/workspace_control/server.py"
     assert config["mcp_servers"]["harr-workspace"]["args"] == [str(expected_server)]
     config_before = config_path.read_bytes()
+    package_launcher = home / ".local/bin/lean-ctx"
+    assert "HARR_PACKAGE_LEANCTX_LAUNCHER=1" in package_launcher.read_text()
+    assert not (home / ".local/libexec/harr/leanctx/lean-ctx-wrapper").exists(), \
+        "package setup retained the obsolete user-owned full wrapper"
+    assert old_id in run([str(package_root / "usr/lib/harr/linux/vendor/lean-ctx/lean-ctx"), "--version"], env).stdout
+    assert not (home / ".local/libexec/harr/vendor/lean-ctx" / old_build).exists(), \
+        "package mode must not copy the Harr-owned LeanCTX binary into HOME"
+
+    # Reproduce the pre-fix package state from a real Harr 0.3.7 installation:
+    # a copied full wrapper plus a copied user-vendor binary. The next package
+    # invocation must migrate only the launcher; the old binary may remain as
+    # inert rollback/history data but must never be selected again.
+    legacy_dir = home / ".local/libexec/harr/vendor/lean-ctx" / old_build
+    legacy_dir.mkdir(parents=True)
+    shutil.copy2(bundled_leanctx, legacy_dir / "lean-ctx")
+    legacy_wrapper = package_root / "usr/lib/harr/linux/files/leanctx/lean-ctx-wrapper"
+    shutil.copy2(legacy_wrapper, package_launcher)
+    package_launcher.chmod(0o755)
+    assert old_id in run([str(package_launcher), "--version"], env).stdout
 
     # Upgrading the package must immediately update the CLI found through PATH,
     # without another setup and without making existing host registrations stale.
+    new_build = "3.11.0-harr-test.2"
+    new_tag = "harr-v3.11.0-test.2"
+    new_id = configure_packaged_leanctx(source, bundled_leanctx, new_build, new_tag, "222222222222")
     install_package("0.0.3")
+    # The first Harr command after dpkg upgrade performs only the one-time
+    # launcher migration. The package-owned LeanCTX binary is already current.
     assert run(["harr", "version"], env).stdout.strip() == "Harr 0.0.3"
     assert run([str(package), "version"], env).stdout.strip() == "Harr 0.0.3"
+    assert "HARR_PACKAGE_LEANCTX_LAUNCHER=1" in package_launcher.read_text()
+    launcher_version = run([str(package_launcher), "--version"], env).stdout.strip()
+    assert new_id in launcher_version, launcher_version
+    assert not (home / ".local/libexec/harr/vendor/lean-ctx" / new_build).exists(), \
+        "package upgrade copied the new LeanCTX binary into HOME"
+    status = run([str(package), "status"], env).stdout
+    lean_line = next(line for line in status.splitlines() if line.lstrip().startswith("leanctx"))
+    assert new_build in lean_line and "ok" in lean_line, lean_line
     check_hosts(local, env)
     assert config_path.read_bytes() == config_before
     assert selection.read_bytes() == selection_before
