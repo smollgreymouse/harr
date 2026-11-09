@@ -5,12 +5,23 @@ Kibana is an optional read-only on-demand MCP.
 Route:
 agent -> LeanCTX -> harr-mcp-run kibana -> kibana-agent mcp -> Kibana /api/console/proxy -> Elasticsearch
 
-Harr pins the smollgreymouse/kibana-agent fork at commit 73cb2aa03462c44616601d5299515ff45ed36d7f.
+Harr pins the smollgreymouse/kibana-agent fork at commit ca0e267d6985657df2c588b83018c9673d903a57.
 The fork adds KIBANA_API_KEY authentication and pins the Python MCP SDK to the v1 API used by kibana-agent.
 Runtime installation and execution use uvx; no Docker container and no direct Elasticsearch endpoint are required.
 
 Configure the non-secret endpoint in ~/.config/harr/mcp/kibana.env:
 KIBANA_URL=https://kibana.example.com
+
+To let the agent select another trusted Kibana endpoint for one call, add it to
+KIBANA_MCP_ALLOWED_URLS, for example:
+KIBANA_MCP_ALLOWED_URLS=https://kibana-staging.example.com,https://kibana-dr.example.com
+
+All network tools expose an optional kibana_url argument. The configured
+KIBANA_URL is always accepted. A different value must exactly match an
+allowlisted HTTP(S) base URL; otherwise the tool rejects the call before any
+request is sent. The override reuses the selected profile's credentials, space,
+and default index, but uses a separate ephemeral profile identity so cluster
+caches and notes are not mixed.
 
 Store the API key separately:
 harr secret set kibana
