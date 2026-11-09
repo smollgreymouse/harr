@@ -847,27 +847,27 @@ Kibana is optional and provides read-only Elasticsearch investigation through an
 
 Route: LeanCTX -> harr-mcp-run kibana -> pinned smollgreymouse/kibana-agent fork -> Kibana /api/console/proxy -> Elasticsearch.
 
-This is intended for environments where Kibana is reachable but Elasticsearch itself is private. Harr pins smollgreymouse/kibana-agent at commit ca0e267d6985657df2c588b83018c9673d903a57. The fork adds KIBANA_API_KEY authentication and constrains the Python MCP SDK to the v1 API used by kibana-agent.
+This is intended for environments where Kibana is reachable but Elasticsearch itself is private. Harr pins smollgreymouse/kibana-agent at commit 6334b36184d2d598d52339f6322fa1742b279f2f. The fork adds KIBANA_API_KEY authentication and constrains the Python MCP SDK to the v1 API used by kibana-agent.
 
 Enable it with:
 
     harr mcp add kibana
     harr install mcp
 
-Configure ~/.config/harr/mcp/kibana.env:
+Configure ~/.config/harr/mcp/kibana.env with one or more trusted endpoints:
 
-    KIBANA_URL=https://kibana.example.com
+    KIBANA_URL=https://kibana.example.com,https://kibana-staging.example.com
 
-If the agent must target another trusted Kibana endpoint for a specific MCP call,
-allowlist it explicitly:
+The first URL is the default. The MCP exposes `list_kibana_endpoints`, which
+returns the configured URLs and default flag without exposing credentials, so
+the model can inspect the list before choosing an environment. Network tools
+accept an optional `kibana_url` and reject any URL not present in
+`KIBANA_URL`.
 
-    KIBANA_MCP_ALLOWED_URLS=https://kibana-staging.example.com,https://kibana-dr.example.com
-
-The network tools accept an optional `kibana_url` argument. The current
-`KIBANA_URL` is always valid; a different URL is accepted only when it is in
-`KIBANA_MCP_ALLOWED_URLS`. The selected profile's API key, space, and default
-index are reused for that one call. Unlisted endpoints are rejected so an agent
-cannot redirect the Kibana credential to an arbitrary host.
+A single stored `KIBANA_API_KEY` is shared by every URL. If endpoints require
+different keys, store one comma-separated key per URL in the same order when
+running `harr secret set kibana`. The MCP selects the matching key internally;
+tokens are never returned to the model.
 
 Store the API key separately:
 
@@ -877,7 +877,7 @@ harr secret set jira
 
 Harr injects the key as KIBANA_API_KEY only into the MCP process. The fork sends it to Kibana as Authorization: ApiKey and does not persist it in a kibana-agent profile.
 
-The MCP exposes targeted read-only tools including search_logs, count_documents, get_histogram, get_context, get_mapping, list_fields, list_aliases, list_data_views, tail_logs, raw_es_query, and get_discover_url. Exact Kibana Data View names/IDs are resolved to their underlying Elasticsearch title patterns before querying. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow. raw_es_query remains constrained by kibana-agent's read-only request guard.
+The MCP exposes targeted read-only tools including list_kibana_endpoints, search_logs, count_documents, get_histogram, get_context, get_mapping, list_fields, list_aliases, list_data_views, tail_logs, raw_es_query, and get_discover_url. Exact Kibana Data View names/IDs are resolved to their underlying Elasticsearch title patterns before querying. Prefer targeted tools and keep index patterns, time windows, fields, and result sizes narrow. raw_es_query remains constrained by kibana-agent's read-only request guard.
 
 See common/skills/harr/references/kibana.md for pinned-runtime and routing details.
 

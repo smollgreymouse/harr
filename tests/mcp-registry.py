@@ -86,12 +86,13 @@ kibana = servers["kibana"]
 assert kibana["transport"] == "stdio"
 assert kibana["lifecycle"] == "on-demand"
 assert kibana["runtime"]["kind"] == "uvx"
-assert kibana["runtime"]["package"] == "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57"
-assert kibana["runtime"]["version"] == "0.7.7 fork ca0e267"
-assert kibana["runtime"]["args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57", "kibana-agent", "mcp"]
-assert kibana["runtime"]["prefetch_args"] == ["--from", "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57", "kibana-agent", "--version"]
-assert kibana["runtime"]["probe_args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57", "kibana-agent", "--version"]
-assert kibana["secrets"] == [{"name":"kibana","file":"kibana-api-key","prompt":"Kibana API key","memento_id":"mcp/kibana/default","target":{"kind":"env","name":"KIBANA_API_KEY"}}]
+assert kibana["runtime"]["package"] == "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f"
+assert kibana["runtime"]["version"] == "0.7.7 fork 6334b36"
+assert kibana["runtime"]["args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f", "kibana-agent", "mcp"]
+assert kibana["runtime"]["prefetch_args"] == ["--from", "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f", "kibana-agent", "--version"]
+assert kibana["runtime"]["probe_args"] == ["--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f", "kibana-agent", "--version"]
+assert kibana["secrets"] == [{"name":"kibana","file":"kibana-api-key","prompt":"Kibana API key(s), comma-separated in KIBANA_URL order when different","memento_id":"mcp/kibana/default","target":{"kind":"env","name":"KIBANA_API_KEY"}}]
+assert kibana["doctor"]["required_tools"] == ["list_kibana_endpoints", "list_data_views"]
 
 for platform in ("linux", "windows"):
     with tempfile.TemporaryDirectory() as tmp:
@@ -139,7 +140,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "GITLAB_PERSONAL_ACCESS_TOKEN=" not in gitlab_env
     kibana_env = (target / "kibana.env").read_text(encoding="utf-8")
     assert "KIBANA_URL=https://kibana.example.com" in kibana_env
-    assert "KIBANA_MCP_ALLOWED_URLS" in kibana_env
+    assert "KIBANA_URL=https://kibana.example.com,https://kibana-staging.example.com" in kibana_env
+    assert "KIBANA_MCP_ALLOWED_URLS" not in kibana_env
     assert "KIBANA_API_KEY=" not in kibana_env
 
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
@@ -150,9 +152,9 @@ with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
     assert manager.runtime_maintenance_command(grafana, "prefetch_args") == ["/tmp/uvx", "mcp-grafana", "--version"]
     assert manager.runtime_maintenance_command(grafana, "probe_args") == ["/tmp/uvx", "--offline", "mcp-grafana", "--version"]
 with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):
-    assert manager.runtime_command(kibana) == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57", "kibana-agent", "mcp"]
-    assert manager.runtime_maintenance_command(kibana, "prefetch_args") == ["/tmp/uvx", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57", "kibana-agent", "--version"]
-    assert manager.runtime_maintenance_command(kibana, "probe_args") == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@ca0e267d6985657df2c588b83018c9673d903a57", "kibana-agent", "--version"]
+    assert manager.runtime_command(kibana) == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f", "kibana-agent", "mcp"]
+    assert manager.runtime_maintenance_command(kibana, "prefetch_args") == ["/tmp/uvx", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f", "kibana-agent", "--version"]
+    assert manager.runtime_maintenance_command(kibana, "probe_args") == ["/tmp/uvx", "--offline", "--from", "git+https://github.com/smollgreymouse/kibana-agent.git@6334b36184d2d598d52339f6322fa1742b279f2f", "kibana-agent", "--version"]
 
 # Executor instances are user-configured and expanded into the effective
 # registry; neither the retired singleton nor the generic worker is cataloged.
@@ -162,11 +164,11 @@ with tempfile.TemporaryDirectory() as tmp:
     secret_dir.mkdir()
     (secret_dir / "grafana-service-account-token").write_text("token-value\n", encoding="utf-8")
     (secret_dir / "gitlab-pat").write_text("pat-value\n", encoding="utf-8")
-    (secret_dir / "kibana-api-key").write_text("kibana-value\n", encoding="utf-8")
+    (secret_dir / "kibana-api-key").write_text("prod-key,stage-key\n", encoding="utf-8")
     with patch.dict(manager.os.environ, {"HARR_CONFIG_DIR": tmp}):
         assert manager.service_secret_env(grafana) == {"GRAFANA_SERVICE_ACCOUNT_TOKEN": "token-value"}
         assert manager.service_secret_env(gitlab) == {"GITLAB_PERSONAL_ACCESS_TOKEN": "pat-value"}
-        assert manager.service_secret_env(kibana) == {"KIBANA_API_KEY": "kibana-value"}
+        assert manager.service_secret_env(kibana) == {"KIBANA_API_KEY": "prod-key,stage-key"}
         assert manager.runtime_env(gitlab) == {"STREAMABLE_HTTP": "false", "SSE": "false", "REMOTE_AUTHORIZATION": "false"}
         assert manager.runtime_env(grafana) == {}
 
