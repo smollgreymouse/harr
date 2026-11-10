@@ -150,6 +150,27 @@ with tempfile.TemporaryDirectory(prefix="harr-package-upgrade-") as td:
     assert foreign_leanctx.read_bytes() == foreign_before
     assert not (fresh_home / ".local/libexec/harr/vendor/lean-ctx").exists()
 
+    # A package upgrade may encounter only the old Harr-managed launcher before
+    # any setup state is available in this HOME. The migration must produce a
+    # self-contained package launcher whose --version path does not require the
+    # MCP registry, and whose normal path points at the package-owned manager.
+    migration_home = tmp / "migration-home"
+    migration_bin = migration_home / ".local/bin"
+    migration_bin.mkdir(parents=True)
+    migration_launcher = migration_bin / "lean-ctx"
+    migration_launcher.write_text("#!/bin/sh\n# HARR_LEANCTX_WRAPPER=1\nexit 99\n")
+    migration_launcher.chmod(0o755)
+    migration_env = dict(env)
+    migration_env.update(HOME=str(migration_home), XDG_CONFIG_HOME=str(migration_home / ".config"),
+                         CODEX_HOME=str(migration_home / ".codex"),
+                         PATH=f"{fakebin}:{migration_bin}:{env['PATH']}")
+    assert run([str(package), "version"], migration_env).stdout.strip() == "Harr 0.0.2"
+    launcher_text = migration_launcher.read_text()
+    assert "HARR_PACKAGE_LEANCTX_LAUNCHER=1" in launcher_text
+    assert f"export HARR_MCP_MANAGER={package_root}/usr/lib/harr/common/mcp/manager.py" in launcher_text
+    assert old_id in run([str(migration_launcher), "--version"], migration_env).stdout
+    assert not (migration_home / ".config/harr/mcp-registry.json").exists()
+
     run([str(package), "setup", "--harr-only"], env)
     assert (home / ".local/libexec/harr/common").resolve() == package_root / "usr/lib/harr/common"
     assert (home / ".local/libexec/harr/cli").resolve() == package_root / "usr/lib/harr/linux/files/harr-cli"
