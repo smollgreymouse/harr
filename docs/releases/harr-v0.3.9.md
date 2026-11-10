@@ -8,4 +8,6 @@ The pinned `smollgreymouse/kibana-agent` fork adds `list_kibana_endpoints`, whic
 
 The previous single-URL/single-token configuration remains compatible. The separate `KIBANA_MCP_ALLOWED_URLS` setting introduced during development is removed; `KIBANA_URL` itself is now the trusted endpoint list.
 
+The Debian package upgrade path also fixes the package-managed LeanCTX launcher: it now binds directly to the package-owned MCP manager, and `lean-ctx --version` remains available during launcher migration even before user MCP state has been recreated.
+
 This release pins kibana-agent at `6334b36184d2d598d52339f6322fa1742b279f2f`. The fork test suite passes 253 tests, and Harr's MCP registry/selection tests plus the clean harness takeover/rollback test pass with the new contract.

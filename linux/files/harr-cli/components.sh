@@ -96,6 +96,13 @@ package_leanctx_binary() {
   printf '%s/vendor/lean-ctx/lean-ctx\n' "$linux_dir"
 }
 
+package_mcp_manager() {
+  local linux_dir package_root
+  linux_dir="$(package_linux_dir)" || return 1
+  package_root="$(cd -- "${linux_dir}/.." && pwd)"
+  printf '%s/common/mcp/manager.py\n' "$package_root"
+}
+
 leanctx_real_binary() {
   if [[ "${HARR_INSTALL_TYPE:-source}" == package ]]; then
     package_leanctx_binary
@@ -131,9 +138,10 @@ install_leanctx_wrapper() {
   fi
 
   if [[ "${HARR_INSTALL_TYPE:-source}" == package ]]; then
-    local real content tmp
+    local real manager content tmp
     real="$(package_leanctx_binary)"
-    printf -v content '#!/usr/bin/env bash\n# HARR_LEANCTX_WRAPPER=1\n# HARR_PACKAGE_LEANCTX_LAUNCHER=1\nset -Eeuo pipefail\nexport HARR_LEANCTX_REAL=%q\nexec %q "$@"' "$real" "$wrapper_src"
+    manager="$(package_mcp_manager)"
+    printf -v content '#!/usr/bin/env bash\n# HARR_LEANCTX_WRAPPER=1\n# HARR_PACKAGE_LEANCTX_LAUNCHER=1\nset -Eeuo pipefail\nif [[ "${1:-}" == "--version" && "$#" -eq 1 ]]; then exec %q --version; fi\nexport HARR_LEANCTX_REAL=%q\nexport HARR_MCP_MANAGER=%q\nexec %q "$@"' "$real" "$real" "$manager" "$wrapper_src"
     if [[ -r "$target" && "$(cat -- "$target")" == "$content" ]]; then
       return
     fi
