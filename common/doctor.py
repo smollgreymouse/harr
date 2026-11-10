@@ -488,11 +488,29 @@ def load_manifest(paths: Paths) -> tuple[dict[str, Any] | None, Check]:
     return data, Check("installation.manifest", "core", "PASS", "install provenance manifest is valid", {"path": str(paths.manifest)})
 
 
+def package_expected_real(paths: Paths) -> Path | None:
+    if paths.platform != "linux":
+        return None
+    try:
+        package_root = paths.common.resolve(strict=True).parent
+    except OSError:
+        return None
+    candidate = package_root / "linux" / "vendor" / "lean-ctx" / "lean-ctx"
+    return candidate if candidate.is_file() else None
+
+
 def manifest_expected_real(paths: Paths, manifest: dict[str, Any] | None) -> Path | None:
     if manifest:
         lean = manifest.get("leanctx")
         if isinstance(lean, dict) and isinstance(lean.get("real_path"), str):
-            return Path(lean["real_path"])
+            recorded = Path(lean["real_path"])
+            if recorded.is_file():
+                return recorded
+            if manifest.get("install_type") == "package":
+                packaged = package_expected_real(paths)
+                if packaged:
+                    return packaged
+            return recorded
     build = os.environ.get("HARR_LEANCTX_BUILD")
     if build:
         exe = "lean-ctx.exe" if paths.platform == "windows" else "lean-ctx"
@@ -1084,7 +1102,9 @@ def execute_repairs(paths: Paths, actions: list[RepairAction], manifest: dict[st
 
 def write_manifest(paths: Paths, args: argparse.Namespace) -> int:
     paths.libexec.mkdir(parents=True, exist_ok=True)
-    real = manifest_expected_real(paths, None)
+    real = package_expected_real(paths) if args.install_type == "package" else None
+    if real is None:
+        real = manifest_expected_real(paths, None)
     identity_text = ""
     if real and real.is_file():
         identity = safe_run([str(real), "--version"], timeout=8)

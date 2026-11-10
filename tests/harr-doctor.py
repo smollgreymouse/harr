@@ -253,6 +253,68 @@ with tempfile.TemporaryDirectory() as td:
     assert payload["leanctx"]["identity"] == "test-build-id"
     assert Path(payload["leanctx"]["real_path"]).parts[-4:] == ("vendor", "lean-ctx", "test-build", "lean-ctx")
 
+# Package-mode manifests must point at the package-owned LeanCTX binary, not
+# the historical user-vendor path. Existing 0.3.9 manifests with that stale
+# path must also resolve to the package binary when the package tree is present.
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    home = root / "home"
+    package_root = root / "usr" / "lib" / "harr"
+    package_common = package_root / "common"
+    package_common.mkdir(parents=True)
+    package_real = package_root / "linux" / "vendor" / "lean-ctx" / "lean-ctx"
+    package_real.parent.mkdir(parents=True)
+    package_real.write_text(
+        "#!/bin/sh\n"
+        "echo 'lean-ctx 3.11.0 (Harr build package-test-id, https://github.com/yvgude/lean-ctx)'\n"
+    )
+    package_real.chmod(0o755)
+    libexec = home / ".local" / "libexec" / "harr"
+    common_link = libexec / "common"
+    common_link.parent.mkdir(parents=True)
+    common_link.symlink_to(package_common, target_is_directory=True)
+    paths = doctor.Paths(
+        platform="linux",
+        home=home,
+        config_home=home / ".config",
+        harr_config=home / ".config" / "harr",
+        libexec=libexec,
+        common=common_link,
+        bin_dir=home / ".local" / "bin",
+        leanctx=home / ".local" / "bin" / "lean-ctx",
+        lean_config=home / ".config" / "lean-ctx" / "config.toml",
+        effective=home / ".config" / "harr" / "mcp-registry.json",
+        catalog=package_common / "mcp" / "registry.json",
+        secrets=home / ".config" / "harr" / "secrets",
+        npm_prefix=home / ".local" / "share" / "harr" / "npm",
+        runner=home / ".local" / "bin" / "harr-mcp-run",
+        manifest=libexec / "install-manifest.json",
+        repair_root=home / ".local" / "share" / "harr" / "doctor-repairs",
+        codex_home=home / ".codex",
+        opencode_home=home / ".config" / "opencode",
+        harr_command=root / "usr" / "bin" / "harr",
+    )
+    saved = {key: os.environ.get(key) for key in ("HARR_LEANCTX_BUILD", "HARR_LEANCTX_ID", "HARR_LEANCTX_VERSION")}
+    os.environ["HARR_LEANCTX_BUILD"] = "package-test-build"
+    os.environ["HARR_LEANCTX_ID"] = "package-test-id"
+    os.environ["HARR_LEANCTX_VERSION"] = "3.11.0"
+    try:
+        rc = doctor.write_manifest(
+            paths,
+            SimpleNamespace(source_root=None, harr_version="0.test", install_type="package"),
+        )
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    assert rc == 0
+    payload = json.loads(paths.manifest.read_text(encoding="utf-8"))
+    assert Path(payload["leanctx"]["real_path"]) == package_real
+    payload["leanctx"]["real_path"] = str(libexec / "vendor" / "lean-ctx" / "package-test-build" / "lean-ctx")
+    assert doctor.manifest_expected_real(paths, payload) == package_real
+
 linux_harr = (ROOT / "linux" / "harr").read_text(encoding="utf-8")
 linux_install = (ROOT / "linux" / "install.sh").read_text(encoding="utf-8")
 assert 'setup_install_type="${HARR_INSTALL_TYPE:-source}"' in linux_harr
