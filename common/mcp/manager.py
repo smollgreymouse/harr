@@ -229,6 +229,26 @@ def workspace_root(cwd: Path | None = None) -> Path:
     return current
 
 
+def mcp_workspace_root() -> Path:
+    """Resolve explicit MCP authority before falling back to host process cwd.
+
+    User-level MCP hosts may launch servers from HOME or an application directory,
+    independently of the open project. Never silently fall back when an explicit
+    root is invalid: that could bind a session to the wrong workspace.
+    """
+    override = os.environ.get("HARR_WORKSPACE_ROOT")
+    if override is None:
+        return workspace_root()
+    if not override.strip():
+        raise SystemExit("HARR_WORKSPACE_ROOT must be a non-empty absolute project directory")
+    candidate = Path(override).expanduser()
+    if not candidate.is_absolute():
+        raise SystemExit("HARR_WORKSPACE_ROOT must be an absolute project directory")
+    if not candidate.is_dir():
+        raise SystemExit(f"HARR_WORKSPACE_ROOT is not an existing directory: {candidate}")
+    return candidate.resolve()
+
+
 def workspace_store_dir() -> Path:
     root = harr_config_dir() / "workspaces"
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -959,7 +979,7 @@ def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
         if icon.is_file():
             env["HARR_MCP_ICON_PATH"] = str(icon)
     if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
-        primary = workspace_root()
+        primary = mcp_workspace_root()
         store = ensure_workspace_store(args.real, primary)
         env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
         # Workspace changes root authority, not the familiar Harr tool surface.
