@@ -513,6 +513,14 @@ Then it restores the exact pre-Harr global snapshot, removes paths Harr created 
 
 
 
+### MCP launch from hosts with global working directories (ZCode and others)
+
+Harr-managed LeanCTX normally selects its strict Workspace from the MCP process working directory (walking upwards to the nearest `.git`). User-level MCP hosts may start servers from `$HOME` or an application directory rather than from the active project, causing `Workspace root is unavailable or unsafe` during initialization.
+
+Set `HARR_WORKSPACE_ROOT` in the MCP server environment to the **absolute directory of the intended project** (for example `/home/user/Projects/my-repo`). This takes precedence over process `cwd` for strict MCP Workspace selection. Hosts that support per-project MCP definitions should scope this setting to the project, or provide a project-directory expansion variable when supported. Do not set one fixed project root in a global multi-project MCP if sessions should be isolated by project.
+
+An unset variable keeps existing `cwd` / `.git` discovery. An explicitly empty, relative, or nonexistent root fails closed; a broad or unsafe root (such as `/` or `$HOME`) is still rejected by the LeanCTX Workspace validator. `HARR_WORKSPACE_MODE=legacy` retains its existing behavior and does not enable strict Workspace selection.
+
 ### Installed layout
 
 Linux:
