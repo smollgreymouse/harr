@@ -70,7 +70,7 @@ enabled = false
     $codexAgents = Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')
     $openAgents = Get-Content -Raw (Join-Path $OpenCodeDir 'AGENTS.md')
     if ($codexAgents -notmatch 'codegraph::codegraph_explore' -or $codexAgents -notmatch 'through `ctx_shell`') { throw 'Codex Harr policy was not applied' }
-    if ($openAgents -notmatch 'lean-ctx_ctx_tools' -or $openAgents -notmatch 'Do not use native read/grep/glob/bash') { throw 'OpenCode Harr policy was not applied' }
+    if ($openAgents -notmatch 'lean-ctx_ctx_tools' -or $openAgents -notmatch 'OpenCode native-first routing') { throw 'OpenCode Harr policy was not applied' }
     if ($codexAgents -match '\$asa' -or $codexAgents -match 'Spawn native workers only for genuinely independent parallel scopes') { throw 'Default-off orchestration leaked into Codex policy' }
     if ($openAgents -match '\$asa') { throw 'Codex-only Asa routing leaked into OpenCode policy' }
     if ($codexAgents -match 'GitLab MR/pipeline' -or $codexAgents -match 'Grafana dashboard work') { throw 'Disabled MCP routing leaked into Codex policy' }

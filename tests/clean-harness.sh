@@ -296,7 +296,12 @@ grep -Fq 'This exception applies to Codex memory only' "${CODEX_HOME}/AGENTS.md"
 grep -q 'Keep investigation output bounded' "${CODEX_HOME}/AGENTS.md"
 grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
-grep -q 'Do not use native read/grep/glob/bash' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q 'OpenCode native-first routing' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -Fq 'Never call lean-ctx_ctx_read' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q "Investigation uses the host's native file and shell tools" "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+! grep -q 'Investigation uses MCP; editing uses the native host editor' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+! grep -q 'Keep the 4096-token LeanCTX budget' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q 'harr-workspace::workspace_sync' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 ! grep -Fq '$asa' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Git repository local state/history/branches/configuration/commits' "${CODEX_HOME}/AGENTS.md"
 grep -q 'harr git ...' "${CODEX_HOME}/AGENTS.md"
@@ -389,7 +394,7 @@ assert 'harr-workspace' not in zcfg['mcp']['servers']
 PY
 
 # ZCode policy: native-first investigation, minimal MCP surface, no direct workspace MCP.
-grep -q 'Investigation uses the native ZCode tools (Read, Grep, Glob, Bash)' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -q "Investigation uses the host's native file and shell tools" "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -q 'FIRST investigation call MUST be `mcp__lean-ctx__ctx_tools`' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -Fq 'harr workspace sync <new checkout absolute path>' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -Fq 'ZCode has no direct `harr-workspace` MCP' "${HARR_ZCODE_HOME}/AGENTS.md"
