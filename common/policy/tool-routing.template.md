@@ -5,7 +5,7 @@
 - Investigation uses MCP; editing uses the native host editor.
 <!-- harr-host:codex:end -->
 <!-- harr-host:zcode,opencode:start -->
-- Investigation uses the host's native file and shell tools; editing uses the native host editor. Harr-managed MCP calls are the deliberate minimal exception: the single `lean-ctx` MCP exposes only CodeGraph and the enabled service MCPs.
+- Investigation reads and searches use the host's native file tools; shell work goes through LeanCTX. Editing uses the native host editor. Harr-managed MCP calls stay minimal: the single `lean-ctx` MCP exposes shell, CodeGraph and the enabled service MCPs.
 <!-- harr-host:zcode,opencode:end -->
 - Harr-managed specialized MCPs stay behind LeanCTX; unrelated third-party MCPs/skills may coexist globally and follow their own explicit rules.
 {{HOST_ORCHESTRATION_POLICY}}
@@ -19,22 +19,17 @@
 <!-- harr-host:zcode,opencode:start -->
 - For literal/content lookup after the required CodeGraph step (or when CodeGraph is not applicable), prefer `{{CTX_SEARCH}}`; for filename discovery prefer `{{CTX_GLOB}}`; then use `{{CTX_READ}}` with a narrow line/range request for only the needed sections.
 - Keep investigation output bounded: search/glob with a focused query and result cap, then narrow `{{CTX_READ}}` ranges. If a tool reports truncation, refine the query or read the cited range instead of repeating or widening the same request. Avoid dumping whole files, broad repository listings, or large `{{CTX_TOOLS}}` results into model context unless the full result is required.
-- `{{CTX_SHELL}}` is the shell path for operations whose semantics are genuinely shell/CLI based (Git, builds, tests, generators, package/project commands, Harr bridges); it is a native tool call, not a LeanCTX call. Keep shell commands single-purpose.
+- `{{CTX_SHELL}}` is for operations whose semantics are genuinely shell/CLI based (Git, builds, tests, generators, package/project commands, Harr bridges), not the default code-reading/search path. Keep shell commands single-purpose.
 <!-- harr-host:zcode,opencode:end -->
 <!-- harr-host:codex,opencode:start -->
 - A Git worktree or checkout created during this session for in-scope implementation is a newly known working root, not automatically a LeanCTX-authorized root. Immediately after a successful `git worktree add` (including `harr git worktree add`), BEFORE reading/searching or running commands in that checkout, register its exact absolute path using direct `harr-workspace::workspace_get` followed by add-only `harr-workspace::workspace_sync` (`project` = existing session primary/project root; `paths` = [new checkout path]). Verify the new root appears active via `workspace_get`. This is a continuation of the user-authorized worktree task; do not register unrelated locations or broad parents. If Workspace control fails, stop work in the new checkout and report the blocker; never use native shell search/read as a workaround. Use the `harr-workspace` skill for the complete registration workflow.
 - Exception: Harr Workspace authority control must not route through LeanCTX. Prefer the direct `harr-workspace` MCP (`workspace_get` / add-only `workspace_sync`). If that direct MCP is unavailable, `harr workspace show|list|add|remove|sync` may run through the host client's native shell only when the host sandbox permits Harr config access. Never use `{{CTX_SHELL}}` or `ctx_workspace_*` to bootstrap Workspace authority, and never weaken the sandbox to make the fallback work.
 <!-- harr-host:codex,opencode:end -->
 <!-- harr-host:zcode:start -->
-- A Git worktree or checkout created during this session for in-scope implementation is a new working root. Immediately after a successful `git worktree add` (including `harr git worktree add`), BEFORE reading/searching or running commands in that checkout, register its exact absolute path with add-only `harr workspace sync <new checkout absolute path>` through `{{CTX_SHELL}}`, and verify it appears with `harr workspace show`. This is a continuation of the user-authorized worktree task; do not register unrelated locations or broad parents. If Workspace control fails, stop work in the new checkout and report the blocker. Use the `harr-workspace` skill for the complete registration workflow.
-- Exception: Harr Workspace authority control must not route through LeanCTX. ZCode has no direct `harr-workspace` MCP; use the `harr workspace` CLI through `{{CTX_SHELL}}` only. Never use `ctx_workspace_*` to bootstrap Workspace authority, and never weaken the sandbox to make a fallback work.
+- A Git worktree or checkout created during this session for in-scope implementation is a new working root. Immediately after a successful `git worktree add` (including `harr git worktree add`), BEFORE reading/searching or running commands in that checkout, register its exact absolute path with add-only `harr workspace sync <new checkout absolute path>` through native Bash, and verify it appears with `harr workspace show`. This is a continuation of the user-authorized worktree task; do not register unrelated locations or broad parents. If Workspace control fails, stop work in the new checkout and report the blocker. Use the `harr-workspace` skill for the complete registration workflow.
+- Exception: Harr Workspace authority control must not route through LeanCTX. ZCode has no direct `harr-workspace` MCP; use the `harr workspace` CLI through native Bash only. Never use `ctx_workspace_*` to bootstrap Workspace authority, and never weaken the sandbox to make a fallback work.
 <!-- harr-host:zcode:end -->
-<!-- harr-host:codex:start -->
 - On a shell failure, distinguish policy rejection from runtime failure. A LeanCTX `BLOCKED`/`segment ... blocked` message means the command was rejected before execution; do not treat trailing shell text as proof that a blocked segment ran. `command not found`/exit 127 is a separate missing-executable condition only when that command actually executed. Do not weaken `shell_security` or enable warn-only mode merely to bypass a blocked investigation command; reroute lookup/read work to the appropriate `ctx_*` tool.
-<!-- harr-host:codex:end -->
-<!-- harr-host:zcode,opencode:start -->
-- On a `{{CTX_SHELL}}` failure, distinguish a host permission denial from a runtime failure before retrying. Do not reroute a denied command through LeanCTX to bypass host permissions; reroute lookup/read work to the appropriate native tool.
-<!-- harr-host:zcode,opencode:end -->
 - Git repository local state/history/branches/configuration/commits: use one exact `git ...` command through `{{CTX_SHELL}}`.
 - When `harr status` reports a ready host Git service, any Git command that can contact a remote MUST use one exact `harr git ...` command through `{{CTX_SHELL}}`, never bare network `git`. This includes `clone`, `fetch`, `pull`, `push`, `ls-remote`, `remote update`, remote submodule operations and Git LFS transfers. Harr runs Git in its loopback-only user service with the user's normal SSH agent, SSH config and credential helpers; do not choose an SSH key, add per-repository identity policy, rewrite the remote, set `core.sshCommand`, inject a PAT, or open a browser. Preserve the repository cwd; if `{{CTX_SHELL}}` cannot bind to that repository root, run from an allowed cwd and pass `harr git -C /absolute/repository/path ...`.
 - `harr git` is the transparent terminal-auth route, not a replacement for ordinary local Git. Before an SSH-backed remote operation, `harr status` may be used to verify `host-git-service ready (ssh-agent: available)`. If the service or agent is unavailable, report that transport state instead of retrying with bare Git or inventing another credential route. A successful remote operation requires a zero exit status; do not claim a push/fetch succeeded from partial output.
@@ -70,10 +65,10 @@
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - For code, locate symbols/structure with CodeGraph, then `{{CTX_READ}}` only for needed line ranges (`lines=`); avoid whole-file reads when scope is known. If output says `truncated`, read missing relevant ranges before drawing conclusions. Keep the 4096-token LeanCTX budget.
 <!-- harr-host:codex:end -->
-<!-- harr-host:zcode:start -->
+<!-- harr-host:zcode,opencode:start -->
 - Use `{{CTX_READ}}` for exact evidence, `{{CTX_SEARCH}}` for a concrete unresolved text/symbol question, `{{CTX_GLOB}}` for a narrowly scoped unknown path, and `{{CTX_SHELL}}` for runtime/command evidence plus Git and Kubernetes operations.
 - For code, locate symbols/structure with CodeGraph first, then `{{CTX_READ}}` only for needed line ranges; avoid whole-file reads when scope is known.
-<!-- harr-host:zcode:end -->
+<!-- harr-host:zcode,opencode:end -->
 - Never do broad repository inventory after CodeGraph. Do not duplicate one Harr-managed investigation through gateway and a direct MCP; Harr-managed direct MCPs are diagnostic/on-demand bypasses only.
 - Use `{{CTX_CALL}}` only for a known, non-editing LeanCTX capability with no direct `ctx_*` route. Never use it to edit workspace files or discover edit/patch tools; use the native host editor directly. {{HOST_NATIVE_POLICY}} Build/test only on explicit request.
 <!-- harr-tool-policy:end -->
