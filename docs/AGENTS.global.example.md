@@ -21,4 +21,6 @@ For Codex the generated file is equivalent to:
 
 OpenCode receives the same routing policy with the six LeanCTX ids rendered as `lean-ctx_ctx_*` names and the stricter host rule `Do not use native read/grep/glob/bash.`
 
+ZCode receives the inverted, native-first rendering: native Read/Grep/Glob/Bash are the default workspace investigation path, `mcp__lean-ctx__ctx_tools` (CodeGraph and the enabled service MCPs) is the only regular MCP call, `mcp__lean-ctx__ctx_read`/`ctx_search`/`ctx_glob`/`ctx_shell`/`ctx_call` are explicitly forbidden, and worktree registration runs `harr workspace sync` through the native shell because ZCode has no direct `harr-workspace` MCP. When orchestration is enabled, the `{{HOST_ORCHESTRATION_POLICY}}` line carries the ZCode subagent routing contract (root never resolves material architecture decisions; `$asa` routes to the persistent `asa-architect` subagent).
+
 Project-level `AGENTS.md` files are outside Harr ownership and are never read, modified, backed up, or restored by Harr.

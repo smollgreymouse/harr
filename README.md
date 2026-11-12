@@ -63,6 +63,17 @@ harr agents orchestration disable
 harr agents asa configure --model gpt-6.1-sol --effort xhigh
 ```
 
+On ZCode the same switch installs the `$asa` skill (a ZCode-specific contract
+variant) and the managed `asa-architect` subagent definition under
+`~/.zcode/agents/asa-architect.md`. ZCode subagents spawn fresh without root
+history, so root routes material decisions through `$asa` with an explicit
+compact evidence packet and continues the SAME subagent by its agent id. The
+ZCode model defaults to the chat plan's model and is configured separately:
+
+```bash
+harr agents asa configure --zcode-model account:<plan>/GLM-5.3
+```
+
 Harr does not change the model of an already-running chat. Named external
 executors use the shared `$ein` workflow when configured.
 
@@ -136,7 +147,7 @@ Harr is not merged into another global harness. On first installation it takes *
 Harr-managed specialized MCPs stay behind LeanCTX so their large schemas do not live permanently in the agent context. The deliberate Codex Desktop exception is enabled named Ein: each exposes only its small common `ein` schema directly so its MCP App can attach the async completion marker; the same instance remains available behind LeanCTX for OpenCode/fallback. Unrelated third-party MCPs and skills may coexist globally.
 
 ```text
-Codex / OpenCode
+Codex / OpenCode / ZCode
       |
       | Harr-managed route
       v
@@ -191,7 +202,7 @@ harr workspace sync /absolute/current/project /absolute/other/session-root
 harr workspace list
 ```
 
-`harr workspace sync PATH...` is an add-only helper for agent sessions: it canonicalizes the supplied working folders, skips the primary root, existing roots and duplicate inputs, and adds only the missing roots. On Linux, Harr installs the same `$harr-workspace` skill and direct `harr-workspace` control MCP for both Codex and OpenCode, so you can ask either client to "sync/add your working folders to Harr". The skill uses only workspace/root paths already known to that session; it does not scan `$HOME` or guess sibling repositories.
+`harr workspace sync PATH...` is an add-only helper for agent sessions: it canonicalizes the supplied working folders, skips the primary root, existing roots and duplicate inputs, and adds only the missing roots. On Linux, Harr installs the same `$harr-workspace` skill for Codex, OpenCode and ZCode, and the direct `harr-workspace` control MCP for Codex and OpenCode; ZCode registers no direct Workspace MCP and syncs through the `harr workspace` CLI in its native shell, so you can ask any of the three clients to "sync/add your working folders to Harr". The skill uses only workspace/root paths already known to that session; it does not scan `$HOME` or guess sibling repositories.
 
 The CLI and the already-running MCP share the same revisioned Workspace store, so a successful add becomes visible to the next MCP request and a remove revokes access on the next request.
 
@@ -457,6 +468,7 @@ Harr owns and regenerates:
 
 - global Codex `AGENTS.md`, Harr/LeanCTX diagnostic skills, and the Harr-owned `mcp_servers.lean-ctx` entry in `config.toml`;
 - global OpenCode `AGENTS.md`, Harr/LeanCTX diagnostic skills, and the active global OpenCode harness config;
+- global ZCode `AGENTS.md`, Harr/LeanCTX diagnostic skills, per-agent skill variants, the managed Asa subagent definition, and the `mcp.servers["lean-ctx"]` entry in `~/.zcode/cli/config.json`;
 - Harr LeanCTX binary/wrapper/config;
 - Harr CodeGraph convenience launcher and private runtime package;
 - the saved MCP selection and generated effective registry;
@@ -551,6 +563,12 @@ ${XDG_CONFIG_HOME:-~/.config}/opencode/
   opencode.jsonc
   AGENTS.md
   skills/{harr,lean-ctx}/
+
+~/.zcode/
+  AGENTS.md
+  skills/{harr,lean-ctx,asa,ein,harr-workspace}/
+  agents/asa-architect.md         # when orchestration is enabled
+  cli/config.json                 # Harr owns mcp.servers["lean-ctx"] only
 ```
 
 macOS:
@@ -744,6 +762,8 @@ When a `codex` CLI is available, Harr uses the official MCP writer. If the host 
 All unrelated Codex settings and MCPs remain in place. The entire pre-Harr `config.toml` is part of the clean rollback snapshot.
 
 OpenCode uses the shared `common/hosts/opencode-config.py`; its global config is `${XDG_CONFIG_HOME:-~/.config}/opencode/opencode.jsonc` on Linux/macOS and `%USERPROFILE%\.config\opencode\opencode.jsonc` on Windows unless `XDG_CONFIG_HOME` is explicitly set. Harr removes only retired/Harr-owned workflow pieces and preserves unrelated providers, plugins, MCPs and agents.
+
+ZCode uses the shared `common/hosts/zcode-config.py` against `~/.zcode/cli/config.json`. Harr owns only `mcp.servers["lean-ctx"]` (absolute launcher path, `args: ["mcp"]`), preserves every other key and server, adopts a known pre-Harr bootstrap entry, and refuses to touch a foreign same-named server. Because ZCode policy keeps MCP calls minimal, no other Harr MCP is registered for ZCode: CodeGraph, the service MCPs and named Ein stay behind the LeanCTX gateway, and Workspace authority uses the `harr workspace` CLI through the native shell.
 
 
 
@@ -972,6 +992,8 @@ The permanent policy always keeps the core token-saving rules:
 Optional service routing lines are generated only for the selected MCP set. For example, GitLab API routing does not exist when GitLab is disabled, Grafana dashboard guidance does not exist when Grafana is disabled, and Kibana investigation guidance does not exist when Kibana is disabled. Executor routing is generated separately from enabled named Ein instances; configuration alone never authorizes delegation.
 
 OpenCode gets `lean-ctx_ctx_*` ids and keeps the stricter `Do not use native read/grep/glob/bash` host rule. Codex gets bare `ctx_*` ids and allows native equivalents only as narrow fallback.
+
+ZCode inverts the investigation economy: native Read/Grep/Glob/Bash are the default workspace path, and Harr MCP calls stay minimal. ZCode registers exactly one MCP (`mcp__lean-ctx__*`); `ctx_tools` is the only regular MCP call (CodeGraph and the enabled service MCPs, plus named Ein), while `ctx_read`/`ctx_search`/`ctx_glob`/`ctx_shell`/`ctx_call` are explicitly forbidden by the ZCode policy. Skill texts stay per-host: shared sources are installed byte-identically for Codex/OpenCode, and ZCode-only contracts live in optional `SKILL.zcode.md` variants that never leak into other hosts' installs.
 
 The generated policy is the **entire Harr-owned global AGENTS file**, not a block merged into old rules.
 
