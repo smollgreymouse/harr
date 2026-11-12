@@ -17,6 +17,7 @@ cmd_leanctx_apply() {
   fi
   local codex_skills="${CODEX_HOME:-${HOME}/.codex}/skills"
   local opencode_skills="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
+  local zcode_skills="${HARR_ZCODE_HOME:-${HOME}/.zcode}/skills"
   local allow_args=()
   if agent_harness_enabled; then
     allow_args+=(--allow-path "${codex_skills}/harr")
@@ -29,9 +30,14 @@ cmd_leanctx_apply() {
       allow_args+=(--allow-path "${opencode_skills}/harr-workspace")
     fi
     allow_args+=(--allow-path "${opencode_skills}/lean-ctx" --allow-path "${opencode_skills}/ein")
+    allow_args+=(--allow-path "${zcode_skills}/harr")
+    if [[ "${HARR_PLATFORM:-linux}" == linux ]]; then
+      allow_args+=(--allow-path "${zcode_skills}/harr-workspace")
+    fi
+    allow_args+=(--allow-path "${zcode_skills}/lean-ctx" --allow-path "${zcode_skills}/ein")
   fi
   if orchestration_enabled; then
-    allow_args+=(--allow-path "${codex_skills}/asa")
+    allow_args+=(--allow-path "${codex_skills}/asa" --allow-path "${zcode_skills}/asa")
   fi
   if (( ${#allow_args[@]} )); then
     mcp_manager render-leanctx \

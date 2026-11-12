@@ -111,6 +111,7 @@ with tempfile.TemporaryDirectory() as tmp:
         repair_root=home / ".local" / "share" / "harr" / "doctor-repairs",
         codex_home=home / ".codex",
         opencode_home=home / ".config" / "opencode",
+        zcode_home=home / ".zcode",
         harr_command=home / ".local" / "bin" / "harr",
     )
     manifest = {
@@ -173,6 +174,7 @@ with tempfile.TemporaryDirectory() as td:
         repair_root=home / ".local" / "share" / "harr" / "doctor-repairs",
         codex_home=home / ".codex",
         opencode_home=home / ".config" / "opencode",
+        zcode_home=home / ".zcode",
         harr_command=home / ".local" / "bin" / "harr",
     )
     wrapper = libexec / "leanctx" / "lean-ctx-wrapper"
@@ -229,6 +231,7 @@ with tempfile.TemporaryDirectory() as td:
         repair_root=home / ".local" / "share" / "harr" / "doctor-repairs",
         codex_home=home / ".codex",
         opencode_home=home / ".config" / "opencode",
+        zcode_home=home / ".zcode",
         harr_command=home / ".local" / "bin" / "harr",
     )
     saved = {key: os.environ.get(key) for key in ("HARR_LEANCTX_BUILD", "HARR_LEANCTX_ID", "HARR_LEANCTX_VERSION")}
@@ -292,6 +295,7 @@ with tempfile.TemporaryDirectory() as td:
         repair_root=home / ".local" / "share" / "harr" / "doctor-repairs",
         codex_home=home / ".codex",
         opencode_home=home / ".config" / "opencode",
+        zcode_home=home / ".zcode",
         harr_command=root / "usr" / "bin" / "harr",
     )
     saved = {key: os.environ.get(key) for key in ("HARR_LEANCTX_BUILD", "HARR_LEANCTX_ID", "HARR_LEANCTX_VERSION")}

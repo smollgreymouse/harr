@@ -7,6 +7,7 @@ else
 fi
 readonly HARR_OPENCODE_HELPER="${HARR_HOST_HELPER_DIR}/opencode-config.py"
 readonly HARR_CODEX_HELPER="${HARR_HOST_HELPER_DIR}/codex-config.py"
+readonly HARR_ZCODE_HELPER="${HARR_HOST_HELPER_DIR}/zcode-config.py"
 readonly HARR_CLEAN_STATE_MARKER="${HOME}/.local/share/harr/state/pre-harr/complete"
 
 require_global_harness_ownership() {
@@ -20,8 +21,10 @@ cmd_hosts_apply() {
   require_command python3
   [[ -r "$HARR_OPENCODE_HELPER" ]] || die "OpenCode helper missing: $HARR_OPENCODE_HELPER"
   [[ -r "$HARR_CODEX_HELPER" ]] || die "Codex helper missing: $HARR_CODEX_HELPER"
+  [[ -r "$HARR_ZCODE_HELPER" ]] || die "ZCode helper missing: $HARR_ZCODE_HELPER"
   env HARR_PLATFORM="${HARR_PLATFORM:-linux}" python3 "$HARR_OPENCODE_HELPER" apply
   env HARR_PLATFORM="${HARR_PLATFORM:-linux}" python3 "$HARR_CODEX_HELPER" apply
+  env HARR_PLATFORM="${HARR_PLATFORM:-linux}" python3 "$HARR_ZCODE_HELPER" apply
 }
 
 host_helper_status_row() {
@@ -41,6 +44,7 @@ cmd_hosts_status() {
   printf '%-12s %-14s %s\n' HOST STATE DETAIL
   host_helper_status_row opencode "$HARR_OPENCODE_HELPER"
   host_helper_status_row codex "$HARR_CODEX_HELPER"
+  host_helper_status_row zcode "$HARR_ZCODE_HELPER"
 }
 
 cmd_hosts() {
