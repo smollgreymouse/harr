@@ -18,11 +18,23 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import deque
 from pathlib import Path
 from typing import Any, Iterable
 
 STATUSES = {"PASS", "WARN", "FAIL", "SKIP"}
+
+
+def is_remote_mcp_url(url: str) -> bool:
+    """https, or plain http only for loopback test endpoints."""
+    if url.startswith("https://"):
+        return True
+    if url.startswith("http://"):
+        host = url[7:].split("/", 1)[0].split(":", 1)[0].lower()
+        return host in {"127.0.0.1", "localhost", "::1", "[::1]"}
+    return False
 REPAIR_STATUSES = {"NOT_NEEDED", "PLANNED", "REPAIRED", "BLOCKED", "FAILED", "ROLLED_BACK"}
 PROBE_KINDS = {"catalog-only", "mcp-ping", "tool"}
 DOCTOR_FIELDS = {"required_tools", "probe", "repair"}
@@ -409,6 +421,12 @@ def runtime_check(server: dict[str, Any], paths: Paths) -> Check:
             return Check(f"runtime.{name}", name, "PASS", "named Ein instance runtime is available", {"detail": result.stdout.strip()})
         return Check(f"runtime.{name}", name, "FAIL", "named Ein instance runtime is unavailable", {"detail": (result.stderr or result.stdout).strip()}, "Fix the configured executor CLI/profile; doctor does not install or authenticate model providers.")
 
+    if server.get("transport") == "http":
+        url = server.get("url")
+        if not isinstance(url, str) or not is_remote_mcp_url(url):
+            return Check(f"runtime.{name}", name, "FAIL", "remote HTTP MCP has no https url")
+        return Check(f"runtime.{name}", name, "PASS", "remote HTTP MCP; no local runtime required", {"url": url})
+
     if kind == "npm":
         package = runtime.get("package")
         expected = runtime.get("version")
@@ -595,6 +613,124 @@ def direct_catalog(server: dict[str, Any], paths: Paths, timeout: float = 15) ->
     finally:
         if session:
             session.close()
+
+
+def _http_mcp_post(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> tuple[dict[str, Any] | None, str]:
+    """One streamable-HTTP JSON-RPC round trip; returns (message, Mcp-Session-Id)."""
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            session_id = str(response.headers.get("Mcp-Session-Id") or "")
+            body = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:300]
+        raise RuntimeError(f"HTTP {exc.code} from MCP endpoint: {detail}") from exc
+    stripped = body.strip()
+    if not stripped:
+        return None, session_id
+    if stripped.startswith("{"):
+        try:
+            return json.loads(stripped), session_id
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("MCP endpoint returned malformed JSON") from exc
+    # text/event-stream: take the last data line carrying the matching JSON-RPC response.
+    message: dict[str, Any] | None = None
+    for line in stripped.splitlines():
+        candidate = line[5:].strip() if line.startswith("data:") else ""
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and ("result" in parsed or "error" in parsed):
+            if payload.get("id") is None or parsed.get("id") == payload.get("id"):
+                message = parsed
+    if message is None:
+        raise RuntimeError("MCP endpoint returned no JSON-RPC response")
+    return message, session_id
+
+
+def http_catalog_check(server: dict[str, Any], paths: Paths, timeout: float = 20) -> Check:
+    """Direct remote-HTTP downstream catalog check, independent of LeanCTX."""
+    name = str(server["name"])
+    url = str(server.get("url") or "")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if not is_remote_mcp_url(url):
+        return Check(f"catalog.{name}", name, "FAIL", "remote HTTP MCP must use https or a loopback test endpoint")
+    for secret in server.get("secrets", []):
+        target = secret.get("target", {})
+        if target.get("kind") != "header":
+            continue
+        secret_path = paths.secrets / str(secret.get("file"))
+        if not secret_path.is_file():
+            return Check(
+                f"catalog.{name}", name, "FAIL",
+                "required Harr secret is missing",
+                {"file": str(secret.get("file"))},
+                f"Run harr secret set {secret.get('name')}. Doctor never creates or copies credentials.",
+            )
+        value = secret_path.read_text(encoding="utf-8").strip()
+        fmt = str(target.get("format") or "")
+        if "{secret}" in fmt:
+            value = fmt.replace("{secret}", value)
+        if not value:
+            return Check(f"catalog.{name}", name, "FAIL", "required Harr secret is empty", {"file": str(secret.get("file"))})
+        headers[str(target.get("name"))] = value
+    try:
+        init_message, session_id = _http_mcp_post(
+            url,
+            headers,
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "harr-doctor", "version": "1"}}},
+            timeout,
+        )
+        if not isinstance(init_message, dict) or "error" in init_message:
+            detail = json.dumps(init_message)[:300] if isinstance(init_message, dict) else "no initialize response"
+            raise RuntimeError(f"initialize failed: {detail}")
+        send_headers = dict(headers)
+        if session_id:
+            send_headers["Mcp-Session-Id"] = session_id
+        try:
+            _http_mcp_post(url, send_headers, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}, timeout)
+        except Exception:
+            pass  # notifications may answer 202 with an empty body
+        message, _ = _http_mcp_post(url, send_headers, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, timeout)
+        result = message.get("result") if isinstance(message, dict) else None
+        tools = result.get("tools") if isinstance(result, dict) else None
+        if not isinstance(tools, list):
+            raise RuntimeError("tools/list returned no tools array")
+        names: list[str] = []
+        schemas_ok = True
+        for tool in tools:
+            if not isinstance(tool, dict) or not isinstance(tool.get("name"), str) or not tool["name"]:
+                schemas_ok = False
+                continue
+            names.append(tool["name"])
+            if not isinstance(tool.get("inputSchema", {}), dict):
+                schemas_ok = False
+        if len(names) != len(set(names)):
+            return Check(f"catalog.{name}", name, "FAIL", "downstream MCP exposes duplicate tool names", {"tools": names})
+        doctor = server.get("doctor") if isinstance(server.get("doctor"), dict) else {}
+        required = doctor.get("required_tools", []) if isinstance(doctor, dict) else []
+        missing = [x for x in required if x not in names]
+        if missing:
+            return Check(f"catalog.{name}", name, "FAIL", "downstream MCP is missing required tools", {"missing": missing, "tool_count": len(names)})
+        if not schemas_ok:
+            return Check(f"catalog.{name}", name, "FAIL", "downstream MCP has malformed tool schema", {"tool_count": len(names)})
+        shown = names if len(names) <= 20 else names[:20] + ["..."]
+        return Check(f"catalog.{name}", name, "PASS", f"remote MCP catalog is valid ({len(names)} tools)", {"tools": shown})
+    except TimeoutError as exc:
+        return Check(f"catalog.{name}", name, "FAIL", "remote MCP handshake/catalog timed out", {"error": str(exc)})
+    except Exception as exc:
+        return Check(f"catalog.{name}", name, "FAIL", "remote MCP handshake/catalog failed", {"error": str(exc)})
 
 
 def render_isolated_config(server: dict[str, Any], paths: Paths, root: Path) -> tuple[Path, Path]:
@@ -927,7 +1063,10 @@ def diagnose(paths: Paths, *, focus: str | None, local_only: bool) -> tuple[list
             checks.append(Check(f"catalog.{name}", name, "SKIP", "downstream catalog skipped because local prerequisites failed"))
             checks.append(Check(f"gateway.{name}", name, "SKIP", "gateway probe skipped because local prerequisites failed"))
             continue
-        checks.append(direct_catalog(server, paths))
+        if str(server.get("transport")) == "http":
+            checks.append(http_catalog_check(server, paths))
+        else:
+            checks.append(direct_catalog(server, paths))
         checks.extend(gateway_server_checks(server, paths, False))
     return checks, effective, manifest, stale_pids
 

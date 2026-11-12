@@ -156,6 +156,8 @@ LeanCTX 3.11.0 Harr unified build         required
       |
       +-- stdio on demand --> Jira MCP -> Jira REST API
       |
+      +-- https -----------> Z.ai Web Search / Web Reader / Zread  optional
+      |                     remote coding-plan MCPs
       +-- stdio -----------> <instance>::ein        user-configured
                             named executor adapter (GigaCode/OpenCode/Codex/custom)
       |
@@ -268,6 +270,9 @@ Harr components
   [ ] Grafana      optional  Grafana dashboards and datasources
   [ ] Jira         optional  Jira Server/Data Center issues and JQL via local REST MCP
   [ ] Kibana       optional  read-only logs/search through Kibana
+  [ ] Web Search   optional  Z.ai Web Search Prime (remote coding-plan MCP, billed per call)
+  [ ] Web Reader   optional  Z.ai Web Reader page fetch (remote coding-plan MCP, billed per call)
+  [ ] Zread        optional  Z.ai Zread GitHub repo research (remote coding-plan MCP, billed per call)
 
 Up/Down move   Space toggle   Enter apply   Esc cancel
 ```
@@ -882,6 +887,28 @@ The MCP exposes targeted read-only tools including list_kibana_endpoints, search
 See common/skills/harr/references/kibana.md for pinned-runtime and routing details.
 
 
+
+### Z.ai service MCPs (Web Search, Web Reader, Zread)
+
+These three optional MCPs are Z.ai's exclusive remote coding-plan services, reached directly over HTTPS by LeanCTX (no local runtime to install):
+
+```text
+LeanCTX -> https://api.z.ai/api/mcp/{web_search_prime,web_reader,zread}/mcp
+```
+
+Enable them with:
+
+```text
+harr mcp add websearch,webreader,zread
+```
+
+Authentication uses the GLM Coding Plan API key from z.ai. One key serves all three servers:
+
+```text
+harr secret set websearch
+```
+
+Harr stores the raw key under its private secrets directory and LeanCTX injects it as `Authorization: Bearer <key>` through a secret-header memento; the key never appears in configuration, logs or agent context. Because these servers are billed **per tool call** (1.2 credits per call under the GLM Coding Plan credit rules, independent of payload size), the doctor uses catalog-only probes and never spends a call; keep queries targeted and batch related lookups. See `common/skills/harr/references/{websearch,webreader,zread}.md`.
 
 ### Named Ein CLI executors
 

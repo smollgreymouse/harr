@@ -118,7 +118,7 @@ def render_gateway(data: dict, runner_command: str) -> str:
             raise SystemExit(f"unsupported MCP transport for {name}: {transport}")
 
         secret_env: list[tuple[str, str]] = []
-        secret_headers: list[tuple[str, str]] = []
+        secret_headers: list[tuple[str, str, str]] = []
         for secret in server.get("secrets", []):
             target = secret.get("target", {})
             item = (target.get("name"), secret.get("memento_id"))
@@ -127,7 +127,7 @@ def render_gateway(data: dict, runner_command: str) -> str:
             if target.get("kind") == "env":
                 secret_env.append(item)  # type: ignore[arg-type]
             elif target.get("kind") == "header":
-                secret_headers.append(item)  # type: ignore[arg-type]
+                secret_headers.append((*item, str(target.get("format") or "")))  # type: ignore[arg-type]
             else:
                 raise SystemExit(f"unsupported secret target for MCP {name}: {target.get('kind')}")
         if secret_env and transport == "stdio":
@@ -135,7 +135,13 @@ def render_gateway(data: dict, runner_command: str) -> str:
             lines += [f"{key} = {{ id = {toml_string(secret_id)} }}" for key, secret_id in secret_env]
         if secret_headers and transport == "http":
             lines += ["", "[gateway.servers.secret_headers]"]
-            lines += [f"{toml_string(key)} = {{ id = {toml_string(secret_id)} }}" for key, secret_id in secret_headers]
+            for key, secret_id, fmt in secret_headers:
+                ref = f"id = {toml_string(secret_id)}"
+                if fmt:
+                    if "{secret}" not in fmt:
+                        raise SystemExit(f"secret header format for MCP {name} has no {{secret}} placeholder")
+                    ref += f", format = {toml_string(fmt)}"
+                lines.append(f"{toml_string(key)} = {{ {ref} }}")
         chunks.append("\n".join(lines))
     return "\n\n".join(chunks) + ("\n" if chunks else "")
 
@@ -742,6 +748,10 @@ def jira_preflight(env: dict[str, str]) -> int:
 
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
+    if server.get("transport") == "http":
+        raise SystemExit(
+            f"MCP {server['name']} is a remote HTTP server reached directly by LeanCTX; no local runner command exists"
+        )
     env = os.environ.copy()
     forbidden = {
         secret.get("target", {}).get("name")
