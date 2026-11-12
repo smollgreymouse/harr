@@ -61,6 +61,15 @@
 - Kibana/Elasticsearch log and document investigation: FIRST discover and use the relevant kibana::* operation through {{CTX_TOOLS}}; prefer search_logs, count_documents, get_histogram, get_mapping, or list_fields over raw_es_query when a targeted tool fits.
 - Keep Kibana reads narrow: constrain index patterns, time ranges, fields and result sizes. This Harr route is intentionally read-only and reaches private Elasticsearch through Kibana's Console proxy.
 <!-- harr-mcp:kibana:end -->
+<!-- harr-mcp:websearch:start -->
+- Web research, real-time facts, or public information beyond local repositories: FIRST discover and use `websearch::webSearchPrime` through `{{CTX_TOOLS}}`. Keep queries targeted and fold related lookups into one query: every Web Search call is billed per call by the GLM Coding Plan, so repeated small calls spend credits without adding evidence. Never use web search for questions the local repository or Harr Kibana/GitLab routes can answer.
+<!-- harr-mcp:websearch:end -->
+<!-- harr-mcp:webreader:start -->
+- Reading a specific public web page by URL: use `webreader::webReader` through `{{CTX_TOOLS}}` before opening a browser. Prefer the exact page found by a `websearch` hit; large pages enter the context as input tokens, so prefer targeted URLs over crawling link lists and avoid re-reading the same page.
+<!-- harr-mcp:webreader:end -->
+<!-- harr-mcp:zread:start -->
+- Open-source GitHub repository research (docs, structure, file contents): prefer `zread::search_doc`, `zread::get_repo_structure`, and `zread::read_file` through `{{CTX_TOOLS}}` over cloning the repository. Use exact repo/file locators and keep queries narrow; these calls are billed per call by the GLM Coding Plan.
+<!-- harr-mcp:zread:end -->
 <!-- harr-host:codex:start -->
 - Use `{{CTX_READ}}` only for missing exact evidence; `{{CTX_SEARCH}}` only for a concrete unresolved text/symbol question; `{{CTX_GLOB}}` only for a narrowly scoped unknown path; `{{CTX_SHELL}}` only for runtime/command evidence plus Git and Kubernetes operations.
 - For code, locate symbols/structure with CodeGraph, then `{{CTX_READ}}` only for needed line ranges (`lines=`); avoid whole-file reads when scope is known. If output says `truncated`, read missing relevant ranges before drawing conclusions. Keep the 4096-token LeanCTX budget.
