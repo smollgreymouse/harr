@@ -10,11 +10,27 @@ export HOME="${TMP}/home"
 export XDG_CONFIG_HOME="${HOME}/.config"
 export CODEX_HOME="${HOME}/.codex"
 export HARR_CODEX_DISABLE_CLI=1
+export HARR_ZCODE_HOME="${HOME}/.zcode"
 mkdir -p "${TMP}/bin"
 printf '#!/usr/bin/env bash\nexit 0\n' >"${TMP}/bin/systemctl"
 chmod 0755 "${TMP}/bin/systemctl"
 export PATH="${TMP}/bin:${PATH}"
 mkdir -p "$CODEX_HOME" "$XDG_CONFIG_HOME/opencode/commands" "$XDG_CONFIG_HOME/opencode/skills/external"
+mkdir -p "$HARR_ZCODE_HOME/cli" "$HARR_ZCODE_HOME/skills/external" "$HARR_ZCODE_HOME/agents"
+cat >"${HARR_ZCODE_HOME}/AGENTS.md" <<'EOF'
+OLD ZCODE POLICY
+EOF
+cat >"${HARR_ZCODE_HOME}/cli/config.json" <<'EOF'
+{
+  "plugins": {"external-plugin": true},
+  "mcp": {
+    "servers": {
+      "lean-ctx": {"type": "stdio", "command": "lean-ctx", "args": ["mcp"]},
+      "external-mcp": {"type": "stdio", "command": "external", "args": []}
+    }
+  }
+}
+EOF
 
 cat >"${CODEX_HOME}/AGENTS.md" <<'EOF'
 OLD CODEX POLICY
@@ -80,6 +96,8 @@ cp "${XDG_CONFIG_HOME}/opencode/AGENTS.md" "${TMP}/opencode-agents.before"
 cp "${XDG_CONFIG_HOME}/opencode/opencode.jsonc" "${TMP}/opencode-config.before"
 cp "${XDG_CONFIG_HOME}/lean-ctx/config.toml" "${TMP}/leanctx.before"
 cp "${XDG_CONFIG_HOME}/opencode/commands/quick.md" "${TMP}/quick.before"
+cp "${HARR_ZCODE_HOME}/AGENTS.md" "${TMP}/zcode-agents.before"
+cp "${HARR_ZCODE_HOME}/cli/config.json" "${TMP}/zcode-config.before"
 
 bash "${ROOT}/linux/files/state/harr-state" snapshot
 
@@ -99,6 +117,10 @@ grep -q 'Asa effort: xhigh' "${TMP}/orchestration.default"
 ! grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 ! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
+[[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+! grep -Fq '$asa' "${HARR_ZCODE_HOME}/AGENTS.md"
+! grep -q 'ZCode orchestration economy' "${HARR_ZCODE_HOME}/AGENTS.md"
 
 # Configure while disabled must not activate anything.
 "${ROOT}/linux/harr" agents asa configure --model gpt-6-luna --effort high
@@ -128,6 +150,16 @@ assert parsed['model'] == 'gpt-6-luna'
 assert parsed['model_reasoning_effort'] == 'high'
 assert parsed['skills']['include_instructions'] is False
 PY_ASA
+[[ -f "${HARR_ZCODE_HOME}/skills/asa/SKILL.md" ]]
+grep -Fq 'Use one canonical `asa-architect` subagent for the root conversation.' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
+grep -Fq 'does NOT inherit the root conversation history' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
+grep -Fq 'mode=architecture-decision' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
+[[ -f "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+grep -Fq 'you do not automatically inherit the root conversation history' "${HARR_ZCODE_HOME}/agents/asa-architect.md"
+grep -Fq 'dedicated architect context' "${HARR_ZCODE_HOME}/agents/asa-architect.md"
+grep -q 'ZCode orchestration economy: keep sequential implementation in the root chat' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -q 'Subagents never spawn/fork agents or invoke Asa themselves' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -Fq '$asa' "${HARR_ZCODE_HOME}/AGENTS.md"
 
 # The agent-harness switch must not alter the LeanCTX MCP surface or downstream gateway.
 python3 - <<'PY_LEANCTX_SURFACE' >"${TMP}/leanctx-surface.before"
@@ -147,12 +179,18 @@ grep -q 'Agent harness: disabled' "${TMP}/harness.disabled"
 grep -q 'Orchestration: enabled' "${TMP}/orchestration.still-enabled"
 grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
 grep -q 'OLD OPENCODE POLICY' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q 'OLD ZCODE POLICY' "${HARR_ZCODE_HOME}/AGENTS.md"
 [[ ! -e "${CODEX_HOME}/skills/harr" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/harr" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/lean-ctx" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/harr-workspace" ]]
+[[ -f "${HARR_ZCODE_HOME}/skills/asa/SKILL.md" ]]
 [[ ! -e "${CODEX_HOME}/skills/lean-ctx" ]]
 [[ ! -e "${CODEX_HOME}/skills/harr-workspace" ]]
 [[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
 [[ ! -e "${CODEX_HOME}/skills/ein" ]]
 [[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
+[[ -f "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace" ]]
@@ -161,7 +199,10 @@ python3 - <<'PY_HARNESS_ASA_PATH'
 import os, tomllib
 from pathlib import Path
 lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
-assert lean['allow_paths'] == [str(Path(os.environ['CODEX_HOME']) / 'skills/asa')]
+assert lean['allow_paths'] == [
+    str(Path(os.environ['CODEX_HOME']) / 'skills/asa'),
+    str(Path(os.environ['HARR_ZCODE_HOME']) / 'skills/asa'),
+]
 PY_HARNESS_ASA_PATH
 ! grep -Fq '[mcp_servers.harr-workspace]' "${CODEX_HOME}/config.toml"
 ! grep -Fq '[mcp_servers.harr-workspace-app]' "${CODEX_HOME}/config.toml"
@@ -181,6 +222,8 @@ cmp "${TMP}/leanctx-surface.before" "${TMP}/leanctx-surface.after"
 "${ROOT}/linux/harr" agents orchestration disable
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
 grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
 "${ROOT}/linux/harr" agents orchestration enable
 [[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
@@ -227,6 +270,8 @@ grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 "${ROOT}/linux/harr" agents orchestration disable
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
 ! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
 "${ROOT}/linux/harr" agents apply all
@@ -332,7 +377,42 @@ assert cfg['permission']['external_perm'] == 'allow'
 assert 'task' not in cfg['permission'] and 'bash' not in cfg['permission']
 assert 'default_agent' not in cfg
 assert 'subagent_depth' not in cfg
+
+zc = Path(os.environ['HARR_ZCODE_HOME'])
+zcfg = json.loads((zc / 'cli/config.json').read_text())
+assert zcfg['plugins'] == {'external-plugin': True}
+assert zcfg['mcp']['servers']['external-mcp'] == {'type': 'stdio', 'command': 'external', 'args': []}
+assert zcfg['mcp']['servers']['lean-ctx'] == {
+    'type': 'stdio', 'command': str(lean), 'args': ['mcp'],
+}
+assert 'harr-workspace' not in zcfg['mcp']['servers']
 PY
+
+# ZCode policy: native-first investigation, minimal MCP surface, no direct workspace MCP.
+grep -q 'Investigation uses the native ZCode tools (Read, Grep, Glob, Bash)' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -q 'FIRST investigation call MUST be `mcp__lean-ctx__ctx_tools`' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -Fq 'harr workspace sync <new checkout absolute path>' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -Fq 'ZCode has no direct `harr-workspace` MCP' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -Fq 'ZCode native-first routing' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -Fq 'Never call mcp__lean-ctx__ctx_read' "${HARR_ZCODE_HOME}/AGENTS.md"
+! grep -q 'Investigation uses MCP; editing uses the native host editor' "${HARR_ZCODE_HOME}/AGENTS.md"
+! grep -q 'Keep the 4096-token LeanCTX budget' "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -q 'Investigation uses MCP; editing uses the native host editor' "${CODEX_HOME}/AGENTS.md"
+# ZCode skills: harr/harr-workspace use their zcode variants; variant files never leak.
+[[ -f "${HARR_ZCODE_HOME}/skills/harr/SKILL.md" ]]
+[[ -f "${HARR_ZCODE_HOME}/skills/lean-ctx/SKILL.md" ]]
+[[ -f "${HARR_ZCODE_HOME}/skills/harr-workspace/SKILL.md" ]]
+grep -Fq 'Harr Workspace session sync (ZCode)' "${HARR_ZCODE_HOME}/skills/harr-workspace/SKILL.md"
+grep -Fq 'this ZCode session' "${HARR_ZCODE_HOME}/skills/harr-workspace/SKILL.md"
+grep -q 'harr workspace sync' "${HARR_ZCODE_HOME}/skills/harr-workspace/SKILL.md"
+[[ ! -e "${HARR_ZCODE_HOME}/skills/harr/SKILL.zcode.md" ]]
+[[ ! -e "${CODEX_HOME}/skills/harr/SKILL.zcode.md" ]]
+[[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.zcode.md" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/harr-workspace/SKILL.zcode.md" ]]
+[[ ! -e "${CODEX_HOME}/skills/asa/SKILL.zcode.md" ]]
+grep -Fq 'harr agents apply [all|codex|opencode]' "${CODEX_HOME}/skills/harr/SKILL.md"
+grep -Fq 'harr agents apply [all|codex|opencode|zcode]' "${HARR_ZCODE_HOME}/skills/harr/SKILL.md"
+grep -Fq 'harr agents apply [all|codex|opencode]' "${XDG_CONFIG_HOME}/opencode/skills/harr/SKILL.md"
 
 # The official Codex writer can replace the MCP table. Harr must restore the
 # server default and every trusted standard LeanCTX tool override.
@@ -432,6 +512,10 @@ assert lean['allow_paths'] == [
     str(config / 'opencode/skills/harr-workspace'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/ein'),
+    str(Path(os.environ['HARR_ZCODE_HOME']) / 'skills/harr'),
+    str(Path(os.environ['HARR_ZCODE_HOME']) / 'skills/harr-workspace'),
+    str(Path(os.environ['HARR_ZCODE_HOME']) / 'skills/lean-ctx'),
+    str(Path(os.environ['HARR_ZCODE_HOME']) / 'skills/ein'),
 ]
 PY
 [[ -x "${HOME}/.local/libexec/harr/common/git_host/git_host.py" ]]
@@ -498,7 +582,9 @@ assert 'harr-gigacode-app' not in codex['mcp_servers']
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/gigacode-executor').exists()
 assert (Path(os.environ['CODEX_HOME']) / 'skills/ein/SKILL.md').is_file()
 assert (Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/skills/ein/SKILL.md').is_file()
+assert (Path(os.environ['HARR_ZCODE_HOME']) / 'skills/ein/SKILL.md').is_file()
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/einherjar-worker').exists()
+assert not (Path(os.environ['HARR_ZCODE_HOME']) / 'skills/einherjar-worker').exists()
 PY
 
 # MCP-only harness mode keeps named Ein behind LeanCTX but removes every direct/skill surface.
@@ -514,6 +600,8 @@ codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text
 assert not {'harr-ein-ui', 'giga-review', 'giga-builder', 'harr-workspace', 'harr-workspace-app'} & set(codex['mcp_servers'])
 assert not (Path(os.environ['CODEX_HOME']) / 'skills/ein').exists()
 assert not (Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/skills/ein').exists()
+assert not (Path(os.environ['HARR_ZCODE_HOME']) / 'skills/ein').exists()
+assert not (Path(os.environ['HARR_ZCODE_HOME']) / 'skills/asa').exists()
 PY
 "${ROOT}/linux/harr" agents harness enable
 python3 - <<'PY'
@@ -522,6 +610,7 @@ from pathlib import Path
 codex = tomllib.loads((Path(os.environ['CODEX_HOME']) / 'config.toml').read_text())
 assert {'harr-ein-ui', 'giga-review', 'giga-builder', 'harr-workspace', 'harr-workspace-app'} <= set(codex['mcp_servers'])
 assert (Path(os.environ['CODEX_HOME']) / 'skills/ein/SKILL.md').is_file()
+assert (Path(os.environ['HARR_ZCODE_HOME']) / 'skills/ein/SKILL.md').is_file()
 PY
 
 # A subsequent Harr refresh must preserve configured instance IDs.
@@ -533,7 +622,12 @@ config_root = Path(os.environ['XDG_CONFIG_HOME']) / 'harr'
 config = config_root / 'einherjar/instances.json'
 assert [item['id'] for item in json.loads(config.read_text())['instances']] == ['giga-review', 'giga-builder']
 asa = json.loads((config_root / 'asa.json').read_text())
-assert asa == {'enabled': False, 'model': 'gpt-6-luna', 'effort': 'high'}
+assert asa == {
+    'enabled': False,
+    'model': 'gpt-6-luna',
+    'effort': 'high',
+    'zcode_model': 'account:zai-start-plan/GLM-5.3-Flash',
+}
 PY
 
 mkdir -p "${HOME}/.local/libexec/harr/state"
@@ -546,6 +640,8 @@ cmp -s "${TMP}/codex-config.before" "${CODEX_HOME}/config.toml"
 cmp -s "${TMP}/opencode-agents.before" "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 cmp -s "${TMP}/opencode-config.before" "${XDG_CONFIG_HOME}/opencode/opencode.jsonc"
 cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
+cmp -s "${TMP}/zcode-agents.before" "${HARR_ZCODE_HOME}/AGENTS.md"
+cmp -s "${TMP}/zcode-config.before" "${HARR_ZCODE_HOME}/cli/config.json"
 cmp -s "${TMP}/quick.before" "${XDG_CONFIG_HOME}/opencode/commands/quick.md"
 [[ -f "${XDG_CONFIG_HOME}/opencode/commands/custom.md" ]]
 [[ -f "${XDG_CONFIG_HOME}/opencode/skills/external/SKILL.md" ]]
@@ -553,6 +649,9 @@ cmp -s "${TMP}/quick.before" "${XDG_CONFIG_HOME}/opencode/commands/quick.md"
 [[ ! -e "${CODEX_HOME}/skills/ein" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/ein" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
 [[ ! -e "${HOME}/.local/share/harr-state" ]]
 find "${HOME}/.local/share/harr-uninstall-backups" -mindepth 1 -maxdepth 1 -type d | grep -q .
 

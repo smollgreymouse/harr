@@ -90,6 +90,7 @@ class Paths:
     repair_root: Path
     codex_home: Path
     opencode_home: Path
+    zcode_home: Path
     harr_command: Path
 
     @classmethod
@@ -102,6 +103,7 @@ class Paths:
         harr_config = Path(os.environ.get("HARR_CONFIG_DIR") or (config_home / "harr")).expanduser()
         codex_home = Path(os.environ.get("CODEX_HOME") or (home / ".codex")).expanduser()
         opencode_home = config_home / "opencode"
+        zcode_home = Path(os.environ.get("HARR_ZCODE_HOME") or (home / ".zcode")).expanduser()
 
         if plat == "windows":
             local = Path(os.environ.get("HARR_LOCALAPPDATA") or os.environ.get("LOCALAPPDATA") or (home / "AppData" / "Local"))
@@ -145,6 +147,7 @@ class Paths:
             repair_root=repair_root,
             codex_home=codex_home,
             opencode_home=opencode_home,
+            zcode_home=zcode_home,
             harr_command=harr_command,
         )
 
@@ -728,7 +731,7 @@ def _supported_host_ancestor(pid: int, max_depth: int = 6) -> tuple[bool, list[s
         _, parent_cmd, _ = parent
         chain.append(parent_cmd[:240])
         lowered = parent_cmd.lower()
-        if "codex" in lowered or "opencode" in lowered:
+        if "codex" in lowered or "opencode" in lowered or "zcode" in lowered:
             return True, chain
         current = ppid
     return False, chain
@@ -886,7 +889,7 @@ def diagnose(paths: Paths, *, focus: str | None, local_only: bool) -> tuple[list
     else:
         checks.append(Check("leanctx.config", "core", "FAIL", "LeanCTX config is missing or not Harr-managed", {"path": str(paths.lean_config)}, repair="apply_leanctx"))
 
-    checks.extend([host_check(paths, "codex"), host_check(paths, "opencode")])
+    checks.extend([host_check(paths, "codex"), host_check(paths, "opencode"), host_check(paths, "zcode")])
 
     catalog_by_name = {s.get("name"): s for s in catalog.get("servers", []) if isinstance(s, dict) and isinstance(s.get("name"), str)}
     selected = overlay_doctor_metadata(
@@ -1000,7 +1003,12 @@ def snapshot_paths(paths: Paths, actions: list[RepairAction]) -> tuple[Path, dic
     if "apply_leanctx" in ids:
         candidates.append(paths.lean_config)
     if "apply_hosts" in ids:
-        candidates += [paths.codex_home / "config.toml", paths.opencode_home / "opencode.jsonc", paths.opencode_home / "opencode.json"]
+        candidates += [
+            paths.codex_home / "config.toml",
+            paths.opencode_home / "opencode.jsonc",
+            paths.opencode_home / "opencode.json",
+            paths.zcode_home / "cli" / "config.json",
+        ]
     journal: dict[str, Any] = {"schema": 1, "created_at": dt.datetime.now(dt.timezone.utc).isoformat(), "files": []}
     for index, source in enumerate(candidates):
         entry: dict[str, Any] = {"path": str(source), "existed": source.exists()}

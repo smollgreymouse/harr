@@ -87,7 +87,7 @@ def check(spec: str, expected: list[str]) -> None:
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
-        run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--input", POLICY, "--output", filtered_policy)
+        run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--host", "codex", "--input", POLICY, "--output", filtered_policy)
         policy = filtered_policy.read_text(encoding="utf-8")
         assert "codegraph::codegraph_explore" in policy
         assert "prefer `{{CTX_SEARCH}}`" in policy

@@ -43,7 +43,7 @@ def render(tmp, registry, platform):
     policy = root / "AGENTS.md"
     subprocess.run([
         PYTHON, str(ASSETS), "filter-text", "--catalog", str(CATALOG),
-        "--registry", str(registry_path), "--input", str(POLICY),
+        "--registry", str(registry_path), "--host", "codex", "--input", str(POLICY),
         "--output", str(policy),
     ], check=True)
     skill = root / "skill"
