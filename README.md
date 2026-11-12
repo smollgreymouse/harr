@@ -64,11 +64,11 @@ harr agents asa configure --model gpt-6.1-sol --effort xhigh
 ```
 
 On ZCode the same switch installs the `$asa` skill (a ZCode-specific contract
-variant) and the managed `asa-architect` subagent definition under
-`~/.zcode/agents/asa-architect.md`. ZCode subagents spawn fresh without root
-history, so root routes material decisions through `$asa` with an explicit
-compact evidence packet and continues the SAME subagent by its agent id. The
-ZCode model defaults to the chat plan's model and is configured separately:
+variant) and the persistent saved workflow
+`~/.zcode/workflows/asa.dwf.ts`, whose architect runs on the configured Asa
+model and reads the root chat history itself (root passes a pointer, never a
+curated packet). The ZCode model defaults to the chat plan's model and is
+configured separately:
 
 ```bash
 harr agents asa configure --zcode-model account:<plan>/GLM-5.3

@@ -197,51 +197,50 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     run("sync", "--force")
     assert role.read_text(encoding="utf-8").startswith("# harr-managed-agent-v1\n")
 
-    # The same sync installs the managed ZCode asa-architect subagent definition.
-    zcode_agent = tmp / "zcode/agents/asa-architect.md"
+    # The same sync installs the managed ZCode Asa saved workflow.
+    zcode_workflow = tmp / "zcode/workflows/asa.dwf.ts"
     env["HARR_ZCODE_HOME"] = str(tmp / "zcode")
     run("sync")
-    assert zcode_agent.exists()
-    ztext = zcode_agent.read_text(encoding="utf-8")
-    assert ztext.startswith("---\n")
-    assert "name: asa-architect" in ztext
-    assert "model: \"account:zai-start-plan/GLM-5.3-Flash\"" in ztext
-    assert "thoughtLevel: high" in ztext
-    assert "tools: [Read]" in ztext
-    assert "<!-- harr-managed-agent-v1 -->" in ztext
+    assert zcode_workflow.exists()
+    ztext = zcode_workflow.read_text(encoding="utf-8")
+    assert ztext.startswith("/* zcode-workflow\n")
+    assert "name: asa" in ztext
+    assert "scope: global" in ztext
+    assert "root_session_id:" in ztext
+    assert f'model("account:zai-start-plan/GLM-5.3-Flash")' in ztext
+    assert "// harr-managed-agent-v1" in ztext
     assert "dedicated architect context" in ztext
-    assert "you do not automatically inherit the root conversation history" in ztext
-    assert "narrow exact native Read" in ztext
-    assert "do not use search, glob, shell, or repository exploration" in ztext
+    assert "Session reading protocol" in ztext
+    assert "ReadSession(root_session_id, view=summary)" in ztext
+    assert "Forbidden: shell or terminal tools" in ztext
+    assert "do not go get it yourself" in ztext
     assert "do not choose it; return the exact escalation question" in ztext
     # The xhigh effort maps to the max ZCode thought level.
     run("configure", "--effort", "xhigh")
     run("sync")
-    assert "thoughtLevel: max" in zcode_agent.read_text(encoding="utf-8")
+    assert '"max"' in zcode_workflow.read_text(encoding="utf-8")
     # The ZCode model can be configured independently while disabled or enabled.
     run("configure", "--zcode-model", "account:bigmodel-individual-coding-plan/GLM-5.3")
-    assert zcode_agent.read_text(encoding="utf-8").startswith("---\n")
-    assert "model: \"account:bigmodel-individual-coding-plan/GLM-5.3\"" in zcode_agent.read_text(encoding="utf-8")
-    assert "thoughtLevel: max" in zcode_agent.read_text(encoding="utf-8")
+    assert 'model("account:bigmodel-individual-coding-plan/GLM-5.3")' in zcode_workflow.read_text(encoding="utf-8")
 
-    # Non-Harr ZCode agent remains fail-closed unless an owning caller forces takeover.
-    zcode_agent.write_text("name: external\n", encoding="utf-8")
+    # Non-Harr ZCode workflow remains fail-closed unless an owning caller forces takeover.
+    zcode_workflow.write_text("// external\n", encoding="utf-8")
     failed = run("sync", check=False)
     assert failed.returncode != 0
-    assert "refusing to overwrite non-Harr Asa agent" in failed.stderr + failed.stdout
+    assert "refusing to overwrite non-Harr Asa workflow" in failed.stderr + failed.stdout
     run("sync", "--force")
-    assert "<!-- harr-managed-agent-v1 -->" in zcode_agent.read_text(encoding="utf-8")
+    assert "// harr-managed-agent-v1" in zcode_workflow.read_text(encoding="utf-8")
 
-    # Explicit disable removes only the Harr-managed role/agent and remains disabled after sync.
+    # Explicit disable removes only the Harr-managed role/workflow and remains disabled after sync.
     run("disable")
     run("sync")
     assert not role.exists()
-    assert not zcode_agent.exists()
+    assert not zcode_workflow.exists()
     status = run("status").stdout
     assert "Orchestration: disabled" in status
     assert "Asa model: gpt-6-luna" in status
     assert "Asa effort: xhigh" in status
-    assert "ZCode agent: missing" in status
+    assert "ZCode workflow: missing" in status
     assert run("enabled", check=False).returncode == 1
 
 print("Orchestration/Asa opt-in contract: PASS")

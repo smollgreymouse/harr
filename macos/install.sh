@@ -109,6 +109,7 @@ install_runtime_files() {
   rm -rf -- "${COMMON_LIB_DIR}/mcp/gigacode_app"
   install -d -m 0755 "${COMMON_LIB_DIR}/mcp/assets"
   install -m 0644 "${SOURCE_DIR}/../harr.png" "${COMMON_LIB_DIR}/mcp/assets/harr.png"
+  install -m 0644 "${SOURCE_DIR}/../common/mcp/assets/harr-icon.png" "${COMMON_LIB_DIR}/mcp/assets/harr-icon.png"
   find "$COMMON_LIB_DIR" -type d -exec chmod 0755 {} +
   find "$COMMON_LIB_DIR" -type f -exec chmod 0644 {} +
   chmod 0755 "$MCP_MANAGER" "${COMMON_LIB_DIR}/mcp/selector.py" "${COMMON_LIB_DIR}/mcp/assets.py"

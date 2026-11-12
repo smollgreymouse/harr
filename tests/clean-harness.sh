@@ -118,7 +118,7 @@ grep -q 'Asa effort: xhigh' "${TMP}/orchestration.default"
 ! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
 [[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
-[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts" ]]
 ! grep -Fq '$asa' "${HARR_ZCODE_HOME}/AGENTS.md"
 ! grep -q 'ZCode orchestration economy' "${HARR_ZCODE_HOME}/AGENTS.md"
 
@@ -151,12 +151,13 @@ assert parsed['model_reasoning_effort'] == 'high'
 assert parsed['skills']['include_instructions'] is False
 PY_ASA
 [[ -f "${HARR_ZCODE_HOME}/skills/asa/SKILL.md" ]]
-grep -Fq 'Use one canonical `asa-architect` subagent for the root conversation.' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
-grep -Fq 'does NOT inherit the root conversation history' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
+grep -Fq 'Asa is the persistent saved workflow `asa`' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
+grep -Fq 'Architect reading and tool discipline' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
 grep -Fq 'mode=architecture-decision' "${HARR_ZCODE_HOME}/skills/asa/SKILL.md"
-[[ -f "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
-grep -Fq 'you do not automatically inherit the root conversation history' "${HARR_ZCODE_HOME}/agents/asa-architect.md"
-grep -Fq 'dedicated architect context' "${HARR_ZCODE_HOME}/agents/asa-architect.md"
+[[ -f "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts" ]]
+grep -Fq 'Session reading protocol' "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts"
+grep -Fq 'Forbidden: shell or terminal tools' "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts"
+grep -Fq 'dedicated architect context' "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts"
 grep -q 'ZCode orchestration economy: keep sequential implementation in the root chat' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -q 'Subagents never spawn/fork agents or invoke Asa themselves' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -Fq '$asa' "${HARR_ZCODE_HOME}/AGENTS.md"
@@ -190,7 +191,7 @@ grep -q 'OLD ZCODE POLICY' "${HARR_ZCODE_HOME}/AGENTS.md"
 [[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
 [[ ! -e "${CODEX_HOME}/skills/ein" ]]
 [[ -f "${CODEX_HOME}/agents/asa-architect.toml" ]]
-[[ -f "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+[[ -f "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/lean-ctx" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/harr-workspace" ]]
@@ -223,7 +224,7 @@ cmp "${TMP}/leanctx-surface.before" "${TMP}/leanctx-surface.after"
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
 [[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
-[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts" ]]
 grep -q 'OLD CODEX POLICY' "${CODEX_HOME}/AGENTS.md"
 "${ROOT}/linux/harr" agents orchestration enable
 [[ -f "${CODEX_HOME}/skills/asa/SKILL.md" ]]
@@ -271,7 +272,7 @@ grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
 [[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
-[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts" ]]
 ! grep -Fq '$asa' "${CODEX_HOME}/AGENTS.md"
 ! grep -q 'Spawn native workers only for genuinely independent parallel scopes' "${CODEX_HOME}/AGENTS.md"
 "${ROOT}/linux/harr" agents apply all
@@ -658,7 +659,7 @@ cmp -s "${TMP}/quick.before" "${XDG_CONFIG_HOME}/opencode/commands/quick.md"
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
 [[ ! -e "${HARR_ZCODE_HOME}/skills/ein" ]]
 [[ ! -e "${HARR_ZCODE_HOME}/skills/asa" ]]
-[[ ! -e "${HARR_ZCODE_HOME}/agents/asa-architect.md" ]]
+[[ ! -e "${HARR_ZCODE_HOME}/workflows/asa.dwf.ts" ]]
 [[ ! -e "${HOME}/.local/share/harr-state" ]]
 find "${HOME}/.local/share/harr-uninstall-backups" -mindepth 1 -maxdepth 1 -type d | grep -q .
 

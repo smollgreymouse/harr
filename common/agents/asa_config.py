@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,7 @@ DEFAULT_EFFORT = "xhigh"
 DEFAULT_ENABLED = False
 VALID_EFFORTS = {"low", "medium", "high", "xhigh"}
 MARKER = "# harr-managed-agent-v1"
-ZCODE_MARKER = "<!-- harr-managed-agent-v1 -->"
+ZCODE_MARKER = '// harr-managed-agent-v1'
 ZCODE_THOUGHT_LEVELS = {"low": "low", "medium": "high", "high": "high", "xhigh": "max"}
 
 ROLE_INSTRUCTIONS = """You are Harr's persistent architect-grade decision, bounded-analysis, and user-dialogue specialist.
@@ -41,7 +42,18 @@ Explicit-analysis mode: when the user explicitly asks you yourself to analyze se
 Prefer existing contracts and the smallest coherent change when making an architecture decision.
 For an architecture decision the caller explicitly asked you to resolve, return the chosen solution and rationale; rejected alternatives and reasons; invariants and risks; and any unresolved questions. For explicit analysis without a requested architecture decision, return the requested analysis instead of inventing a design decision. If that analysis discovers a new material architecture decision, do not choose it; return the exact escalation question that root must surface to the user.
 If evidence is insufficient, first use material already supplied. If another source is required, request the exact missing fact or material from the existing scope owner rather than searching for it yourself.
-Continue the same persistent Asa context when given targeted follow-up facts/material or a later routed user question; do not demand a fresh spawn or repeat already resolved analysis.
+Session reading protocol (your context comes from the root session, not from a curated packet):
+1. Start with ReadSession(root_session_id, view=summary) to orient yourself in the conversation.
+2. Then read view=messages from the END of the conversation backwards: the most recent turns carry the current task and the evidence preparation the root performed. Follow the cursor page by page, newest to older.
+3. Stop reading when the request's context is covered: the current task, its constraints, and the decisive facts are in view and older turns have become clearly unrelated to the request. Do not read the whole session when the tail decides it, and never re-read a page you have already read.
+4. Cite what you relied on by session position; if something you read looks ambiguous, say so instead of guessing.
+
+Tool discipline — you are a decision and analysis specialist, not an investigator:
+- Allowed: ReadSession on exactly the root session given in the dispatch; a narrow exact native Read of material the caller explicitly supplied (explicit-analysis mode).
+- Forbidden: shell or terminal tools, repository searches/globs/reads beyond the supplied material, any MCP or gateway calls, creating or editing files, spawning agents or workflows, and reading any session other than the one given. If essential evidence is missing, return the exact missing fact in open_questions for the existing scope owner to gather — do not go get it yourself.
+- Report what you could not verify. Escalate instead of faking: if the request cannot be answered from the session and the supplied material, say so plainly.
+
+Continue the same persistent Asa context when given targeted follow-up facts/material or a later routed user question; the root session history carries your earlier answers, so re-ground yourself there instead of repeating already resolved analysis.
 """
 
 
@@ -69,8 +81,8 @@ def role_path() -> Path:
     return codex_home() / "agents" / "asa-architect.toml"
 
 
-def zcode_agent_path() -> Path:
-    return zcode_home() / "agents" / "asa-architect.md"
+def zcode_workflow_path() -> Path:
+    return zcode_home() / "workflows" / "asa.dwf.ts"
 
 
 def load_state() -> dict[str, object]:
@@ -151,24 +163,82 @@ def apply_role(state: dict[str, object] | None = None, *, force: bool = False) -
 
 
 def render_zcode(state: dict[str, object]) -> str:
+    """Render the persistent Asa workflow for ZCode (~/.zcode/workflows/asa.dwf.ts)."""
     thought = ZCODE_THOUGHT_LEVELS.get(str(state["effort"]), "max")
+    role = json.dumps(ROLE_INSTRUCTIONS_ZCODE, ensure_ascii=False)
+    icon_path = Path(__file__).resolve().parents[1] / "mcp" / "assets" / "harr-icon.png"
+    icon_const = ""
+    if icon_path.is_file():
+        encoded = base64.b64encode(icon_path.read_bytes()).decode("ascii")
+        icon_const = f'const harIcon = "data:image/png;base64,{encoded}";\n\n'
     return (
-        "---\n"
-        "name: asa-architect\n"
-        'description: "Harr persistent architect for material decisions, bounded explicit analysis, and routed user dialogue."\n'
-        f"model: {json.dumps(str(state['zcode_model']))}\n"
-        f"thoughtLevel: {thought}\n"
-        "tools: [Read]\n"
-        "---\n"
-        "\n"
+        "/* zcode-workflow\n"
+        "name: asa\n"
+        "description: Harr's Asa architect - material architecture decisions, bounded explicit analysis, and routed user dialogue on the configured Asa model.\n"
+        "whenToUse: Invoked by the root chat through the $asa skill for an unresolved material architecture decision, explicit user dialogue with Asa, or bounded architect-grade analysis of supplied material. Do not run for ordinary implementation work.\n"
+        "scope: global\n"
+        "args:\n"
+        "  mode:\n"
+        "    type: string\n"
+        "    required: true\n"
+        "    description: 'architecture-decision | user-dialogue | explicit-analysis'\n"
+        "  question:\n"
+        "    type: string\n"
+        "    required: true\n"
+        "    description: 'The exact question or material to resolve, with fixed constraints.'\n"
+        "  root_session_id:\n"
+        "    type: string\n"
+        "    required: true\n"
+        "    description: \"The invoking root chat's session id; its history is Asa's context.\"\n"
+        "*/\n"
         f"{ZCODE_MARKER}\n"
+        f"const asaModel = model({json.dumps(str(state['zcode_model']))});\n"
+        f"const role = {role};\n"
+        f"{icon_const}"
         "\n"
-        f"{ROLE_INSTRUCTIONS_ZCODE}"
+        "phase(\"Аса разбирает запрос на модели архитектора\");\n"
+        "\n"
+        "interface AsaDecision {\n"
+        "  /** mode=architecture-decision: the chosen solution and rationale. user-dialogue: the direct answer. explicit-analysis: the requested analysis. */\n"
+        "  answer: string;\n"
+        "  /** mode=architecture-decision only: rejected alternatives and why; empty otherwise. */\n"
+        "  rejected: string[];\n"
+        "  /** mode=architecture-decision only: invariants and risks the implementation owner must preserve. */\n"
+        "  invariants: string[];\n"
+        "  /** Unresolved questions that must go back to the user; empty when none. */\n"
+        "  open_questions: string[];\n"
+        "}\n"
+        "\n"
+        "const architect = agent(\"Архитектор Asa\", { system: role, model: asaModel });\n"
+        "const decision = await architect.ask<AsaDecision>(\n"
+        "  \"mode=\" + String(args.mode) + \"\\n\" +\n"
+        "  \"Root session id: \" + String(args.root_session_id) + \"\\n\" +\n"
+        "  \"Read the root session history first (ReadSession, view=messages; follow the cursor until \" +\n"
+        "  \"the context relevant to the request is covered): it carries the whole root chat, including \" +\n"
+        "  \"the evidence preparation the root already performed. Treat it as your own context and judge \" +\n"
+        "  \"for yourself what matters; do not ask the root to pre-filter it. If the root session cannot \" +\n"
+        "  \"be read, report that in open_questions instead of guessing.\" +\n"
+        "  \"\\nThe request: \" + String(args.question),\n"
+        ");\n"
+        "\n"
+        "phase(\"Возврат решения root-чату\");\n"
+        "const markdown = [\n"
+        "  harIcon,\n"
+        "  \"\",\n"
+        "  \"# Решение Асы — \" + String(args.mode),\n"
+        "  \"\",\n"
+        "  decision.answer,\n"
+        "  ...(decision.rejected.length ? [\"\", \"## Отклонённые альтернативы\", ...decision.rejected.map((r) => \"- \" + r)] : []),\n"
+        "  ...(decision.invariants.length ? [\"\", \"## Инварианты и риски\", ...decision.invariants.map((r) => \"- \" + r)] : []),\n"
+        "  ...(decision.open_questions.length ? [\"\", \"## Открытые вопросы\", ...decision.open_questions.map((r) => \"- \" + r)] : []),\n"
+        "].join(\"\\n\");\n"
+        "await artifact.markdown(\"report\", markdown, { title: \"Решение Асы\", description: \"Материальное решение Асы для текущего root-чата.\", primary: true });\n"
+        "return { thought_level: " + json.dumps(thought) + ", decision };\n"
     )
 
 
-def remove_managed_zcode_agent() -> bool:
-    path = zcode_agent_path()
+def remove_managed_zcode_workflow() -> bool:
+    path = zcode_workflow_path()
     if not path.exists():
         return False
     if ZCODE_MARKER in path.read_text(encoding="utf-8", errors="replace"):
@@ -177,14 +247,14 @@ def remove_managed_zcode_agent() -> bool:
     return False
 
 
-def apply_zcode_agent(state: dict[str, object] | None = None, *, force: bool = False) -> Path:
+def apply_zcode_workflow(state: dict[str, object] | None = None, *, force: bool = False) -> Path:
     state = state or load_state()
-    path = zcode_agent_path()
+    path = zcode_workflow_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and not force:
         if ZCODE_MARKER not in path.read_text(encoding="utf-8", errors="replace"):
-            raise SystemExit(f"refusing to overwrite non-Harr Asa agent: {path}")
-    tmp = path.with_suffix(".md.tmp")
+            raise SystemExit(f"refusing to overwrite non-Harr Asa workflow: {path}")
+    tmp = path.with_suffix(".ts.tmp")
     tmp.write_text(render_zcode(state), encoding="utf-8")
     os.chmod(tmp, 0o600)
     tmp.replace(path)
@@ -198,9 +268,9 @@ def sync_role(state: dict[str, object] | None = None, *, force: bool = False) ->
     if not enabled:
         remove_managed_role()
     if enabled:
-        apply_zcode_agent(state, force=force)
+        apply_zcode_workflow(state, force=force)
     else:
-        remove_managed_zcode_agent()
+        remove_managed_zcode_workflow()
     return path
 
 
@@ -214,11 +284,11 @@ def print_status(state: dict[str, object]) -> None:
     print(f"Asa model: {state['model']}")
     print(f"Asa effort: {state['effort']}")
     print(f"Codex role: {'managed' if managed else ('external' if path.exists() else 'missing')} {path}")
-    zpath = zcode_agent_path()
+    zpath = zcode_workflow_path()
     zmanaged = False
     if zpath.exists():
         zmanaged = ZCODE_MARKER in zpath.read_text(encoding="utf-8", errors="replace")
-    print(f"ZCode agent: {'managed' if zmanaged else ('external' if zpath.exists() else 'missing')} {zpath}")
+    print(f"ZCode workflow: {'managed' if zmanaged else ('external' if zpath.exists() else 'missing')} {zpath}")
 
 
 def main() -> int:

@@ -6,7 +6,7 @@ description: Automatically use for an unresolved material architecture decision 
 
 # Asa
 
-Asa is the architectural interlocutor of the whole root conversation, routed through the `asa-architect` ZCode subagent running on the model configured for Asa (by default the chat plan's GLM Flash with maximum thought level; a larger GLM can be configured through `harr agents asa configure --zcode-model`). The main chat must not resolve material architecture decisions itself: it routes them to the dedicated architect context. Root is the only agent router; the user does not directly drive the subagent. ZCode has two entry paths at the same time: automatic material-decision escalation from root, and explicit user dialogue/analysis routed through root.
+Asa is the architectural interlocutor of the whole root conversation, routed through the persistent saved workflow `asa` (installed at `~/.zcode/workflows/asa.dwf.ts`), whose architect runs on the model configured for Asa (`harr agents asa configure --zcode-model`). The main chat must not resolve material architecture decisions itself: it routes them to the dedicated architect run. Root is the only agent router; the user does not directly drive the workflow. ZCode has two entry paths at the same time: automatic material-decision escalation from root, and explicit user dialogue/analysis routed through root.
 
 ## Evidence ownership
 
@@ -14,20 +14,28 @@ Every Asa invocation, automatic or explicit, must be evidence-ready first.
 
 1. For a root-owned scope, root gathers any missing repository, runtime, or contract facts under the normal Harr Workspace/tool-routing policy. If a newly created checkout/worktree is involved, it must be registered through the normal Harr Workspace flow before investigation. Root gathers facts, constraints, provenance, and exact material locators only: once a boundary is material, root must not invent, rank, compare, or choose architecture alternatives. If the user explicitly asked Asa herself to perform the deep analysis, root must not perform that deep analysis first.
 2. For a delegated scope, use the existing scope owner's compact evidence handoff. For a native subagent, ask the SAME subagent for narrowly missing facts. For a named Ein, use the handoff/evidence produced under the `$ein` contract and resume the SAME Ein after Asa decides. Root must not independently reread or duplicate investigation of delegated code. Asa does not inherit subagent or Ein private history.
-3. A fresh `asa-architect` spawn does NOT inherit the root conversation history. The first dispatch message must carry everything Asa needs: the request mode, the exact question, fixed constraints, and the compact verified evidence packet (including concise anchors for decisive tool-output facts). Do not assume Asa has seen any root turn.
-4. On later follow-ups, send only the verified delta Asa has not already received: new root-owned facts/material/constraints since Asa's last relevant view, plus the exact question. Do not resend the whole packet. Subagent-owned facts still cross the ownership boundary as a compact handoff.
+3. The workflow architect reads the root session history itself: root passes the session id, the request mode, the exact question, and fixed constraints — never a pre-curated evidence packet. Choosing what in the history matters is the architect's job, not the root's.
+4. Root still performs its own evidence preparation under the normal routing policy BEFORE invoking Asa (the history the architect reads must contain it), and the dispatch states the exact question and fixed constraints.
 
 ## Persistent Asa lifecycle
 
-Use one canonical `asa-architect` subagent for the root conversation.
+Asa is the persistent saved workflow `asa` for the whole root conversation.
 
-This contract requires the ZCode Agent tool surface. If the Agent tool is unavailable or the `asa-architect` subagent type is not offered, report that ZCode Asa orchestration requires it and stop; do not answer the material architecture decision as root, and do not substitute another subagent type.
+This contract requires the ZCode workflow surface. If the CreateWorkflow tool is unavailable or the saved `asa` workflow is missing, report that ZCode Asa orchestration requires it and stop; do not answer the material architecture decision as root, and do not substitute another mechanism.
 
-- If this root conversation already has an `asa-architect` agent spawned under an older contract, continue that exact agent for the rest of the conversation; do not create a second Asa beside it.
-- Otherwise, first contact spawns the subagent with the Agent tool (`subagent_type: "asa-architect"`). The Agent call is synchronous: its final report is Asa's answer; never synthesize an Asa answer yourself.
-- After that, route every automatic decision call and every explicit user message to the SAME agent by continuing it with its agent id (SendMessage to the agent returned by the first spawn) so the persistent context is preserved. Do not spawn a fresh `asa-architect` for each decision when the previous agent id is still continuable.
-- If the agent id was lost (session restart or the continuation is rejected), a fresh spawn is the recovery path; include the decisive prior conclusions as verified delta in the dispatch packet and continue from the new agent.
-- Root must not continue implementation while an Asa answer is still pending: the foreground Agent call returns the answer directly, and a background continuation must wait for its completion notification before proceeding.
+- Invoke Asa only through the saved workflow: `CreateWorkflow` with `saved: { name: "asa", args: { mode, question, root_session_id } }`. The run executes in the background; its completion notification carries the decision. A request expecting an Asa answer is not complete until that notification arrives — never synthesize an Asa answer yourself.
+- `root_session_id` is THIS root chat's session id: the newest `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl`. The workflow's architect reads the root session history itself — the whole chat, including the evidence preparation — so root passes a pointer, not a summary.
+- Every automatic decision, follow-up, and explicit user message goes to the SAME saved workflow with the same `root_session_id`; the architect re-reads the root history, which now also carries Asa's earlier answers (root relays them into the chat). Do not substitute other mechanisms per decision.
+- If the configured Asa model is unavailable (provider error), report that transport state instead of answering the material decision as root.
+
+## Architect reading and tool discipline
+
+The workflow architect has the standard agent toolset, and the contract fences it deliberately. Root does not need to truncate or summarize the conversation for Asa — the architect reads economically on its own:
+
+- It orients from the session summary, then reads messages from the end backwards, page by page, and stops when the request's context is covered — the tail carries the current task and the evidence preparation.
+- It reads exactly one session: this root chat. No repository exploration, no shell, no gateway or MCP calls, no file edits, no spawning, no other sessions.
+- Missing essential evidence comes back as explicit open questions for the existing scope owner to gather — root must therefore complete its own evidence preparation under the normal routing policy BEFORE invoking Asa, so the history the architect reads contains it.
+- The decision report cites what the architect relied on and marks what it could not verify; anything it could not confirm arrives as `unconfirmed` rather than silently assumed.
 
 ## Request mode
 
