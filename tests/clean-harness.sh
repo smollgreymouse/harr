@@ -168,6 +168,10 @@ import json, os, tomllib
 from pathlib import Path
 lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
 assert 'ctx_tools' in lean['tools_enabled']
+assert 'ctx_read' in lean['tools_enabled']  # Codex retains the common MCP surface
+assert 'ctx_call' in lean['tools_enabled']
+assert lean['profiles']['harr-zcode']['tools_enabled'] == ['ctx_shell', 'ctx_tools', 'ctx_call']
+assert lean['profiles']['harr-opencode']['tools_enabled'] == ['ctx_shell', 'ctx_tools', 'ctx_call']
 print(json.dumps({'tools_enabled': lean['tools_enabled'], 'gateway': lean['gateway']}, sort_keys=True))
 PY_LEANCTX_SURFACE
 
@@ -215,6 +219,10 @@ import json, os, tomllib
 from pathlib import Path
 lean = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
 assert 'ctx_tools' in lean['tools_enabled']
+assert 'ctx_read' in lean['tools_enabled']  # Codex retains the common MCP surface
+assert 'ctx_call' in lean['tools_enabled']
+assert lean['profiles']['harr-zcode']['tools_enabled'] == ['ctx_shell', 'ctx_tools', 'ctx_call']
+assert lean['profiles']['harr-opencode']['tools_enabled'] == ['ctx_shell', 'ctx_tools', 'ctx_call']
 print(json.dumps({'tools_enabled': lean['tools_enabled'], 'gateway': lean['gateway']}, sort_keys=True))
 PY_LEANCTX_SURFACE
 cmp "${TMP}/leanctx-surface.before" "${TMP}/leanctx-surface.after"
@@ -298,9 +306,30 @@ grep -q 'Keep investigation output bounded' "${CODEX_HOME}/AGENTS.md"
 grep -q '`ctx_tools`' "${CODEX_HOME}/AGENTS.md"
 grep -q '`lean-ctx_ctx_tools`' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'OpenCode native-first routing' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
-grep -Fq 'Never call lean-ctx_ctx_read' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
-grep -q "Investigation reads and searches use the host's native file tools" "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+! grep -Fq 'Never call lean-ctx_ctx_read' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -Fq 'ctx_call solely to recover an archived shell result' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+grep -q "Investigation reads/searches/globs use native host tools" "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'Shell work goes through lean-ctx_ctx_shell' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
+# Host-specific advertised tools and policy must agree: no nonexistent tool bans.
+python3 - <<'PY_MCP_HOSTS'
+import json, os, tomllib
+from pathlib import Path
+home = Path(os.environ['HOME'])
+zcode = json.loads((Path(os.environ['HARR_ZCODE_HOME']) / 'cli/config.json').read_text())
+opencode = json.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/opencode.jsonc').read_text())
+zentry = zcode['mcp']['servers']['lean-ctx']
+oentry = opencode['mcp']['lean-ctx']
+assert zentry['args'][-2] == 'zcode'
+assert oentry['command'][-2] == 'opencode'
+assert zentry['args'][-1] == oentry['command'][-1] == str(home / '.local/bin/lean-ctx')
+cfg = tomllib.loads((Path(os.environ['XDG_CONFIG_HOME']) / 'lean-ctx/config.toml').read_text())
+assert cfg['profiles']['harr-zcode']['tools_enabled'] == ['ctx_shell','ctx_tools','ctx_call']
+assert cfg['profiles']['harr-opencode']['tools_enabled'] == ['ctx_shell','ctx_tools','ctx_call']
+for p in [Path(os.environ['HARR_ZCODE_HOME']) / 'AGENTS.md', Path(os.environ['XDG_CONFIG_HOME']) / 'opencode/AGENTS.md']:
+    text = p.read_text()
+    assert 'ctx_call solely to recover an archived shell result' in text
+    assert 'Never call' not in '\n'.join(line for line in text.splitlines() if 'ctx_read' in line or 'ctx_search' in line or 'ctx_glob' in line)
+PY_MCP_HOSTS
 ! grep -q 'Investigation uses MCP; editing uses the native host editor' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 ! grep -q 'Keep the 4096-token LeanCTX budget' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
 grep -q 'harr-workspace::workspace_sync' "${XDG_CONFIG_HOME}/opencode/AGENTS.md"
@@ -374,7 +403,11 @@ assert cfg['agent']['custom-agent']['description'] == 'keep'
 assert 'codegraph' not in cfg['mcp']
 assert 'gitlab' not in cfg['mcp']
 assert cfg['mcp']['external-mcp']['url'] == 'https://example.invalid/mcp'
-assert cfg['mcp']['lean-ctx'] == {'type': 'local', 'command': [str(lean)], 'enabled': True, 'timeout': 1900000}
+assert cfg['mcp']['lean-ctx']['type'] == 'local'
+assert cfg['mcp']['lean-ctx']['command'][0] == sys.executable
+assert Path(cfg['mcp']['lean-ctx']['command'][1]).name == 'leanctx-mcp-host.py'
+assert cfg['mcp']['lean-ctx']['command'][2:] == ['opencode', str(lean)]
+assert cfg['mcp']['lean-ctx']['enabled'] is True and cfg['mcp']['lean-ctx']['timeout'] == 1900000
 assert cfg['mcp']['harr-workspace'] == {
     'type': 'local', 'command': [sys.executable, str(workspace_server)], 'enabled': True, 'timeout': 60000,
 }
@@ -389,20 +422,21 @@ zc = Path(os.environ['HARR_ZCODE_HOME'])
 zcfg = json.loads((zc / 'cli/config.json').read_text())
 assert zcfg['plugins'] == {'external-plugin': True}
 assert zcfg['mcp']['servers']['external-mcp'] == {'type': 'stdio', 'command': 'external', 'args': []}
-assert zcfg['mcp']['servers']['lean-ctx'] == {
-    'type': 'stdio', 'command': str(lean), 'args': ['mcp'],
-}
+assert zcfg['mcp']['servers']['lean-ctx']['type'] == 'stdio'
+assert zcfg['mcp']['servers']['lean-ctx']['command'] == sys.executable
+assert Path(zcfg['mcp']['servers']['lean-ctx']['args'][0]).name == 'leanctx-mcp-host.py'
+assert zcfg['mcp']['servers']['lean-ctx']['args'][1:] == ['zcode', str(lean)]
 assert 'harr-workspace' not in zcfg['mcp']['servers']
 PY
 
 # ZCode policy: native-first investigation, minimal MCP surface, no direct workspace MCP.
-grep -q "Investigation reads and searches use the host's native file tools" "${HARR_ZCODE_HOME}/AGENTS.md"
+grep -q "Investigation reads/searches/globs use native host tools" "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -q 'Shell work goes through mcp__lean-ctx__ctx_shell' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -q 'FIRST investigation call MUST be `mcp__lean-ctx__ctx_tools`' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -Fq 'harr workspace sync <new checkout absolute path>' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -Fq 'ZCode has no direct `harr-workspace` MCP' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -Fq 'ZCode native-first routing' "${HARR_ZCODE_HOME}/AGENTS.md"
-grep -Fq 'Never call mcp__lean-ctx__ctx_read' "${HARR_ZCODE_HOME}/AGENTS.md"
+! grep -Fq 'Never call mcp__lean-ctx__ctx_read' "${HARR_ZCODE_HOME}/AGENTS.md"
 ! grep -q 'Investigation uses MCP; editing uses the native host editor' "${HARR_ZCODE_HOME}/AGENTS.md"
 ! grep -q 'Keep the 4096-token LeanCTX budget' "${HARR_ZCODE_HOME}/AGENTS.md"
 grep -q 'Investigation uses MCP; editing uses the native host editor' "${CODEX_HOME}/AGENTS.md"

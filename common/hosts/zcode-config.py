@@ -37,7 +37,35 @@ CONFIG = ZCODE_HOME / "cli" / "config.json"
 
 
 def expected_entry() -> dict[str, Any]:
+    launcher = Path(__file__).with_name("leanctx-mcp-host.py")
+    return {
+        "type": "stdio",
+        "command": sys.executable,
+        "args": [str(launcher), "zcode", str(LEANCTX)],
+    }
+
+
+def legacy_entry() -> dict[str, Any]:
     return {"type": "stdio", "command": str(LEANCTX), "args": ["mcp"]}
+
+
+def previous_managed_entry(entry: dict[str, Any]) -> bool:
+    """Recognize Harr's own launcher after checkout-to-installed-path migration.
+
+    Only the exact Harr helper name and shape are adopted; arbitrary foreign
+    commands still cause refusal instead of being silently overwritten.
+    """
+    args = entry.get("args")
+    return (
+        entry.get("type") == "stdio"
+        and entry.get("command") == sys.executable
+        and isinstance(args, list)
+        and len(args) == 3
+        and isinstance(args[0], str)
+        and Path(args[0]).name == "leanctx-mcp-host.py"
+        and args[1] == "zcode"
+        and args[2] == str(LEANCTX)
+    )
 
 
 def bootstrap_entry() -> dict[str, Any]:
@@ -95,7 +123,7 @@ def write_config(config: dict[str, Any]) -> None:
 def apply() -> None:
     config = load_config()
     entry = current_entry(config)
-    if entry is not None and entry not in (expected_entry(), bootstrap_entry()):
+    if entry is not None and entry not in (expected_entry(), legacy_entry(), bootstrap_entry()) and not previous_managed_entry(entry):
         raise RuntimeError(
             f"refusing to overwrite a foreign ZCode MCP entry for {SERVER_NAME!r} in {CONFIG}; "
             "remove or adjust it manually before applying Harr"
@@ -129,8 +157,8 @@ def status() -> int:
     if entry == expected_entry():
         print(f"zcode-config\tmanaged\t{CONFIG}")
         return 0
-    if entry == bootstrap_entry():
-        print(f"zcode-config\tstale\tpre-Harr bootstrap entry (relative command); run apply to adopt {LEANCTX}")
+    if entry in (legacy_entry(), bootstrap_entry()) or previous_managed_entry(entry):
+        print(f"zcode-config\tstale\tlegacy unprofiled LeanCTX MCP entry; run apply for isolated host tool surface")
         return 1
     print(
         "zcode-config\tstale\t"
