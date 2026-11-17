@@ -1,6 +1,8 @@
 #include "AgentService.h"
 #include "CodexService.h"
+#include "ZcodeService.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
 
@@ -83,9 +85,53 @@ public:
     }
 };
 
+// Zcode runs its turns through the `agent-exec` mode of this very binary,
+// which drives the ZCode Protocol app-server for the whole turn.
+class ZcodeAgentService final : public AgentService {
+public:
+    QString id() const override { return QStringLiteral("zcode"); }
+    QString displayName() const override { return QStringLiteral("ZCode"); }
+    AgentCapabilities capabilities() const override { return {false, false, false, true}; }
+
+    QVector<QJsonObject> listModels(QString *error, const QString &agentBin) override
+    {
+        Q_UNUSED(agentBin);
+        return ZcodeService::listModels(error);
+    }
+
+    QVector<QJsonObject> listSessions(QString *error, int limit, const QString &agentBin) override
+    {
+        Q_UNUSED(agentBin);
+        return ZcodeService::listSessions(error, limit);
+    }
+
+    std::optional<QJsonObject> readSession(const QString &session, QString *error,
+                                           const QString &agentBin) override
+    {
+        Q_UNUSED(agentBin);
+        return ZcodeService::readSession(session, error);
+    }
+
+    QStringList execCommand(const AgentExecRequest &req, QString *error) override
+    {
+        const QString zcode = ZcodeService::zcodeExecutable(req.agentBin);
+        if (zcode.isEmpty()) {
+            if (error) *error = "zcode executable not found";
+            return {};
+        }
+        QStringList args{QCoreApplication::applicationFilePath(), QStringLiteral("agent-exec"),
+                         QStringLiteral("--agent"), QStringLiteral("zcode"),
+                         QStringLiteral("--session"), req.session,
+                         QStringLiteral("--prompt"), req.prompt};
+        if (!req.model.isEmpty()) args << QStringLiteral("--model") << req.model;
+        if (!req.mode.isEmpty()) args << QStringLiteral("--mode") << req.mode;
+        return args;
+    }
+};
+
 } // namespace
 
-QStringList agentIds() { return {QStringLiteral("codex")}; }
+QStringList agentIds() { return {QStringLiteral("codex"), QStringLiteral("zcode")}; }
 
 QString agentDisplayName(const QString &agentId)
 {
@@ -98,7 +144,9 @@ bool isKnownAgent(const QString &agentId) { return agentService(agentId) != null
 AgentService *agentService(const QString &agentId)
 {
     static CodexAgentService codex;
+    static ZcodeAgentService zcode;
     if (agentId == QLatin1String("codex")) return &codex;
+    if (agentId == QLatin1String("zcode")) return &zcode;
     return nullptr;
 }
 

@@ -1,3 +1,4 @@
+#include "AgentService.h"
 #include "Common.h"
 #include "MainWindow.h"
 #include "Scheduler.h"
@@ -117,6 +118,18 @@ int runSelfTest()
 
     if (QIcon(":/harr/icon.png").isNull() || QIcon(":/harr/icon.png").pixmap(64, 64).isNull()) return 18;
 
+    if (!harr::isKnownAgent("codex") || !harr::isKnownAgent("zcode") || harr::isKnownAgent("gpt")) return 19;
+    if (harr::agentIds().size() != 2 || harr::agentDisplayName("zcode") != "ZCode") return 20;
+    {
+        const harr::AgentExecRequest execReq{
+            "sess-1", "do things", "account:zai/GLM-5.3-Flash", {}, {}, "yolo", {}, false};
+        QString agentError;
+        const QStringList command = harr::agentService("zcode")->execCommand(execReq, &agentError);
+        if (command.isEmpty()) return 21;
+        const int agentExecIndex = command.indexOf("agent-exec");
+        if (agentExecIndex < 0 || !command.contains("--mode") || !command.contains("yolo")) return 22;
+    }
+
     harr::MainWindow window(&store);
     window.hide();
 
@@ -146,6 +159,7 @@ int main(int argc, char **argv)
         if (mode == "job-runner") return harr::runJobRunner(args);
         if (mode == "session-list") return harr::runSessionListCli(args);
         if (mode == "session-cwd") return harr::runSessionCwdCli(args);
+        if (mode == "agent-exec") return harr::runAgentExec(args);
         QTextStream(stderr) << "Unknown mode: " << mode << '\n';
         return 2;
     }

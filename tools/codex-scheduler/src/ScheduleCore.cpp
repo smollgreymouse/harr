@@ -1,6 +1,7 @@
 #include "Scheduler.h"
 #include "AgentService.h"
 #include "Common.h"
+#include "ZcodeService.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
@@ -327,6 +328,36 @@ int runSessionCwdCli(const QStringList &args)
     }
     QTextStream(stdout) << *cwd << '\n';
     return 0;
+}
+
+int runAgentExec(const QStringList &args)
+{
+    QString agent = defaultAgentId(), session, prompt, model, mode;
+    for (int i = 0; i < args.size(); ++i) {
+        const QString arg = args[i];
+        auto next = [&](QString &dst) -> bool {
+            if (i + 1 >= args.size()) return false;
+            dst = args[++i];
+            return true;
+        };
+        if (arg == "--agent") { if (!next(agent)) return 2; }
+        else if (arg == "--session") { if (!next(session)) return 2; }
+        else if (arg == "--prompt") { if (!next(prompt)) return 2; }
+        else if (arg == "--model") { if (!next(model)) return 2; }
+        else if (arg == "--mode") { if (!next(mode)) return 2; }
+        else {
+            QTextStream(stderr) << "agent-exec: unknown argument: " << arg << '\n';
+            return 2;
+        }
+    }
+    if (session.isEmpty() || prompt.isEmpty()) {
+        QTextStream(stderr) << "agent-exec: --session and --prompt are required\n";
+        return 2;
+    }
+    if (agent == QLatin1String("zcode"))
+        return ZcodeService::runTurn(session, prompt, model, mode);
+    QTextStream(stderr) << "agent-exec: unsupported agent: " << agent << '\n';
+    return 2;
 }
 
 } // namespace harr

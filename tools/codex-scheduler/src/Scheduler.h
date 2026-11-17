@@ -38,5 +38,6 @@ int runScheduleCli(const QStringList &args);
 int runJobRunner(const QStringList &args);
 int runSessionListCli(const QStringList &args);
 int runSessionCwdCli(const QStringList &args);
+int runAgentExec(const QStringList &args);
 
 } // namespace harr
