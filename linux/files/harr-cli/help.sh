@@ -101,8 +101,5 @@ Usage:
   harr mcp disable NAME|all
   harr mcp status [NAME]
   harr mcp logs NAME [-f|--follow]
-  harr mcp resolve                     # nearest .harr/mcp.json + effective instances
-  harr mcp project {status|trust|revoke}
-  harr mcp profile {list|set ID --provider P [--endpoint URL] [--secret-file F --memento-id M] [--bind-project PATH]|enable ID|disable ID|remove ID}
 EOF_HELP
 }

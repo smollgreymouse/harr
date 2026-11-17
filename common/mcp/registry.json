@@ -327,15 +327,5 @@
         }
       }
     }
-  ],
-  "providers": {
-    "gitlab-official": {
-      "label": "GitLab Official MCP",
-      "description": "GitLab official remote MCP at <host>/api/v4/mcp (OAuth 2.0; PAT authentication is rejected by the endpoint)",
-      "transport": "http",
-      "profile_endpoint": true,
-      "oauth": true,
-      "lifecycle": "on-demand"
-    }
-  }
+  ]
 }
