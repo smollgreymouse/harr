@@ -26,11 +26,18 @@ class TaskStore;
 class TaskPage : public QWidget {
     Q_OBJECT
 public:
+    // Supplies the model/session catalog of an agent on demand; lets a page
+    // refresh its selectors when the user switches the task's agent.
+    using ChoiceProvider = std::function<QVector<QJsonObject>(const QString &agent)>;
+
     TaskPage(TaskStore *store, const QJsonObject &task,
              std::function<void(const QString &)> changed,
+             ChoiceProvider modelsFor = ChoiceProvider{},
+             ChoiceProvider sessionsFor = ChoiceProvider{},
              QWidget *parent = nullptr);
 
     QString taskId() const;
+    QString currentAgent() const;
     void setModelChoices(const QVector<QJsonObject> &models);
     void setSessionChoices(const QVector<QJsonObject> &sessions, bool selectLatestIfEmpty);
     void editScheduled();
@@ -44,6 +51,7 @@ private:
     QJsonObject currentTask() const;
     void loadTask(const QJsonObject &task);
     void persistDraft();
+    void applyAgent(const QString &agent, bool force = false);
     void chooseTime();
     void refreshWhen();
     void invalidateCwd();
@@ -62,6 +70,8 @@ private:
     TaskStore *m_store{};
     QString m_taskId;
     std::function<void(const QString &)> m_changed;
+    ChoiceProvider m_modelsFor;
+    ChoiceProvider m_sessionsFor;
     bool m_loading = false;
     QString m_cwd;
     QString m_answer;
@@ -72,9 +82,11 @@ private:
     qint64 m_lastLogSize = -1;
 
 public:
+    QComboBox *agent{};
     QComboBox *model{};
     QComboBox *reasoning{};
     QComboBox *speed{};
+    QComboBox *mode{};
     QLabel *status{};
     SessionComboBox *session{};
     QPushButton *when{};

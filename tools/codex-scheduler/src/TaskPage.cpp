@@ -1,5 +1,5 @@
 #include "TaskPage.h"
-#include "CodexService.h"
+#include "AgentService.h"
 #include "Common.h"
 #include "Scheduler.h"
 #include "TaskStore.h"
@@ -35,7 +35,8 @@ namespace harr {
 
 class MessageBubble final : public QFrame {
 public:
-    MessageBubble(const QString &role, const QString &value, QWidget *parent = nullptr)
+    MessageBubble(const QString &role, const QString &value, const QString &agentName = {},
+                  QWidget *parent = nullptr)
         : QFrame(parent)
     {
         setObjectName("messageBubble");
@@ -44,7 +45,8 @@ public:
 
         auto *layout = new QVBoxLayout(this);
         layout->setContentsMargins(12, 9, 12, 9);
-        auto *title = new QLabel(role == "user" ? "You" : "Codex", this);
+        const QString assistantName = agentName.isEmpty() ? QStringLiteral("Agent") : agentName;
+        auto *title = new QLabel(role == "user" ? QStringLiteral("You") : assistantName, this);
         QFont titleFont = title->font();
         titleFont.setWeight(QFont::DemiBold);
         title->setFont(titleFont);
@@ -78,8 +80,11 @@ private:
 
 TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
                    std::function<void(const QString &)> changed,
+                   ChoiceProvider modelsFor, ChoiceProvider sessionsFor,
                    QWidget *parent)
-    : QWidget(parent), m_store(store), m_taskId(task.value("id").toString()), m_changed(std::move(changed))
+    : QWidget(parent), m_store(store), m_taskId(task.value("id").toString()),
+      m_changed(std::move(changed)), m_modelsFor(std::move(modelsFor)),
+      m_sessionsFor(std::move(sessionsFor))
 {
     m_loading = true;
 
@@ -88,6 +93,11 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     root->setSpacing(10);
 
     auto *top = new QHBoxLayout();
+    agent = new QComboBox(this);
+    agent->setProperty("chromeRole", "selector");
+    agent->setToolTip("Agent");
+    for (const QString &id : agentIds()) addChoice(agent, agentDisplayName(id), id);
+
     model = new QComboBox(this);
     model->setProperty("chromeRole", "selector");
     model->setToolTip("Model");
@@ -107,11 +117,22 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     speed->setProperty("chromeRole", "selector");
     speed->setToolTip("Speed");
 
+    mode = new QComboBox(this);
+    addChoice(mode, "Build", "build");
+    addChoice(mode, "Edit", "edit");
+    addChoice(mode, "Plan", "plan");
+    addChoice(mode, "Yolo", "yolo");
+    addChoice(mode, "Guarded", "guarded");
+    mode->setProperty("chromeRole", "selector");
+    mode->setToolTip("Permission mode");
+
     status = new QLabel(this);
     status->setObjectName("taskStatus");
+    top->addWidget(agent);
     top->addWidget(model);
     top->addWidget(reasoning);
     top->addWidget(speed);
+    top->addWidget(mode);
     top->addStretch(1);
     top->addWidget(status);
     root->addLayout(top);
@@ -141,7 +162,7 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     root->addLayout(sessionRow);
 
     prompt = new QTextEdit(this);
-    prompt->setPlaceholderText("What should Codex do?");
+    prompt->setPlaceholderText("What should the agent do?");
     prompt->setMinimumHeight(100);
     root->addWidget(prompt);
 
@@ -171,6 +192,10 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
     connect(model, &QComboBox::currentTextChanged, this, [this] { persistDraft(); });
     connect(reasoning, &QComboBox::currentTextChanged, this, [this] { persistDraft(); });
     connect(speed, &QComboBox::currentTextChanged, this, [this] { persistDraft(); });
+    connect(mode, &QComboBox::currentTextChanged, this, [this] { persistDraft(); });
+    connect(agent, qOverload<int>(&QComboBox::activated), this, [this](int) {
+        applyAgent(choiceValue(agent));
+    });
     connect(session->lineEdit(), &QLineEdit::textEdited, this, [this] {
         invalidateCwd();
         persistDraft();
@@ -202,6 +227,35 @@ TaskPage::TaskPage(TaskStore *store, const QJsonObject &task,
 }
 
 QString TaskPage::taskId() const { return m_taskId; }
+
+QString TaskPage::currentAgent() const
+{
+    const QString id = choiceValue(agent);
+    return isKnownAgent(id) ? id : defaultAgentId();
+}
+
+void TaskPage::applyAgent(const QString &agentId, bool force)
+{
+    const QString next = isKnownAgent(agentId) ? agentId : defaultAgentId();
+    if (!force && next == currentAgent()) return;
+    setChoiceValue(agent, next);
+    const AgentCapabilities caps = agentService(next)->capabilities();
+    reasoning->setVisible(caps.reasoning);
+    speed->setVisible(caps.speed);
+    mode->setVisible(caps.mode);
+    session->setToolTip(QString("Recent active %1 sessions; paste a session ID with Ctrl+V")
+                            .arg(agentDisplayName(next)));
+    if (force) return;
+
+    // Session ids are not portable across agents: drop the selection and
+    // the project resolution, then repopulate the catalogs.
+    session->setSessionId(QString{});
+    invalidateCwd();
+    status->setText({});
+    if (m_modelsFor) setModelChoices(m_modelsFor(next));
+    if (m_sessionsFor) setSessionChoices(m_sessionsFor(next), false);
+    persistDraft();
+}
 
 void TaskPage::setModelChoices(const QVector<QJsonObject> &models)
 {
@@ -300,8 +354,10 @@ QJsonObject TaskPage::currentTask() const
 
 void TaskPage::loadTask(const QJsonObject &task)
 {
+    setChoiceValue(agent, task.value("agent").toString(defaultAgentId()));
     setChoiceValue(reasoning, task.value("reasoning").toString("high"));
     setChoiceValue(speed, task.value("speed").toString("standard"));
+    setChoiceValue(mode, task.value("mode").toString("yolo"));
     session->setSessionId(task.value("session").toString());
     prompt->setPlainText(task.value("prompt").toString());
     m_cwd = task.value("cwd").toString();
@@ -315,15 +371,18 @@ void TaskPage::loadTask(const QJsonObject &task)
     refreshWhen();
     setSaveState(m_answer);
     if (!m_cwd.isEmpty()) setCwd(m_cwd);
+    applyAgent(currentAgent(), true);
 }
 
 void TaskPage::persistDraft()
 {
     if (m_loading || currentTask().value("status").toString() != "draft") return;
     QJsonObject patch{
+        {"agent", currentAgent()},
         {"model", choiceValue(model)},
         {"reasoning", choiceValue(reasoning)},
         {"speed", choiceValue(speed)},
+        {"mode", choiceValue(mode)},
         {"session", session->sessionId()},
         {"prompt", prompt->toPlainText()}
     };
@@ -375,19 +434,21 @@ void TaskPage::resolveCwdPreview()
     }
 
     QString error;
-    auto thread = CodexService::readThread(id, &error);
-    if (!thread) {
+    AgentService *service = agentService(currentAgent());
+    if (!service) {
+        invalidateCwd();
+        return;
+    }
+    auto sessionInfo = service->readSession(id, &error);
+    if (!sessionInfo) {
         invalidateCwd();
         status->setText(error.left(180));
         return;
     }
 
-    session->setResolvedSession(QJsonObject{
-        {"id", id}, {"name", thread->value("name")}, {"preview", thread->value("preview")},
-        {"cwd", thread->value("cwd")}, {"archived", thread->value("archived")}
-    });
+    session->setResolvedSession(*sessionInfo);
 
-    auto cwd = CodexService::validateThreadCwd(*thread, &error, true);
+    auto cwd = service->validateSessionCwd(*sessionInfo, &error, true);
     if (!cwd) {
         invalidateCwd();
         status->setText(error.left(180));
@@ -406,7 +467,7 @@ QString TaskPage::defaultAnswerPath() const
     if (safe.isEmpty()) safe = "session";
     const QString directory = m_cwd.isEmpty() ? QDir::currentPath() : m_cwd;
     const auto time = m_scheduled.isValid() ? m_scheduled : QDateTime::currentDateTime();
-    QString path = QDir(directory).filePath(QString("codex-%1-%2.md").arg(safe, time.toString("yyyyMMdd-HHmm")));
+    QString path = QDir(directory).filePath(QString("%1-%2-%3.md").arg(currentAgent(), safe, time.toString("yyyyMMdd-HHmm")));
     if (!QFileInfo::exists(path)) return path;
     QFileInfo info(path);
     for (int i = 2; ; ++i) {
@@ -441,8 +502,9 @@ void TaskPage::toggleSave(bool checked)
         persistDraft();
         return;
     }
-    const QString path = QFileDialog::getSaveFileName(this, "Save Codex answer", defaultAnswerPath(),
-                                                      "Markdown (*.md);;Text (*.txt);;All files (*)");
+    const QString path = QFileDialog::getSaveFileName(
+        this, QString("Save %1 answer").arg(agentDisplayName(currentAgent())), defaultAnswerPath(),
+        "Markdown (*.md);;Text (*.txt);;All files (*)");
     if (path.isEmpty()) {
         setSaveState({});
         return;
@@ -482,8 +544,12 @@ void TaskPage::schedule()
         QMessageBox::warning(this, APP_NAME, "Session and prompt are required.");
         return;
     }
-    if (choiceValue(model).isEmpty()) {
-        QMessageBox::warning(this, APP_NAME, "No Codex model is available.");
+    const QString agentId = currentAgent();
+    AgentService *service = agentService(agentId);
+    const AgentCapabilities caps = service ? service->capabilities() : AgentCapabilities{};
+    if (caps.modelRequired && choiceValue(model).isEmpty()) {
+        QMessageBox::warning(this, APP_NAME,
+                             QString("No %1 model is available.").arg(agentDisplayName(agentId)));
         return;
     }
     if (!m_scheduled.isValid()) {
@@ -493,9 +559,11 @@ void TaskPage::schedule()
 
     const QString logPath = currentTask().value("log").toString(QDir(m_store->jobsDir()).filePath(m_taskId + ".jsonl"));
     ScheduleRequest req;
+    req.agent = agentId;
     req.model = choiceValue(model);
     req.reasoning = choiceValue(reasoning);
     req.speed = choiceValue(speed);
+    req.mode = caps.mode ? choiceValue(mode) : QString{};
     req.timestamp = m_scheduled.toString("yyyyMMddHHmm");
     req.session = id;
     req.prompt = text;
@@ -513,8 +581,9 @@ void TaskPage::schedule()
     m_log = logPath;
     setCwd(m_cwd);
     QJsonObject patch{
-        {"status", "scheduled"}, {"model", req.model}, {"reasoning", req.reasoning},
-        {"speed", req.speed}, {"session", id}, {"prompt", text},
+        {"status", "scheduled"}, {"agent", agentId}, {"model", req.model},
+        {"reasoning", req.reasoning}, {"speed", req.speed}, {"mode", req.mode},
+        {"session", id}, {"prompt", text},
         {"scheduled", m_scheduled.toString(Qt::ISODate)}, {"cwd", m_cwd},
         {"log", m_log}, {"cancel_requested", false}, {"error", QJsonValue::Null}
     };
@@ -530,7 +599,8 @@ void TaskPage::cancel()
 {
     const QString state = currentTask().value("status").toString();
     if (state != "scheduled" && state != "running" && state != "cancelling") return;
-    if (QMessageBox::question(this, APP_NAME, "Cancel this Codex task?",
+    if (QMessageBox::question(this, APP_NAME,
+                              QString("Cancel this %1 task?").arg(agentDisplayName(currentAgent())),
                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
     QString error;
     const auto task = m_store->cancel(m_taskId, &error);
@@ -551,9 +621,10 @@ void TaskPage::rebuildTranscript(const QJsonObject &task)
     }
 
     MessageBubble *assistant = nullptr;
+    const QString agentName = agentDisplayName(task.value("agent").toString(defaultAgentId()));
     const QString taskPrompt = task.value("prompt").toString().trimmed();
     if (task.value("status").toString() != "draft" && !taskPrompt.isEmpty()) {
-        m_transcriptLayout->addWidget(new MessageBubble("user", taskPrompt, m_transcriptHost));
+        m_transcriptLayout->addWidget(new MessageBubble("user", taskPrompt, agentName, m_transcriptHost));
     }
 
     const QString logPath = task.value("log").toString();
@@ -565,13 +636,13 @@ void TaskPage::rebuildTranscript(const QJsonObject &task)
                 for (const auto &event : parseCodexJsonLine(line)) {
                     if (event.kind == "assistant") {
                         if (!assistant) {
-                            assistant = new MessageBubble("assistant", event.text, m_transcriptHost);
+                            assistant = new MessageBubble("assistant", event.text, agentName, m_transcriptHost);
                             m_transcriptLayout->addWidget(assistant);
                         } else {
                             assistant->appendText(event.text);
                         }
                     } else if (event.kind == "error") {
-                        m_transcriptLayout->addWidget(new MessageBubble("assistant", event.text, m_transcriptHost));
+                        m_transcriptLayout->addWidget(new MessageBubble("assistant", event.text, agentName, m_transcriptHost));
                     }
                 }
             }
