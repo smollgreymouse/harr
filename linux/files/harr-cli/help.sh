@@ -31,6 +31,7 @@ CLI:
   harr workspace show|list
   harr workspace add PATH
   harr workspace remove PATH
+  harr workspace prune [--dry-run] [--all]
   harr git <git-arguments>
   harr kube configure [--source PATHLIST] [--kubectl PATH] [--allow-exec] [--no-check]
   harr kube sync [--allow-exec] [--no-check]
