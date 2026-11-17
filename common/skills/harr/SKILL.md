@@ -36,6 +36,7 @@ Load only the reference needed for the current operation:
 - host Git / merge-request transport -> `references/git.md`
 - Kubernetes -> `references/kubernetes.md`
 - named Ein setup -> `references/einherjar.md`
+- project-scoped MCP customization (overlay, trust, profiles) -> `references/project-mcp.md`
 - optional MCP diagnostics -> the matching reference file
 
 Never load all references by default.

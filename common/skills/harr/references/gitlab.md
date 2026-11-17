@@ -96,3 +96,7 @@ GITLAB_TOOLSETS=all
 ```
 
 This exposes write tools such as `create_merge_request`; effective permissions remain bounded by the PAT and GitLab project permissions.
+
+## Project override
+
+A project can replace or complement this instance with the official GitLab remote MCP through a `.harr/mcp.json` overlay and a credential profile (namespace `gitlab-official::*`). The two surfaces are independent and never fall back to each other. Setup, trust and diagnostics: `references/project-mcp.md`.
