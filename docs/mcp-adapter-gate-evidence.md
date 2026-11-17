@@ -78,3 +78,56 @@
    разделение) отсутствует — вводится этапом 5 поверх подтверждённых свойств хранилища.
 4. Невыбранные секреты экспортируются в env gateway целиком (`exec_leanctx` экспортирует все
    секреты registry) — скоупится до отрендеренных инстансов сессии (этап 5).
+
+## Этап 5–6 — реализация и приёмка (2026-11-17)
+
+**Реализовано** (коммиты на ветке `codex/mcp-adapters-execution`, base = master):
+
+- `common/mcp/project_overlay.py` — fail-closed манифест `.harr/mcp.json` (закрытая схема:
+  только `schema/instances/extensions`; секреты/команды/аргументы/env исключены схемой),
+  HTTPS-only эндпоинты (loopback-исключение), user-local trust по дайджесту
+  (`~/.config/harr/projects/<key>/mcp-trust.json`), смена дайджеста = untrusted.
+- `common/mcp/profiles.py` — user-local credential-профили (стабильный ID, провайдер,
+  утверждённый endpoint, ссылка на секрет без байтов, состояние, явные `bound_projects`),
+  атомарная запись 0600 (tmp+rename), отпечаток состояний для инвалидации.
+- `common/mcp/manager.py` — per-session рендер: trusted overlay → effective registry
+  (глобальный выбор + overlay-инстансы + доверенные http-расширения; disable через overlay)
+  → сессионный `config.toml` в `~/.config/harr/mcp-sessions/<cache-key>/` (0700/0600,
+  allow_paths/shell_allowlist наследуются от глобального конфига) → `LEAN_CTX_CONFIG_DIR`;
+  экспорт `LEAN_CTX_SECRET_*` **только** для секретов отрендеренных инстансов;
+  `run_server` вычищает `LEAN_CTX_SECRET_*` из env реального upstream (фикс находки 4
+  этапа 3); CLI: `resolve`, `project {status|trust|revoke}`, `profile {list|set|enable|disable|remove}`.
+- `common/mcp/registry.json` — новый ключ `providers` (определения для project-выбора;
+  первый — `gitlab-official`, http + `profile_endpoint` + OAuth). Глобальный `servers`
+  и рендер не изменены (регрессия `tests/mcp-registry.py` зелёная).
+- `common/shell/secret.sh` — атомарная ротация (tmp+rename, фикс находки 2 этапа 3).
+- CLI shell: `harr mcp resolve|project|profile`, usage-текст.
+- `.github/workflows/selftest.yml` — py_compile новых модулей + шаги overlay/runtime-тестов.
+
+**Инвалидация:** cache-key сессии = sha(формат, project key, дайджест registry, дайджест
+манифеста, trust-дайджест, отпечаток состояний профилей) — любое изменение конфигурации
+инстанса или credential binding даёт новый ключ; живые сессии подхватывают enable/disable
+на следующем `ctx_tools`-действии; ротация значения секрета требует новой сессии
+(задокументировано в дизайн-доке).
+
+**Приёмка (этап 6):**
+
+- `tests/mcp-project-overlay.py` — 9 секций PASS: fail-closed валидация манифеста
+  (команда/секрет/не-HTTPS/userinfo/неизвестные поля отклоняются), trust-цикл, права
+  профилей 0600 + атомарность, merge-семантика (disable/профиль/конфликты/unbound),
+  scoped export (секрет disabled-инстанса не экспортируется), end-to-end профиль-инстанс
+  через CLI, санитизация `run_server` (секрет не утекает в upstream), атомарная ротация,
+  trust-CLI round-trip; диагностика без значений секретов.
+- `tests/mcp-adapter-runtime.py` — PASS на деплой-бинарнике `3.11.0-harr-unified.7`
+  (скип без бинарника): холодный старт 0 спавнов + статический tools/list; прямой
+  квалифицированный вызов поднимает **только** адресуемый инстанс и повторяется на нём же;
+  два инстанса одного вендора держат разные нативные поверхности; wiring секретов на
+  транспортном стыке изолирован; отсутствующий memento = fail-closed (ghost ни разу не
+  спавнен); каталог агрегирует оба вендора.
+- Регрессии: `tests/mcp-registry.py`, `tests/mcp-selection.py` — PASS.
+
+**Остались blocker'ы (в дизайн-доке, не скрыты):** полные inputSchema/annotations и
+`structuredContent` не пробрасываются агенту (аддитивная апстрим-работа в LeanCTX);
+официальный GitLab MCP требует интерактивной OAuth-авторизации (`lean-ctx addon auth`),
+headless PAT отклонён эндпоинтом (этап 2); поведение streamable-HTTP клиента при
+cross-origin redirect до включения profile-bound HTTP-инстансов требует проверки.
