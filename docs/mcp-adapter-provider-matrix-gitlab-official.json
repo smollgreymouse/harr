@@ -1,0 +1,772 @@
+{
+ "provider": "gitlab-official",
+ "serverInfo": {
+  "name": "Official GitLab MCP Server",
+  "version": "19.5.1-ee"
+ },
+ "protocolVersion": "2025-03-26",
+ "captured": "2026-11-17",
+ "route": "official remote MCP /api/v4/mcp with Bearer PAT (granular token)",
+ "tool_count": 36,
+ "tools": [
+  {
+   "name": "get_artifact_file",
+   "description": "Read a file from inside the artifacts archive of a CI/CD job as text. To discover what a job or pipeline produced, use get_job or get_pipeline with include: artifacts. For large files, page through wi",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "ci"
+   },
+   "required": [
+    "artifact_path"
+   ],
+   "properties": [
+    "artifact_path",
+    "byte_limit",
+    "byte_offset",
+    "job_id",
+    "project_id",
+    "url"
+   ]
+  },
+  {
+   "name": "get_job",
+   "description": "Get a CI/CD job in a GitLab project. Add include: log to also get the job's trace/log, which you can page through with byte_offset and byte_limit. Add include: artifacts to also list the artifacts the",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "ci"
+   },
+   "required": [
+    "id",
+    "job_id"
+   ],
+   "properties": [
+    "byte_limit",
+    "byte_offset",
+    "id",
+    "include",
+    "job_id"
+   ]
+  },
+  {
+   "name": "get_mcp_server_version",
+   "description": "Get the current version of MCP server.",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "meta"
+   },
+   "required": [],
+   "properties": []
+  },
+  {
+   "name": "list_releases",
+   "description": "List releases in a GitLab project, most recently released first. Identify the project with exactly one of url or project_id. Returns release metadata and asset links, not release assets themselves. Re",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [],
+   "properties": [
+    "page",
+    "per_page",
+    "project_id",
+    "state",
+    "url"
+   ]
+  },
+  {
+   "name": "list_tags",
+   "description": "List tags in a GitLab project, most recently updated first. Identify the project with exactly one of url or project_id. When search is given, a tag whose name matches it exactly is listed first. Retur",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "first",
+    "project_id",
+    "search",
+    "url"
+   ]
+  },
+  {
+   "name": "accept_merge_request",
+   "description": "Merge a merge request, or schedule it to merge automatically. Without strategy the merge starts immediately and completes asynchronously; with strategy, auto-merge is armed and the merge request merge",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "toolset": "merge_requests"
+   },
+   "required": [
+    "sha"
+   ],
+   "properties": [
+    "commit_message",
+    "merge_request_iid",
+    "project_id",
+    "sha",
+    "should_remove_source_branch",
+    "squash",
+    "squash_commit_message",
+    "strategy",
+    "url"
+   ]
+  },
+  {
+   "name": "add_branch",
+   "description": "Add a branch to a GitLab project from a source ref.\n\nExamples:\n- Use branch and ref to create a new branch from an existing branch or commit SHA",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "repository"
+   },
+   "required": [
+    "branch",
+    "ref"
+   ],
+   "properties": [
+    "branch",
+    "project_id",
+    "ref",
+    "url"
+   ]
+  },
+  {
+   "name": "add_commit",
+   "description": "Add a commit with one or more file actions to a project branch.",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "toolset": "repository"
+   },
+   "required": [
+    "branch",
+    "commit_message",
+    "actions"
+   ],
+   "properties": [
+    "actions",
+    "branch",
+    "commit_message",
+    "project_id",
+    "start_branch",
+    "start_project",
+    "start_sha",
+    "url"
+   ]
+  },
+  {
+   "name": "get_commit",
+   "description": "Get a single commit's metadata, optionally including its diff or notes. Identify the commit with either url, or project_id and commit_sha.",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [],
+   "properties": [
+    "commit_sha",
+    "diff_detail",
+    "include",
+    "notes_after",
+    "notes_first",
+    "project_id",
+    "url"
+   ]
+  },
+  {
+   "name": "get_merge_request",
+   "description": "Get a merge request and optionally its diffs, commits, notes, pipelines, discussions, approvals, or conflicts. By default only the base merge request metadata is returned; request associated data thro",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "merge_requests"
+   },
+   "required": [],
+   "properties": [
+    "commits_after",
+    "commits_first",
+    "detail",
+    "diffs_after",
+    "diffs_first",
+    "include",
+    "merge_request_iid",
+    "notes_after",
+    "notes_before",
+    "notes_first",
+    "notes_last",
+    "pipelines_after",
+    "pipelines_first",
+    "project_id",
+    "url"
+   ]
+  },
+  {
+   "name": "get_repository_file",
+   "description": "Read a file from a GitLab repository at a given ref. Reads from GitLab, not the local filesystem: use it for a project you have not checked out, or a specific branch, tag, or commit — not your local w",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [],
+   "properties": [
+    "file_path",
+    "limit",
+    "offset",
+    "project_id",
+    "ref",
+    "url"
+   ]
+  },
+  {
+   "name": "get_pipeline",
+   "description": "Get a CI/CD pipeline in a GitLab project, and optionally its jobs, downstream pipelines,\nbridge (trigger) jobs, or the artifacts its jobs produced. A bridge job's downstream\npipeline is omitted if you",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "ci"
+   },
+   "required": [
+    "id",
+    "pipeline_id"
+   ],
+   "properties": [
+    "after",
+    "first",
+    "id",
+    "include",
+    "job_status",
+    "pipeline_id"
+   ]
+  },
+  {
+   "name": "get_project",
+   "description": "Get metadata for a single GitLab project: numeric ID, full path, default branch, visibility, and web URL. Identify the project with exactly one of url or project_id. Use search with scope projects to ",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [],
+   "properties": [
+    "project_id",
+    "url"
+   ]
+  },
+  {
+   "name": "get_saved_view_work_items",
+   "description": "Fetch a saved view and its work items list from a namespace",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "work_items"
+   },
+   "required": [
+    "saved_view_id"
+   ],
+   "properties": [
+    "after",
+    "first",
+    "group_id",
+    "project_id",
+    "saved_view_id",
+    "url"
+   ]
+  },
+  {
+   "name": "get_user",
+   "description": "Get a single GitLab user. Use me: true to look up the authenticated user, for example to find your own user id before setting assignee_ids or reviewer_ids. Provide exactly one of username, id, or me. ",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [],
+   "properties": [
+    "id",
+    "me",
+    "username"
+   ]
+  },
+  {
+   "name": "get_work_item",
+   "description": "Get a single work item (issue, epic, task, incident, objective, key result) with its type, dates, assignees, labels, milestone, and parent. Optionally include its notes, its discussions, or the merge ",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "work_items"
+   },
+   "required": [],
+   "properties": [
+    "discussions_after",
+    "discussions_filter",
+    "discussions_first",
+    "group_id",
+    "include",
+    "mr_page_size",
+    "mr_pagination_cursor",
+    "notes_after",
+    "notes_before",
+    "notes_first",
+    "notes_last",
+    "project_id",
+    "related_merge_requests_after",
+    "related_merge_requests_first",
+    "url",
+    "work_item_iid"
+   ]
+  },
+  {
+   "name": "get_work_item_types",
+   "description": "List the work item types available in a namespace (group or project), including system-defined types (Issue, Epic, Task, etc.) and custom types. Each returned type includes its global ID, name, icon, ",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "work_items"
+   },
+   "required": [],
+   "properties": [
+    "group_id",
+    "project_id",
+    "url"
+   ]
+  },
+  {
+   "name": "link_work_items",
+   "description": "Link a work item to other work items with a relationship type (relates_to, blocks, blocked_by)",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "work_items"
+   },
+   "required": [
+    "work_items_ids"
+   ],
+   "properties": [
+    "group_id",
+    "link_type",
+    "project_id",
+    "url",
+    "work_item_iid",
+    "work_items_ids"
+   ]
+  },
+  {
+   "name": "list_commits",
+   "description": "List commits in a GitLab project, filtered by ref, author, path, or date. Identify the project with exactly one of url or project_id. Returns compact commit metadata; use get_commit for a single commi",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "author",
+    "first",
+    "first_parent",
+    "order",
+    "path",
+    "project_id",
+    "ref_name",
+    "since",
+    "until",
+    "url",
+    "with_stats"
+   ]
+  },
+  {
+   "name": "list_groups",
+   "description": "List GitLab groups. Without group_id, lists top-level groups where you are a member. With group_id, lists the direct subgroups of that group, regardless of membership. Set include_subgroups to true to",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "first",
+    "group_id",
+    "include_subgroups",
+    "search",
+    "visibility"
+   ]
+  },
+  {
+   "name": "list_merge_requests",
+   "description": "List or search merge requests in a GitLab project or group by author, assignee, reviewer, state, milestone, labels, or text. Identify the project or group with exactly one of url, project_id, or group",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "merge_requests"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "assignee_username",
+    "author_username",
+    "first",
+    "group_id",
+    "labels",
+    "milestone",
+    "project_id",
+    "reviewer_username",
+    "scope",
+    "search",
+    "state",
+    "url"
+   ]
+  },
+  {
+   "name": "list_projects",
+   "description": "List GitLab projects. Without group_id, defaults to projects you have at least guest access to; pass min_access_level to raise the threshold. With group_id, lists every project in that group and its s",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "archived",
+    "first",
+    "group_id",
+    "min_access_level",
+    "search",
+    "visibility"
+   ]
+  },
+  {
+   "name": "list_repository_tree",
+   "description": "List files and directories in a GitLab repository at a given path and ref. Identify the project with exactly one of url or project_id. Returns entry metadata only, never file contents; use get_reposit",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "path",
+    "project_id",
+    "recursive",
+    "ref",
+    "url"
+   ]
+  },
+  {
+   "name": "list_project_members",
+   "description": "List the members of a GitLab project with their role and access level. Direct members only, unless include_inherited is true.",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [
+    "project_id"
+   ],
+   "properties": [
+    "after",
+    "first",
+    "include_inherited",
+    "project_id",
+    "query"
+   ]
+  },
+  {
+   "name": "list_work_items",
+   "description": "List or search work items (ISSUE, INCIDENT, TEST_CASE, REQUIREMENT, TASK, TICKET, OBJECTIVE, KEY_RESULT, EPIC) in a group or project. Filter by state, author, assignees, labels, milestone, dates, type",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "work_items"
+   },
+   "required": [],
+   "properties": [
+    "after",
+    "assignee_usernames",
+    "author_username",
+    "created_after",
+    "created_before",
+    "due_after",
+    "due_before",
+    "first",
+    "group_id",
+    "health_status_filter",
+    "label_name",
+    "milestone_title",
+    "milestone_wildcard_id",
+    "project_id",
+    "search",
+    "sort",
+    "state",
+    "status",
+    "types",
+    "updated_after",
+    "updated_before",
+    "url"
+   ]
+  },
+  {
+   "name": "save_merge_request_review",
+   "description": "Write merge request review artifacts as the authenticated user. Exactly one method per call: create_note adds a top-level comment; reply_discussion replies within an existing discussion; create_diff_n",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "merge_requests"
+   },
+   "required": [
+    "method"
+   ],
+   "properties": [
+    "body",
+    "comments",
+    "discussion_id",
+    "internal",
+    "merge_request_iid",
+    "method",
+    "new_line",
+    "new_path",
+    "old_line",
+    "old_path",
+    "project_id",
+    "resolved",
+    "sha",
+    "summary",
+    "summary_internal",
+    "url",
+    "verdict"
+   ]
+  },
+  {
+   "name": "save_note",
+   "description": "Add a comment to a GitLab merge request or work item, or reply to an existing discussion thread. Identify the target with url, or with merge_request_iid or work_item_iid plus its project_id or group_i",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "core"
+   },
+   "required": [
+    "body"
+   ],
+   "properties": [
+    "body",
+    "discussion_id",
+    "group_id",
+    "internal",
+    "merge_request_iid",
+    "project_id",
+    "url",
+    "work_item_iid"
+   ]
+  },
+  {
+   "name": "save_pipeline",
+   "description": "Run, retry, cancel, or rename a CI/CD pipeline in a GitLab project. Omit pipeline_id and pass ref to run a new pipeline, and identify the project with exactly one of url or project_id. Pass pipeline_i",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "toolset": "ci"
+   },
+   "required": [],
+   "properties": [
+    "action",
+    "inputs",
+    "name",
+    "pipeline_id",
+    "project_id",
+    "ref",
+    "url",
+    "variables"
+   ]
+  },
+  {
+   "name": "save_work_item",
+   "description": "Create or update a GitLab work item, such as an issue, task, or epic.\nOmit work_item_iid to create a new work item; provide work_item_iid or a\nwork item URL to update an existing one. Send only the fi",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "work_items"
+   },
+   "required": [],
+   "properties": [
+    "add_label_ids",
+    "add_labels",
+    "agent_plan",
+    "assignee_ids",
+    "clear_weight",
+    "confidential",
+    "description",
+    "due_date",
+    "group_id",
+    "health_status",
+    "is_fixed",
+    "label_ids",
+    "labels",
+    "milestone",
+    "milestone_id",
+    "parent_id",
+    "project_id",
+    "readiness_score",
+    "remove_label_ids",
+    "remove_labels",
+    "start_date",
+    "state",
+    "status_id",
+    "title",
+    "todo_action",
+    "todo_id",
+    "type_name",
+    "url",
+    "weight",
+    "work_item_iid"
+   ]
+  },
+  {
+   "name": "search_labels",
+   "description": "Search labels in a GitLab project or group by multiple terms",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [
+    "full_path",
+    "is_project"
+   ],
+   "properties": [
+    "full_path",
+    "is_project",
+    "search"
+   ]
+  },
+  {
+   "name": "fork_repository",
+   "description": "Create a fork of a project",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "repository"
+   },
+   "required": [
+    "id"
+   ],
+   "properties": [
+    "description",
+    "id",
+    "name",
+    "namespace_id",
+    "namespace_path",
+    "path",
+    "visibility"
+   ]
+  },
+  {
+   "name": "list_pipelines",
+   "description": "List all project pipelines",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "ci"
+   },
+   "required": [
+    "id"
+   ],
+   "properties": [
+    "created_after",
+    "created_before",
+    "id",
+    "order_by",
+    "page",
+    "per_page",
+    "ref",
+    "sort",
+    "source",
+    "status"
+   ]
+  },
+  {
+   "name": "list_branches",
+   "description": "List all repository branches",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "repository"
+   },
+   "required": [
+    "id"
+   ],
+   "properties": [
+    "id",
+    "page",
+    "per_page",
+    "search"
+   ]
+  },
+  {
+   "name": "semantic_search",
+   "description": "Semantic (meaning-based) search over different types of content.\n\nSearches indexed project content using embedding-based similarity rather than\nkeyword matching. Use this when you do not know the exac",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [
+    "scope",
+    "q",
+    "project_id"
+   ],
+   "properties": [
+    "directory_path",
+    "knn",
+    "limit",
+    "project_id",
+    "q",
+    "scope"
+   ]
+  },
+  {
+   "name": "search",
+   "description": "Search across GitLab with automatic selection of the best available search method.\n\n**Capabilities:** basic (keywords, file filters), advanced (boolean operators)\n\n**Syntax Examples:**\n- Basic: \"bug f",
+   "annotations": {
+    "readOnlyHint": true,
+    "toolset": "core"
+   },
+   "required": [
+    "scope",
+    "search"
+   ],
+   "properties": [
+    "confidential",
+    "fields",
+    "group_id",
+    "order_by",
+    "page",
+    "per_page",
+    "project_id",
+    "scope",
+    "search",
+    "sort",
+    "state",
+    "type"
+   ]
+  },
+  {
+   "name": "save_merge_request",
+   "description": "Create or update a merge request in a GitLab project.\n\nmerge_request_iid alone decides the operation. Omitting it always creates a new\nmerge request; provide it to update an existing one.\n- Create: om",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "toolset": "merge_requests"
+   },
+   "required": [
+    "project_id"
+   ],
+   "properties": [
+    "add_labels",
+    "allow_collaboration",
+    "assignee_ids",
+    "assignees",
+    "description",
+    "discussion_locked",
+    "labels",
+    "merge_request_iid",
+    "milestone",
+    "milestone_id",
+    "project_id",
+    "remove_labels",
+    "remove_source_branch",
+    "reviewer_ids",
+    "reviewers",
+    "source_branch",
+    "squash",
+    "state_event",
+    "target_branch",
+    "target_project_id",
+    "title"
+   ]
+  }
+ ]
+}

@@ -25,23 +25,30 @@
 
 ## Провайдер B — официальный GitLab remote MCP (`/api/v4/mcp`)
 
-- Эндпоинт существует: `https://gitlab.sca.ad-tech.ru/api/v4/mcp` → `401` с challenge
-  `www-authenticate: Bearer realm="GitLab", scope="mcp",
-  resource_metadata=".../.well-known/oauth-protected-resource/api/v4/mcp"`.
-- Metadata защищённого ресурса: `authorization_servers: ["https://gitlab.sca.ad-tech.ru"]`,
-  `scopes_supported: ["mcp"]`.
-- **ПОПРАВКА (после отката мержа, 17.11.2026 вечер):** первоначальный вывод
-  «PAT не принимается, OAuth-only» был сделан на переходящем серверном окне 401
-  (REST GitLab тем же токеном давал 401 в 21:36–21:44 и стабильно 200 (10/10) в 21:45+).
-  Фактический отказ MCP-эндпоинта на текущем PAT — из-за отсутствия scope `mcp`
-  (у `bluemouse-harr`: `api`, `read_api`, `ai_features`, `k8s_proxy`, … без `mcp`).
-  Ожидаемо работает Bearer PAT **со scope `mcp`** — требуется проверка таким токеном;
-  OAuth DCR — альтернатива, не обязательное требование. Подробности и хронология проб:
-  `docs/mcp-adapter-execution-log.md`.
-- **Блокер захвата tools/list (уточнён):** нужен токен со scope `mcp` (новый PAT +
-  профиль) или OAuth DCR (`lean-ctx addon auth`). До проверки таким токеном матрица
-  официального провайдера не снята; сравнение «каких инструментов нет у второго
-  провайдера» отложено.
+**Поверхность снята 17.11.2026 (блокер закрыт, см. историю ниже).**
+
+- `serverInfo: Official GitLab MCP Server 19.5.1-ee`, протокол `2025-03-26`.
+- **36 инструментов**; полный захват: `docs/mcp-adapter-provider-matrix-gitlab-official.json`.
+- Сравнение с zereight: 20 инструментов только у официального (например `get_artifact_file`,
+  `get_mcp_server_version`, `get_saved_view_work_items`, `link_work_items`, `semantic_search`,
+  `save_work_item`, `save_pipeline`), 200 — только у zereight; 16 общих имён. Поверхности
+  не пересекаются на общий контракт — квалификация `<instance>::<tool>` обязательна.
+- **Proof of routing (сквозной, через gateway):** проект `/tmp/harr-official-verify`
+  с overlay (инстанс `gitlab-official` + профиль `gitlab-official-prod`, `gitlab` отключён
+  overlay'ем) → `ctx_tools call gitlab-official::get_mcp_server_version` → `19.5.1-ee`.
+  Секрет шёл из профиля (`secret_headers` Authorization Bearer), не из глобального PAT.
+
+### История аутентификации (для честности)
+
+- Эндпоинт: `401` + challenge `www-authenticate: Bearer realm="GitLab", scope="mcp",
+  resource_metadata=".../.well-known/oauth-protected-resource/api/v4/mcp"`; metadata
+  ресурса: `authorization_servers: ["https://gitlab.sca.ad-tech.ru"]`, `scopes_supported: ["mcp"]`.
+- Первоначальный вывод «PAT не принимается, OAuth-only» — **ошибочен**: сделан на
+  переходящем серверном окне 401 (REST тем же токеном: 401 в 21:36–21:44, стабильно
+  200 (10/10) в 21:45+). PAT с granular-scope работает: токен `gitlab_mcp_token2.txt`
+  → `initialize` 200, `tools/list` 200, сквозной вызов через gateway успешен.
+- Токен пользователя хранится как `~/.config/harr/secrets/gitlab-official-mcp-token`
+  (0600), профиль `gitlab-official-prod` (endpoint + memento `mcp/gitlab/official`).
 
 ## Выводы для контракта (этап 4)
 

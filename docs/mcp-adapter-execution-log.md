@@ -114,3 +114,27 @@ Overlay-путь ленив: без `.harr/mcp.json` поведение поба
 - Доказательная база: `docs/mcp-adapter-gate-evidence.md` (этапы 1/3 + поправки),
   `docs/mcp-adapter-provider-matrix.md` (+ JSON поверхности zereight),
   этот лог, `docs/project-mcp-adapter-layer.md` (контракт).
+
+## Финал (17.11.2026, ночь) — официальный провайдер включён сквозь gateway
+
+Пользователь предоставил новый токен (`~/Desktop/gitlab_mcp_token2.txt`, гранулярный PAT —
+self-эндпоинт отвечает `insufficient_granular_scope`, это нормально для гранулярных
+токенов). Верификация:
+
+1. MCP-эндпоинт с этим токеном: `initialize` 200 (первый одиночный 401 — снова флап;
+   серия 200×3), `tools/list` 200 → **36 инструментов** «Official GitLab MCP Server
+   19.5.1-ee» (`docs/mcp-adapter-provider-matrix-gitlab-official.json`).
+2. Секрет сохранён как `~/.config/harr/secrets/gitlab-official-mcp-token` (0600);
+   профиль `gitlab-official-prod` (endpoint + memento `mcp/gitlab/official`).
+3. Сквозной прогон через gateway: проект `/tmp/harr-official-verify` (overlay: инстанс
+   `gitlab-official` + отключение глобального `gitlab`; trust) → resolve показывает
+   `gitlab-official http project-overlay profile=gitlab-official-prod` →
+   `ctx_tools call gitlab-official::get_mcp_server_version` → **`19.5.1-ee`**.
+4. Попутно найден и исправлен дефект пост-инсталла: `selector.py::write_effective`
+   терял ключ `providers` при генерации effective registry — после установки overlay-
+   инстансы не находили провайдера. Исправлено (providers переносятся), регрессии
+   `tests/mcp-selection.py`/`tests/mcp-registry.py` PASS.
+
+Остаток: повторное влитие — новый PR из `design/project-mcp-adapters` (после revert
+PR #15 reopen невозможен), по решению пользователя. Исходные файлы токенов на рабочем
+столе рекомендуется удалить пользователю (плейнтекст вне секретного хранилища).
