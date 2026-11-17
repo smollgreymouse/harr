@@ -134,7 +134,7 @@ with tempfile.TemporaryDirectory(prefix="harr-workspace-prune-") as raw:
     unknown.write_text("not a managed store member", encoding="utf-8")
 
     code, result = run_prune(config, full_reset=False)
-    assert code == 0
+    assert code == 0, result
     results = {item["store"]: item for item in result["results"]}
     assert results[str(stale)]["status"] == "removed"
     assert results[str(moved)]["status"] == "retained"
