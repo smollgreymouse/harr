@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(harr_codex_scheduler VERSION 0.3.4 LANGUAGES CXX)
+project(harr_scheduler VERSION 0.4.0 LANGUAGES CXX)
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install prefix" FORCE)
@@ -43,39 +43,40 @@ set(SCHEDULER_SOURCES
     assets/harr.qrc
 )
 
-add_executable(harr-codex-scheduler
+add_executable(harr-scheduler
     ${SCHEDULER_SOURCES}
 )
 
-set_target_properties(harr-codex-scheduler PROPERTIES
+set_target_properties(harr-scheduler PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 
-target_include_directories(harr-codex-scheduler PRIVATE src)
+target_include_directories(harr-scheduler PRIVATE src)
 
-target_link_libraries(harr-codex-scheduler PRIVATE
+target_link_libraries(harr-scheduler PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
 )
 
-target_compile_options(harr-codex-scheduler PRIVATE
+target_compile_options(harr-scheduler PRIVATE
     -Wall
     -Wextra
     -Wpedantic
 )
 
 if(SCHEDULER_ENABLE_SANITIZERS)
-    target_compile_options(harr-codex-scheduler PRIVATE
+    target_compile_options(harr-scheduler PRIVATE
         -fsanitize=address,undefined
         -fno-omit-frame-pointer
     )
-    target_link_options(harr-codex-scheduler PRIVATE -fsanitize=address,undefined)
+    target_link_options(harr-scheduler PRIVATE -fsanitize=address,undefined)
 endif()
 
 include(GNUInstallDirs)
 
 set(SCHEDULER_BIN_FILES
+    harr-schedule
     codex-schedule
     codex-scheduler-ui
     sol
@@ -86,15 +87,15 @@ set(SCHEDULER_BIN_PATHS)
 foreach(BIN_FILE IN LISTS SCHEDULER_BIN_FILES)
     list(APPEND SCHEDULER_BIN_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/bin/${BIN_FILE}")
 endforeach()
-set(SCHEDULER_DESKTOP_EXECUTABLE "/usr/bin/harr-codex-scheduler")
+set(SCHEDULER_DESKTOP_EXECUTABLE "/usr/bin/harr-scheduler")
 
 configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/desktop/harr-codex-scheduler.desktop.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/harr-codex-scheduler.desktop"
+    "${CMAKE_CURRENT_SOURCE_DIR}/desktop/harr-scheduler.desktop.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/harr-scheduler.desktop"
     @ONLY
 )
 
-install(TARGETS harr-codex-scheduler RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(TARGETS harr-scheduler RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 install(PROGRAMS
     ${SCHEDULER_BIN_PATHS}
     DESTINATION "${CMAKE_INSTALL_BINDIR}"
@@ -102,15 +103,15 @@ install(PROGRAMS
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/../../harr.png"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps"
-    RENAME "harr-codex-scheduler.png"
+    RENAME "harr-scheduler.png"
 )
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/harr-codex-scheduler.desktop"
+    "${CMAKE_CURRENT_BINARY_DIR}/harr-scheduler.desktop"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications"
 )
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
-    DESTINATION "${CMAKE_INSTALL_DOCDIR}/harr-codex-scheduler"
+    DESTINATION "${CMAKE_INSTALL_DOCDIR}/harr-scheduler"
 )
 
 set(SCHEDULER_PACKAGE_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/dist" CACHE PATH
@@ -146,42 +147,48 @@ file(CHMOD "${SCHEDULER_POSTINST}"
 )
 
 set(CPACK_GENERATOR "DEB")
-set(CPACK_PACKAGE_NAME "harr-codex-scheduler")
-set(CPACK_PACKAGE_VENDOR "Harr Codex Scheduler contributors")
+set(CPACK_PACKAGE_NAME "harr-scheduler")
+set(CPACK_PACKAGE_VENDOR "Harr Scheduler contributors")
 set(CPACK_PACKAGE_VERSION "${SCHEDULER_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Native Qt scheduler for existing OpenAI Codex CLI sessions")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "Native Qt scheduler for existing Codex and ZCode CLI sessions")
 set(CPACK_PACKAGE_CONTACT "Harr Codex Scheduler contributors")
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "harr-codex-scheduler")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "harr-scheduler")
 set(CPACK_OUTPUT_FILE_PREFIX "${SCHEDULER_PACKAGE_OUTPUT_DIR}")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${SCHEDULER_ARCH}")
 set(CPACK_DEBIAN_FILE_NAME
-    "harr-codex-scheduler_${SCHEDULER_VERSION}_${SCHEDULER_ARCH}.deb")
+    "harr-scheduler_${SCHEDULER_VERSION}_${SCHEDULER_ARCH}.deb")
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
 set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
     "at, git, bash, util-linux"
 )
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# The 0.3.x line shipped as harr-codex-scheduler; the multi-agent rename
+# replaces it and keeps queued at jobs working through a compat symlink.
+set(CPACK_DEBIAN_PACKAGE_PROVIDES "harr-codex-scheduler")
+set(CPACK_DEBIAN_PACKAGE_REPLACES "harr-codex-scheduler")
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "harr-codex-scheduler")
 set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA "${SCHEDULER_POSTINST}")
 
 include(CPack)
 
 add_custom_target(package-deb
     COMMAND "${CMAKE_CPACK_COMMAND}" --config "${CMAKE_BINARY_DIR}/CPackConfig.cmake" -G DEB
-    DEPENDS harr-codex-scheduler
+    DEPENDS harr-scheduler
     USES_TERMINAL
 )
 
 add_custom_target(package-portable
     COMMAND "${CMAKE_COMMAND}"
         "-DPORTABLE_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-        "-DPORTABLE_BINARY=${CMAKE_BINARY_DIR}/harr-codex-scheduler"
+        "-DPORTABLE_BINARY=${CMAKE_BINARY_DIR}/harr-scheduler"
         "-DPORTABLE_VERSION=${SCHEDULER_VERSION}"
         "-DPORTABLE_ARCH=${SCHEDULER_ARCH}"
         "-DPORTABLE_OUTPUT_DIR=${SCHEDULER_PACKAGE_OUTPUT_DIR}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/packaging/package-portable.cmake"
-    DEPENDS harr-codex-scheduler
+    DEPENDS harr-scheduler
     USES_TERMINAL
 )
 

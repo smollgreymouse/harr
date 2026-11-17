@@ -32,7 +32,7 @@ sudo apt-get update
 sudo apt-get install -y cmake qt6-base-dev at git
 
 ARCH=$(dpkg --print-architecture)
-DEB="$ROOT/dist/harr-codex-scheduler_${VERSION}_${ARCH}.deb"
+DEB="$ROOT/dist/harr-scheduler_${VERSION}_${ARCH}.deb"
 BUILD="$ROOT/build"
 cmake -S "$ROOT" -B "$BUILD" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -45,24 +45,24 @@ sudo apt-get install -y "$DEB"
 
 cat <<EOF
 
-Harr Codex Scheduler $VERSION is installed as a native Qt/C++ application.
+Harr Scheduler $VERSION is installed as a native Qt/C++ application.
 
 GUI/tray:
-  harr-codex-scheduler
-  or open "Harr Codex Scheduler" from the application menu.
+  harr-scheduler
+  or open "Harr Scheduler" from the application menu.
 
 CLI selectors:
   sol   HH:MM SESSION_ID "prompt"
   terra HH:MM SESSION_ID "prompt"
   luna  HH:MM SESSION_ID "prompt"
 
-The OpenAI Codex CLI must be installed separately and available as 'codex'.
+The Agent CLIs must be installed separately and available in PATH (codex, zcode).
 
 Uninstall application files:
-  sudo apt remove harr-codex-scheduler
+  sudo apt remove harr-scheduler
 
 User task history is intentionally kept under:
-  \${XDG_STATE_HOME:-\$HOME/.local/state}/harr-codex-scheduler
+  \${XDG_STATE_HOME:-\$HOME/.local/state}/harr-scheduler
 
 Remove that directory manually only if you also want to erase task history/logs.
 EOF

@@ -4,7 +4,7 @@ if(NOT DEFINED PORTABLE_SOURCE_DIR OR NOT DEFINED PORTABLE_BINARY OR
     message(FATAL_ERROR "Portable package variables are required")
 endif()
 
-set(NAME "harr-codex-scheduler-${PORTABLE_VERSION}-linux-${PORTABLE_ARCH}")
+set(NAME "harr-scheduler-${PORTABLE_VERSION}-linux-${PORTABLE_ARCH}")
 set(STAGE_PARENT "${CMAKE_CURRENT_BINARY_DIR}/portable")
 set(STAGE_ROOT "${STAGE_PARENT}/${NAME}")
 set(OUTPUT "${PORTABLE_OUTPUT_DIR}/${NAME}.tar.gz")
@@ -30,10 +30,10 @@ Runtime requirements on Ubuntu/Debian:
   sudo apt install at git libqt6core6t64 libqt6gui6t64 libqt6widgets6t64
   sudo systemctl enable --now atd
 
-OpenAI Codex CLI must be installed and available as `codex` in PATH.
+Agent CLIs must be installed and available in PATH: codex (codex tasks), zcode (zcode tasks).
 
 Run without installing:
-  ./harr-codex-scheduler
+  ./harr-scheduler
 
 CLI selectors:
   ./bin/sol

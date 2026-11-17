@@ -253,7 +253,7 @@ int runScheduleCli(const QStringList &args)
         else if (arg == "--agent-bin" || arg == "--codex-bin") { if (!next(req.agentBin)) return 2; }
         else if (arg == "--at-bin") { if (!next(req.atBin)) return 2; }
         else if (arg == "-h" || arg == "--help") {
-            QTextStream(stdout) << "Usage: harr-codex-scheduler schedule [--agent codex|zcode] --model MODEL (--at SPEC | --timestamp CCYYMMDDhhmm) --session ID --prompt TEXT [options]\n";
+            QTextStream(stdout) << "Usage: harr-scheduler schedule [--agent codex|zcode] --model MODEL (--at SPEC | --timestamp CCYYMMDDhhmm) --session ID --prompt TEXT [options]\n";
             return 0;
         } else {
             QTextStream(stderr) << "codex-schedule: unknown argument: " << arg << '\n';

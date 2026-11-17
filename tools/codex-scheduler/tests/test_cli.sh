@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-BIN=${HARR_CODEX_SCHEDULER_BIN:-"$ROOT/build/harr-codex-scheduler"}
+BIN=${HARR_SCHEDULER_BIN:-"$ROOT/build/harr-scheduler"}
 [[ -x "$BIN" ]] || { echo "test_cli: binary not found: $BIN" >&2; exit 1; }
 
 TMP=$(mktemp -d)
@@ -94,7 +94,7 @@ fi
 
 export AT_BIN="$TMP/bin/at" CODEX_BIN="$TMP/bin/codex" TTY_PATH="$TMP/tty"
 export FAKE_CODEX_CWD="$TMP/work" FAKE_CODEX_ARGS="$TMP/codex.args"
-export HARR_CODEX_SCHEDULER_BIN="$BIN"
+export HARR_SCHEDULER_BIN="$BIN"
 
 run_wrapper() {
   local selector=$1 expected_model=$2

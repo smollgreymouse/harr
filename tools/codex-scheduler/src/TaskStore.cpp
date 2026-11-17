@@ -51,6 +51,15 @@ std::optional<QJsonObject> readJsonObject(const QString &path)
 
 TaskStore::TaskStore(QString root) : m_root(root.isEmpty() ? stateRootPath() : std::move(root))
 {
+    // 0.3.x kept task state under the harr-codex-scheduler directory; move
+    // it once so upgrading users keep their tasks, jobs and UI state.
+    if (root.isEmpty() && !QFileInfo::exists(m_root)) {
+        const QString legacy = legacyStateRootPath();
+        if (QFileInfo::exists(legacy)) {
+            QDir().mkpath(QFileInfo(m_root).absolutePath());
+            QDir().rename(legacy, m_root);
+        }
+    }
     QDir().mkpath(tasksDir());
     QDir().mkpath(jobsDir());
 }

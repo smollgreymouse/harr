@@ -90,7 +90,14 @@ QString stateRootPath()
 {
     QString base = qEnvironmentVariable("XDG_STATE_HOME");
     if (base.isEmpty()) base = QDir::home().filePath(".local/state");
-    return QDir(base).filePath("harr-codex-scheduler");
+    return QDir(base).filePath("harr-scheduler");
+}
+
+QString legacyStateRootPath()
+{
+    QString base = qEnvironmentVariable("XDG_STATE_HOME");
+    if (base.isEmpty()) base = QDir::home().filePath(".local/state");
+    return QDir(base).filePath(LEGACY_STATE_DIR);
 }
 
 static QString textFromContent(const QJsonValue &content)
