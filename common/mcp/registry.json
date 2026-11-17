@@ -327,5 +327,14 @@
         }
       }
     }
-  ]
+  ],
+  "providers": {
+    "gitlab-official": {
+      "label": "GitLab Official MCP",
+      "description": "GitLab official remote MCP at <host>/api/v4/mcp; requires a credential profile whose secret is a token with the mcp scope (sent as Authorization: Bearer)",
+      "transport": "http",
+      "profile_endpoint": true,
+      "lifecycle": "on-demand"
+    }
+  }
 }
