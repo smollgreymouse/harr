@@ -1,10 +1,24 @@
 # Project-scoped MCP adapter layer
 
-Status: design proposal
+Status: verified contract (stage 4 of docs/project-mcp-adapters-execution-plan.md)
+
+This revision replaces the earlier canonical-adapter proposal. The verified
+LeanCTX gateway contract (stage 1) makes a normalizing adapter layer unnecessary:
+each provider instance already exposes its **native** tool surface under a
+qualified name, with lazy launch and per-instance routing. A common semantic
+API across providers is **explicitly not a goal of this layer**; a semantic
+facade may exist later as a separate, clearly named layer on top.
+
+Evidence for every runtime property referenced below:
+`docs/mcp-adapter-gate-evidence.md` (stage 1),
+`docs/mcp-adapter-provider-matrix.md` (stage 2), stage 3 notes in
+`docs/mcp-adapter-gate-evidence.md` (secret store). Unverified properties are
+marked **BLOCKER** and must not be presented as supported behavior.
 
 ## Problem
 
-Harr currently has a global MCP catalog, a global selection, and one generated effective registry:
+Harr has a global MCP catalog, a global selection, and one generated effective
+registry:
 
 ```text
 common/mcp/registry.json
@@ -16,612 +30,265 @@ common/mcp/registry.json
 ~/.config/harr/mcp-registry.json
         |
         v
-LeanCTX gateway
+LeanCTX gateway ([[gateway.servers]])
         |
-        +-- codegraph
-        +-- gitlab
-        +-- grafana
-        +-- ...
+        +-- codegraph, gitlab, grafana, kibana, jira, redash ...
 ```
 
-That works while a logical integration has one Harr-selected implementation. It breaks when a project wants to keep Harr but replace one integration with a project-specific implementation.
+That works while a logical integration has exactly one Harr-selected
+implementation and one global credential. It breaks when a project needs a
+second instance of the same vendor (e.g. GitLab official remote MCP next to the
+Harr-managed zereight server), a project-specific endpoint, or its own MCP.
 
-Concrete example: Harr can provide GitLab itself, while a project can use GitLab's official remote MCP. Those implementations may differ in transport, authentication, tool names, schemas, versions, and available tools.
+## Verified gateway contract (stage 1)
 
-Desired invariant:
+Measured on deployed LeanCTX `3.11.0-harr-unified.7` (`rust/src/core/mcp_catalog/`):
 
-> Harr policy addresses a stable logical MCP contract. Project configuration selects the provider behind that contract.
+1. **Lazy launch.** A cold MCP session starts zero upstream processes; the plain
+   `tools/list` surface is static (`ctx_*` tools only). Upstreams start only
+   when the agent touches the gateway.
+2. **Qualified native names.** The catalog namespaces each downstream tool as
+   `<instance>::<tool>`; handles are collision-free deduplicated by the
+   catalog. Names, descriptions and arguments pass through unmodified; the
+   gateway never renames a native tool.
+3. **Per-instance routing.** `ctx_tools call <instance>::<tool>` resolves the
+   instance config, opens/uses exactly that instance's pooled session, and
+   never falls back to another instance or credential. Unknown or disabled
+   instance -> error. A downstream failure surfaces verbatim; calls are never
+   auto-retried (non-idempotent tools).
+4. **Discovery fan-out (accepted cost).** `ctx_tools find`/`list`/`refresh`
+   build the catalog by connecting to every enabled instance once per TTL
+   (default 300 s, single-flight). The project overlay therefore controls the
+   enabled set; per-instance laziness is guaranteed on the direct-call path.
+5. **Dynamic refresh.** TTL cache + `ctx_tools refresh` (`catalog::invalidate()`
+   clears cache and session pool). Config is re-read per `ctx_tools` action, so
+   enable/disable changes apply to live sessions on the next action; secret
+   *values* are process-start env (`LEAN_CTX_SECRET_*`) and require a new
+   session (documented limitation).
+6. **Secret discipline.** Gateway config stores memento ids only;
+   `resolve()` is fail-closed (missing memento -> instance unavailable, error
+   surfaced); pool identity uses blake3 fingerprints (rotation changes the
+   pool key); HTTP secret headers are marked sensitive; debug renders redact.
 
-## Goals
+Known gaps (BLOCKER until closed, additive upstream work):
+full `inputSchema`/`annotations` are not visible to the agent (compact
+`params` summary only); `structuredContent`/images are flattened to text by
+`result_to_text`; no downstream `tools/list_changed` propagation.
 
-1. Keep the agent-visible Harr namespace stable, for example `gitlab::*`.
-2. Allow a project to override selected Harr MCP integrations without changing the global Harr installation.
-3. Keep global Harr defaults when a project does not opt in.
-4. Support providers with different MCP transports and tool schemas.
-5. Keep project configuration safe to commit: no secrets or arbitrary executable commands.
-6. Preserve cwd/project affinity so two agents in two repositories can use different providers concurrently.
-7. Keep behavior host-independent across Codex and OpenCode.
-8. Leave room for later per-tool routing without requiring it in v1.
+## Entities
 
-## Proposed model
+### Provider definition (Harr-owned)
 
-Introduce three concepts:
+As today in `common/mcp/registry.json`: transport (`stdio` via the Harr runner,
+or `http`), runtime, doctor probe, secret metadata (memento id, secret file,
+target env/header). Projects never define runtimes or executable commands.
+
+### Provider instance
+
+A named, addressable deployment of a provider definition:
 
 ```text
-logical adapter        provider implementation       project binding
----------------        -----------------------       ---------------
-gitlab            -->  harr                     <-- global default
-                  -->  official                 <-- project override
+name        unique across the effective registry ("gitlab", "gitlab-official")
+provider    Harr provider definition id ("gitlab")
+config      non-secret parameters (endpoint, toolsets) — Harr definition or
+            user-local profile, never repository-supplied for known providers
+profile     credential binding (see below)
+source      global-selection | project-overlay | project-extension
 ```
 
-### Logical adapter
+The instance name is the gateway `[[gateway.servers]]` name and the
+`<instance>::` qualifier. Harr validates uniqueness; two instances of one
+vendor keep their distinct native surfaces side by side (verified: same-vendor
+instances never share a pool session; the pool is keyed by resolved transport).
 
-A logical adapter is the stable MCP contract exposed to LeanCTX and the agent.
+### Native tool surface
 
-For GitLab, the agent always sees:
+Whatever the instance's `tools/list` actually returns, visible as
+`<instance>::<tool>`. Tools missing from one provider stay visible only on the
+provider that has them (stage 2: zereight exposes 216 annotated tools; the
+official GitLab remote surface is a BLOCKER pending one-time interactive OAuth
+— PAT as Bearer/PRIVATE-TOKEN is rejected by `/api/v4/mcp`).
+
+### Credential profile (user-local)
+
+A binding record — no secret bytes:
 
 ```text
-gitlab::<canonical-tool>
+~/.config/harr/mcp-profiles/<profile-id>.json
+{
+  "schema": 1,
+  "id": "gitlab-official/prod",
+  "provider": "gitlab",
+  "kind": "http",
+  "endpoint": "https://gitlab.example.com/api/v4/mcp",
+  "secret": { "file": "gitlab-official-pat", "memento_id": "mcp/gitlab/official" },
+  "state": "enabled",
+  "bound_projects": ["<project-key>"]
+}
 ```
 
-Global Harr policy refers only to that logical contract. It never asks the model to choose between multiple GitLab MCP servers.
+Properties (stage 3): stable id; separate secret reference; explicit binding
+to provider instance/account and one approved endpoint; shared use across
+projects only via explicit `bound_projects` entries; rotation = overwrite of
+the referenced secret value (atomic tmp+rename), reference unchanged;
+`disable` blocks new calls (no export, resolve fail-closed); provider-side
+revocation is a separate operation outside Harr; logs carry safe ids and
+redacted reasons only.
 
-### Provider
+### Project overlay (committed, untrusted)
 
-A provider is an implementation behind an adapter.
-
-For GitLab:
-
-```text
-gitlab/harr
-    current Harr-managed GitLab MCP
-
-gitlab/official
-    GitLab official remote MCP
-    https://<gitlab-host>/api/v4/mcp
-```
-
-Provider definitions are Harr-owned and versioned with Harr. Projects may select and parameterize a provider, but cannot define arbitrary executable providers.
-
-### Project binding
-
-Proposed committed file:
-
-```text
-.harr/mcp.json
-```
-
-Example:
+`.harr/mcp.json` in the project — the nearest ancestor wins:
 
 ```json
 {
   "schema": 1,
-  "adapters": {
-    "gitlab": {
-      "enabled": true,
-      "provider": "official",
-      "url": "https://gitlab.example.com/api/v4/mcp"
-    }
-  }
-}
-```
-
-A project can also explicitly disable an adapter inherited from the global profile:
-
-```json
-{
-  "schema": 1,
-  "adapters": {
-    "gitlab": {
-      "enabled": false
-    }
-  }
-}
-```
-
-No project file means the global/default provider.
-
-The nearest ancestor `.harr/mcp.json` wins, so starting an agent from a project subdirectory is deterministic.
-
-## Runtime architecture
-
-Do not rewrite global LeanCTX configuration per project.
-
-Instead, make the public MCP entry an adapter process:
-
-```text
-Codex / OpenCode
-       |
-       v
-    LeanCTX
-       |
-       v
- gitlab adapter                 cwd inherited from agent
-       |
-       +---- resolve nearest .harr/mcp.json
-       |
-       +---- no binding -------------> provider: harr
-       |
-       +---- project binding --------> provider: official
-```
-
-The adapter starts on demand and inherits cwd. Provider selection is therefore session/project-local and concurrent projects do not race on a global generated config.
-
-## Registry model
-
-The registry should distinguish a public adapter from internal provider backends.
-
-Illustrative shape:
-
-```json
-{
-  "name": "gitlab",
-  "label": "GitLab",
-  "required": false,
-  "adapter": {
-    "default_provider": "harr",
-    "providers": {
-      "harr": {
-        "kind": "managed",
-        "backend": "gitlab-harr"
-      },
-      "official": {
-        "kind": "gitlab-official",
-        "url_parameter": true
-      }
-    }
-  }
-}
-```
-
-The current implementation-specific GitLab server becomes an internal backend such as `gitlab-harr` and must not appear in LeanCTX discovery.
-
-## Adapter contract
-
-The adapter is:
-
-- an MCP server toward LeanCTX;
-- an MCP client toward the selected provider.
-
-For v1 it only needs the tools surface Harr uses:
-
-```text
-initialize
-tools/list
-tools/call
-```
-
-Resources/prompts can be added later.
-
-### Canonical tools
-
-Provider implementations may differ. Each provider therefore has a Harr-owned mapping to a canonical tool contract.
-
-Conceptually:
-
-```text
-canonical tool                 provider tool
---------------                 -------------
-create_merge_request     --->  create_merge_request
-get_merge_request        --->  get_merge_request
-...
-```
-
-A mapping can be:
-
-1. identity;
-2. tool rename;
-3. explicit argument/result transform.
-
-Transforms are code owned by Harr, never code from the project repository.
-
-This is the key reason to have an adapter layer instead of merely replacing a URL in the effective registry.
-
-### Provider-specific tools
-
-Initially expose only canonical tools.
-
-Later, if useful, extra provider tools can be surfaced with an unmistakable name such as:
-
-```text
-gitlab::provider__<tool>
-```
-
-That avoids silently changing the stable contract.
-
-## Official GitLab provider
-
-GitLab's official MCP is a remote HTTP server at:
-
-```text
-https://<gitlab-host>/api/v4/mcp
-```
-
-It uses OAuth 2.0 Dynamic Client Registration. Harr should not implement generic OAuth itself in v1.
-
-Recommended approach: the official provider uses a pinned Harr-owned OAuth-capable MCP client/bridge such as `mcp-remote`. Project config supplies only the non-secret endpoint.
-
-A later explicit command can own auth UX:
-
-```text
-harr mcp auth gitlab
-```
-
-Authentication state stays local and is never committed into `.harr/mcp.json`.
-
-## Project-owned MCP extensions
-
-Not every project MCP corresponds to a Harr-known logical adapter. A project may need a completely private/custom MCP whose contract Harr does not know and should not pretend to normalize.
-
-Keep this separate from adapters:
-
-```text
-adapters
-    Harr-known logical contracts
-    stable namespace
-    provider substitution / normalization
-
-extensions
-    project-owned MCPs
-    no Harr canonical contract
-    own namespace exposed through LeanCTX
-```
-
-Example project manifest:
-
-```json
-{
-  "schema": 1,
-  "adapters": {
-    "gitlab": {
-      "enabled": true,
-      "provider": "official",
-      "url": "https://gitlab.example.com/api/v4/mcp"
-    }
+  "instances": {
+    "gitlab-official": {
+      "provider": "gitlab-official",
+      "profile": "gitlab-official/prod"
+    },
+    "gitlab": { "enabled": false }
   },
   "extensions": {
-    "company-search": {
-      "enabled": true,
-      "transport": "http",
-      "url": "https://mcp.example.com/search"
-    }
+    "company-search": { "transport": "http", "url": "https://mcp.example.com/search" }
   }
 }
 ```
 
-The agent then sees both stable Harr adapters and project-owned namespaces:
+Validation is fail-closed. Allowed: select instances of Harr-defined providers;
+enable/disable any instance (overlay semantics below); bind a profile by id;
+declare `http` extensions after trust. Forbidden: raw secrets or secret paths,
+arbitrary commands/args/env, shell fragments, endpoint override for
+profile-bound instances (the endpoint comes from the profile), unbound
+references to existing user secrets.
+
+Overlay precedence (unchanged from the previous revision):
+
+- global disabled + no project entry -> disabled;
+- global disabled + project enabled -> enabled for that project;
+- global enabled + project disabled -> disabled for that project;
+- global enabled + project selects another instance -> that instance.
+
+## Runtime
+
+The Harr LeanCTX wrapper already launches one gateway process per agent
+session and preserves cwd. `exec-leanctx` extends that startup path:
 
 ```text
-gitlab::...
-company-search::...
+resolve nearest .harr/mcp.json from cwd
+        |
+        +-- none --------------------> global config as today (byte-identical
+        |                              behavior; existing setups keep working)
+        |
+        +-- overlay present ----------> trust check (digest + user-local approval)
+            untrusted ----------------> fail closed: project overlay ignored,
+                                        safe ids reported, global defaults only
+            trusted ------------------> effective registry =
+                                          global selection + overlay instances
+                                          + trusted extensions
+                                        render session config to
+                                          ~/.config/harr/mcp-sessions/<cache-key>/
+                                          (LEAN_CTX_CONFIG_DIR override)
+                                        export LEAN_CTX_SECRET_* only for secret
+                                          ids referenced by the rendered config
 ```
 
-Harr does not invent a canonical contract for `company-search`. Its `tools/list` surface is whatever that MCP actually exposes.
+Cache key = hash(project root, registry digest, overlay digest, profile states,
+trust revision). Any instance-config or credential-binding change produces a
+new key: new sessions deterministically pick up the change (invalidation by
+construction), running sessions honor enable/disable on the next `ctx_tools`
+action, and secret-value rotation requires a new session (both documented).
 
-Project extensions may coexist with adapter overrides. They are different mechanisms and should remain different in the schema.
+The global generated config keeps its current meaning; `harr leanctx apply` is
+unchanged. `run_server` strips `LEAN_CTX_SECRET_*` from child environments so
+the real upstream process receives only its own wired credential (defense in
+depth on top of the gateway's per-wiring `secret_env`/`secret_headers`).
 
-### Project effective registry
+## Trust model
 
-The current globally generated effective registry should no longer be the final runtime registry once project overlays exist.
+Project MCP configuration is repository-controlled input — executable
+capability configuration even without shell script (endpoints, process
+launches).
 
-Treat the layers as:
-
-```text
-Harr catalog
-      |
-      +-- global Harr profile / defaults
-      |
-      +-- nearest trusted project .harr/mcp.json
-      |
-      +-- local user state (trust/auth/secrets)
-      v
-session effective registry
-      |
-      v
-session LeanCTX config
-```
-
-The Harr LeanCTX wrapper already starts a process for the current agent/session and preserves cwd. Extend that startup path to resolve the project overlay and render a per-session (or project-cache-keyed) LeanCTX config rather than rewriting the global LeanCTX config.
-
-This is important because project extensions introduce names that cannot be known when Harr is installed globally.
-
-Example concurrent sessions:
-
-```text
-/work/a/.harr/mcp.json
-  gitlab -> official
-  extensions: company-search
-
-/work/b/.harr/mcp.json
-  gitlab -> harr
-  extensions: internal-db
-
-session A LeanCTX             session B LeanCTX
-----------------             ----------------
-gitlab                        gitlab
-company-search                internal-db
-```
-
-No global mutation or race is required.
-
-### Extension runtime classes
-
-Support external project MCPs by transport class.
-
-#### Remote HTTP
-
-A remote MCP can be declared with a URL and limited transport metadata.
-
-The project manifest must not contain inline credentials. Authentication is user-local.
-
-#### Stdio/local process
-
-A local project MCP is fundamentally code execution. Supporting it is useful, but it must not become automatic execution of arbitrary repository-controlled commands.
-
-The design should permit stdio extensions only behind explicit local trust. The project may declare the desired runtime, but Harr must not execute it until the user has trusted the current project MCP manifest.
-
-A future schema can support constrained runtime descriptors such as pinned npm/uvx packages or, after trust, an explicit local command. The exact runtime schema belongs to implementation design, not to the initial adapter contract.
-
-## Project trust model
-
-Because a project overlay can add network endpoints, enable integrations, and eventually start local MCP processes, `.harr/mcp.json` is executable-capability configuration even when it contains no shell script.
-
-Use a direnv-like trust model:
-
-1. resolve the nearest project MCP manifest;
-2. compute a digest of the relevant project MCP configuration;
-3. look for a matching approval in user-local Harr state;
-4. if the digest changed, treat the project MCP overlay as untrusted until explicitly approved;
-5. never store trust approval in the repository.
-
-Suggested commands:
-
-```text
-harr mcp project status
-harr mcp project trust
-harr mcp project revoke
-```
-
-Suggested local state:
-
-```text
-~/.config/harr/projects/<project-key>/
-  trust.json
-  auth/
-  secrets/
-```
-
-Trust applies to the project MCP manifest, not to arbitrary repository contents.
-
-This also protects known adapter overrides: a malicious repository must not be able to redirect a Harr-known GitLab adapter to an attacker-controlled endpoint merely by adding `.harr/mcp.json`.
-
-### Secrets for project MCPs
-
-A project manifest may declare that an extension/provider needs a credential, but must not contain the value.
-
-Do not allow a repository to freely reference arbitrary pre-existing Harr secrets by name: that would let an untrusted project attach a user's existing secret to a hostile MCP endpoint.
-
-Secret binding must be created/approved in user-local project state after trust, for example through a future command:
-
-```text
-harr mcp project secret set company-search token
-```
-
-The session effective registry then maps that local project secret into LeanCTX memento/secret headers or the stdio process environment.
-
-## Security boundary
-
-Project MCP configuration is repository-controlled input and must be treated as untrusted.
-
-Allowed:
-
-- select a provider from a Harr-owned allowlist;
-- set documented non-secret provider parameters such as an HTTPS endpoint;
-- select Harr-defined toolsets/profiles.
-
-Forbidden:
-
-- arbitrary commands or executable paths;
-- arbitrary args;
-- arbitrary environment injection;
-- secrets or secret paths;
-- arbitrary adapter code;
-- shell fragments.
-
-For the official GitLab provider, require HTTPS by default. A local-development exception, if needed, should be explicit rather than inferred.
-
-## Configuration precedence
-
-Recommended precedence:
-
-```text
-Harr adapter/provider catalog
-        <
-global Harr selection + provider defaults
-        <
-project .harr/mcp.json overlay
-        <
-explicit one-shot diagnostic override (future)
-```
-
-The project layer is a true overlay, not merely a provider selector. It can change `enabled`, `provider`, and provider-specific non-secret parameters. Omitted fields inherit from the lower layer.
-
-Project configuration has higher precedence than the global Harr selection and may explicitly enable, disable, or replace an adapter for that project.
-
-Therefore:
-
-- globally disabled `gitlab` + no project binding -> disabled;
-- globally disabled `gitlab` + project binding with `enabled: true` -> enabled for that project;
-- globally enabled `gitlab` + project binding with `enabled: false` -> disabled for that project;
-- globally enabled `gitlab` + project binding selecting another provider -> enabled with the project provider.
-
-The global selection is the default profile, not a hard permission boundary. The project overlay is the final effective configuration for sessions rooted in that project.
-
-## Project root resolution
-
-At adapter startup:
-
-1. begin at inherited cwd;
-2. walk parent directories;
-3. use the nearest `.harr/mcp.json`;
-4. otherwise use the global default.
-
-Do not use Git commands for this resolution. Harr already preserves cwd for downstream MCPs.
+1. Resolve the nearest project manifest; compute a digest of the effective
+   project MCP configuration; look up a matching approval in user-local state
+   (`~/.config/harr/projects/<project-key>/trust.json`); digest change -> untrusted
+   until explicitly approved. Trust never lives in the repository.
+2. HTTP endpoints: HTTPS required (plain HTTP only for explicit loopback
+   exceptions). Profile-bound instances pin the endpoint; the overlay cannot
+   move a credential to a new endpoint because the endpoint travels with the
+   profile, not with the repository. Redirects: the pinned endpoint is the
+   origin; a redirect must not become a credential carrier — BLOCKER: verify
+   the gateway's streamable-HTTP client behavior on cross-origin redirects
+   before enabling profile-bound HTTP instances against redirecting servers.
+3. Stdio: known providers run only through the Harr runner
+   (`harr-mcp-run <name>`) — repository input never becomes a command line.
+   Project-owned stdio extensions are out of scope for v1 (they are arbitrary
+   code execution; a later schema may allow pinned packages behind explicit
+   trust).
+4. Credentials flow only to the instance they are bound to: gateway
+   `secret_env`/`secret_headers` resolve per server wiring (verified), export
+   is scoped to rendered instances (new), child env is sanitized (new), and
+   the overlay cannot reference a secret that is not bound through a profile
+   the user approved for this project.
 
 ## Failure semantics
 
-A configured project provider must fail closed.
-
-Example:
+Fail closed, never fall back:
 
 ```text
-gitlab adapter: project provider "official"
-gitlab adapter: endpoint https://gitlab.example.com/api/v4/mcp
-gitlab adapter: authentication required; run: harr mcp auth gitlab
+gitlab-official: authentication required; run: harr mcp auth gitlab-official
+gamma: missing secret memento 'mcp/test/missing' for 'GAMMA_TOKEN'
 ```
 
-Never silently fall back from an explicitly configured project provider to the Harr provider. That could execute a write against the wrong GitLab identity or instance.
+A project-selected provider failing does not reroute to the global provider or
+another credential — an explicit no-binding means global default, an explicit
+binding means exactly that binding (verified in stage 1/2: no retry, no
+fallback, verbatim errors, session eviction on broken transport).
 
-No project binding is different: it intentionally means use the global default.
-
-## Diagnostics
-
-Add project-aware resolution diagnostics:
+## Diagnostics and commands
 
 ```text
-harr mcp resolve
-harr mcp resolve gitlab
+harr mcp resolve [NAME]          # nearest overlay, effective instances, source
+harr mcp project status|trust|revoke
+harr mcp profile list|set|disable|enable   # user-local credential bindings
+harr secret set|unset|status     # secret values (rotation), unchanged UX
 ```
 
-Example:
+Diagnostics never contact or authenticate to providers and never print secret
+material.
 
-```text
-project: /work/my-project
-config:  /work/my-project/.harr/mcp.json
+## Explicitly out of scope for this layer
 
-adapter     enabled   provider   source
-gitlab      yes       official   project
-grafana     yes       harr       global-default
-```
-
-Resolution diagnostics must not contact or authenticate to the remote provider.
-
-`harr status` may include the resolved binding when run inside a project, clearly separated from global selection.
-
-## Per-tool routing
-
-Reserve the architecture for it, but do not implement it in v1.
-
-Possible future form:
-
-```json
-{
-  "schema": 2,
-  "adapters": {
-    "gitlab": {
-      "provider": "harr",
-      "routes": {
-        "get_project": "official",
-        "get_merge_request": "official"
-      }
-    }
-  }
-}
-```
-
-Reasons to start with whole-adapter replacement:
-
-- write operations across identities or instances are dangerous;
-- identifiers can differ between providers;
-- schemas need canonicalization first;
-- whole-adapter replacement solves the immediate project override problem.
-
-Once the canonical contract is proven, per-tool routing becomes a routing-table extension instead of an architectural rewrite.
+- A common semantic API across providers (no canonical tool mapping, no
+  renames, no argument/result transforms). If a facade is ever needed it will
+  be a separate, clearly named layer above native surfaces.
+- Per-tool routing across instances (reserved for a later schema; whole-instance
+  selection first).
+- Project-owned stdio extensions (arbitrary code execution).
+- OAuth acquisition UX for the official GitLab remote MCP — BLOCKER: needs the
+  interactive browser flow (`lean-ctx addon auth`); headless PAT auth is
+  rejected by the endpoint (stage 2).
 
 ## Implementation phases
 
-### Phase 1: project resolution
+1. Overlay resolution + validation + trust state (fail-closed, no runtime yet).
+2. Session effective registry + per-session gateway render + scoped secret
+   export + child env sanitization.
+3. Profile store + binding validation + atomic rotation.
+4. Diagnostics commands + acceptance tests (stage 6 of the execution plan).
 
-- parser/validator for `.harr/mcp.json`;
-- nearest-project resolution;
-- provider selection model;
-- `harr mcp resolve`;
-- tests for precedence, malformed config, security, and concurrent cwd roots.
+## Tests required (stage 6)
 
-No proxy runtime yet.
-
-### Phase 2: adapter runtime
-
-- small Harr-owned MCP server/client;
-- public `gitlab` adapter namespace;
-- current Harr provider behind it;
-- identity/canonical mapping for GitLab tools;
-- switch LeanCTX from direct backend to adapter.
-
-Without project config, behavior must remain unchanged.
-
-### Phase 3: official GitLab provider
-
-- official provider type;
-- pinned OAuth-capable transport;
-- project endpoint parameter;
-- explicit auth/status flow;
-- canonical tool mapping;
-- mock remote MCP integration tests.
-
-### Phase 4: generalization
-
-- generic adapter/provider interfaces;
-- migrate Grafana, Elasticsearch, and future integrations only where multiple providers are useful;
-- optional provider-specific passthrough tools;
-- optional per-tool routing.
-
-## Tests required
-
-1. No project config preserves current GitLab behavior.
-2. Project config selects a different provider only for that cwd tree.
-3. Two simultaneous project roots can resolve different providers.
-4. Child directory resolves nearest parent config.
-5. Unknown provider/malformed config fails closed.
-6. Project config cannot define command/env/secret.
-7. Project config can enable a globally disabled adapter and disable a globally enabled adapter.
-8. Provider failure never silently falls back.
-9. Canonical tool mapping keeps the same agent-visible name.
-10. Shared resolver behaves identically on Linux/macOS/Windows.
-
-## Alternatives rejected
-
-### Rewrite the effective registry per project
-
-Not sufficient. It does not normalize provider tool contracts, and a single global generated registry cannot represent concurrent projects safely.
-
-### Expose both providers and let the model choose
-
-Not acceptable. It increases tool/context surface, makes routing probabilistic, and is especially unsafe for writes.
-
-### Raw project-defined MCP server objects
-
-Not acceptable. A cloned repository would become a source of arbitrary commands, env injection, and network endpoints outside Harr's ownership.
-
-### Host-specific project MCP config
-
-Not acceptable. It would fork behavior between Codex and OpenCode and undermine Harr as the common layer.
-
-## Proposed first decision
-
-Implement v1 around two invariants:
-
-> One Harr logical MCP adapter name -> one selected provider per project/session.
-
-> Project-owned MCPs -> independent extension namespaces in the session effective registry.
-
-For GitLab:
-
-```text
-agent sees: gitlab::*
-default:    Harr-managed GitLab provider
-override:   official GitLab remote provider
-selection:  .harr/mcp.json
-```
-
-Do not mix providers per tool until the canonical GitLab contract and provider mapping are proven.
+1. Two instances of one vendor enabled together keep distinct tool sets.
+2. Different providers keep distinct schemas/results; a missing tool is not
+   masked by a stub.
+3. Cold start starts no upstream; discovery starts only the enabled set; a
+   direct call reaches exactly the addressed instance (same session reuse).
+4. Overlay with unknown instance, name conflict, inline secret, or unapproved
+   endpoint is rejected.
+5. A credential from profile A never reaches instance B — including 401/403,
+   timeout, or same-domain cases.
+6. Rotation and disable invalidate the session config (new cache key) and
+   leave no secrets in logs, diagnostics, or serialized overlays.
+7. No project overlay: global configurations keep working unchanged.
