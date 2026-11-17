@@ -148,7 +148,10 @@ with tempfile.TemporaryDirectory() as tmp:
     raw.write_text("{{{", encoding="utf-8")
     expect_error(overlay.ProjectOverlayError, overlay.load_manifest, raw)
 
-    assert overlay.find_manifest(root / "cases" / "command") == root / "cases" / "command" / ".harr" / "mcp.json"
+    # find_manifest resolves symlinks (macOS /var -> /private/var), so compare
+    # resolved paths on both sides.
+    expected_manifest = (root / "cases" / "command" / ".harr" / "mcp.json").resolve()
+    assert overlay.find_manifest(root / "cases" / "command") == expected_manifest
     with tempfile.TemporaryDirectory() as empty:
         assert overlay.find_manifest(Path(empty) / "deeper" / "dir") is None
 
