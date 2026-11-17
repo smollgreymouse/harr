@@ -131,3 +131,14 @@
 официальный GitLab MCP требует интерактивной OAuth-авторизации (`lean-ctx addon auth`),
 headless PAT отклонён эндпоинтом (этап 2); поведение streamable-HTTP клиента при
 cross-origin redirect до включения profile-bound HTTP-инстансов требует проверки.
+
+## ПОПРАВКА к этапу 2 (17.11.2026, после отката мержа)
+
+Первоначальный вывод «официальный GitLab MCP — OAuth-only, PAT отвергается» был ошибочен:
+он сделан на переходящем серверном окне 401 (REST тем же Bearer-токеном: 401 в
+21:36–21:44, затем стабильно 200 (10/10) в 21:45+; бисекция заголовков/HTTP-версий/IPv4
+и тест вне сандбокса разницы не дали — отказ на стороне GitLab). Фактическая причина
+отказа MCP-эндпоинта на текущем PAT `bluemouse-harr` — отсутствие scope `mcp`
+(challenge: `scope="mcp"`); REST тем же токеном работает. Ожидаемый путь: PAT со
+scope `mcp` через профиль (`secret_headers` Authorization Bearer); OAuth DCR —
+альтернатива. Полная хронология: `docs/mcp-adapter-execution-log.md`.

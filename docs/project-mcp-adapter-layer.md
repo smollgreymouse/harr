@@ -266,9 +266,12 @@ material.
 - Per-tool routing across instances (reserved for a later schema; whole-instance
   selection first).
 - Project-owned stdio extensions (arbitrary code execution).
-- OAuth acquisition UX for the official GitLab remote MCP — BLOCKER: needs the
-  interactive browser flow (`lean-ctx addon auth`); headless PAT auth is
-  rejected by the endpoint (stage 2).
+- OAuth acquisition UX for the official GitLab remote MCP — CORRECTED: the endpoint
+  accepts Bearer tokens but requires the `mcp` scope (challenge `scope="mcp"`);
+  the current Harr PAT lacks it. Expected path: a PAT with the `mcp` scope bound
+  through a credential profile; OAuth DCR (`lean-ctx addon auth`) is the fallback,
+  not a hard requirement. Initial "OAuth-only" conclusion came from a transient
+  GitLab-side 401 window — see `docs/mcp-adapter-execution-log.md`.
 
 ## Implementation phases
 
