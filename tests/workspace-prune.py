@@ -133,6 +133,9 @@ with tempfile.TemporaryDirectory(prefix="harr-workspace-prune-") as raw:
     unknown = directory / "keep-me.txt"
     unknown.write_text("not a managed store member", encoding="utf-8")
 
+    # No session has started yet, so the stable lifecycle lock must be free.
+    with manager.workspace_lifecycle_lock(exclusive=True):
+        pass
     code, result = run_prune(config, full_reset=False)
     assert code == 0, result
     results = {item["store"]: item for item in result["results"]}
