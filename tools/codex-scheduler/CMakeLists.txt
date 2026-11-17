@@ -31,6 +31,7 @@ set(SCHEDULER_SOURCES
     src/main.cpp
     src/Common.cpp
     src/TaskStore.cpp
+    src/AgentService.cpp
     src/CodexService.cpp
     src/ScheduleCore.cpp
     src/JobRunner.cpp
