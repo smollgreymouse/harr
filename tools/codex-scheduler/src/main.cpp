@@ -7,7 +7,9 @@
 #include "Widgets.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTextStream>
 #include <QtCore/QTimer>
@@ -130,6 +132,22 @@ int runSelfTest()
         if (agentExecIndex < 0 || !command.contains("--mode") || !command.contains("yolo")) return 22;
     }
 
+    {
+        // 0.3.x task state migrates once into the harr-scheduler root.
+        const QString legacyBase = temp.path() + "/legacy-xdg";
+        QDir().mkpath(legacyBase + "/harr-codex-scheduler/tasks");
+        qputenv("XDG_STATE_HOME", legacyBase.toLocal8Bit());
+        const bool written = harr::writeJsonAtomic(
+            legacyBase + "/harr-codex-scheduler/tasks/old.json",
+            QJsonObject{{"id", "old"}, {"status", "draft"}});
+        harr::TaskStore migratedStore;
+        const bool loaded = migratedStore.load("old").has_value();
+        const bool oldGone = !QFileInfo::exists(legacyBase + "/harr-codex-scheduler/tasks/old.json");
+        qunsetenv("XDG_STATE_HOME");
+        if (!written || !loaded || !oldGone
+            || migratedStore.root() != legacyBase + "/harr-scheduler") return 23;
+    }
+
     harr::MainWindow window(&store);
     window.hide();
 
@@ -144,7 +162,7 @@ int runSelfTest()
     QTextStream(stdout) << "C++ scheduler self-test passed\n";
     return 0;
 }
-}
+} // namespace
 
 int main(int argc, char **argv)
 {

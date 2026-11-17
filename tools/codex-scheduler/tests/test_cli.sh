@@ -187,4 +187,86 @@ if "$ROOT/bin/codex-schedule" --model gpt-5.6-sol --reasoning high --speed stand
 fi
 grep -Fq -- '--cwd mismatch' "$TMP/mismatch.out"
 
+# --- ZCode agent -----------------------------------------------------------
+mkdir -p "$TMP/zwork"
+git init -q "$TMP/zwork"
+
+cat > "$TMP/bin/zcode" <<'EOF_ZCODE'
+#!/bin/sh
+set -eu
+if [ "${1:-}" = app-server ]; then
+  while IFS= read -r line; do
+    id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+    method=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
+    case "$method" in
+      session/list)
+        printf '{"id":%s,"result":{"sessions":[{"sessionId":"zactive","title":"Zed session","sessionKind":"interactive","status":"idle","updatedAt":500,"workspace":{"workspacePath":"%s","workspaceKey":"%s"}},{"sessionId":"zsub","title":"subagent","sessionKind":"subagent","status":"idle","updatedAt":600,"workspace":{"workspacePath":"%s"}}]}}\n' "$id" "$FAKE_ZCODE_CWD" "$FAKE_ZCODE_CWD" "$FAKE_ZCODE_CWD"
+        ;;
+      session/create)
+        printf '{"id":%s,"result":{"session":{"sessionId":"zactive"}}}\n' "$id"
+        ;;
+      session/setMode)
+        printf '{"id":%s,"result":{}}\n' "$id"
+        ;;
+      session/lifecycle/ensureReady)
+        printf '{"id":%s,"result":{"completed":true}}\n' "$id"
+        ;;
+      session/send)
+        printf '{"id":%s,"result":{"accepted":true}}\n' "$id"
+        printf '{"method":"state.updated","params":{"patch":{"status":"running"}}}\n'
+        printf '{"method":"v4/telemetry/event","params":{"kind":"turn.started"}}\n'
+        printf '{"method":"v4/telemetry/event","params":{"kind":"turn.terminal","status":"completed"}}\n'
+        ;;
+      session/read)
+        printf '{"id":%s,"result":{"messages":[{"info":{"role":"assistant","semantics":{"kind":"assistant_response"}},"parts":[{"type":"text","text":"z fake answer"}]}]}}\n' "$id"
+        ;;
+      *)
+        printf '{"id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$id"
+        ;;
+    esac
+  done
+  exit 0
+fi
+echo "unexpected zcode invocation: $*" >&2
+exit 2
+EOF_ZCODE
+chmod +x "$TMP/bin/zcode"
+export FAKE_ZCODE_CWD="$TMP/zwork" ZCODE_BIN="$TMP/bin/zcode"
+
+ZLIST=$($BIN session-list --agent zcode --codex-bin "$TMP/bin/zcode")
+grep -Fq 'zactive' <<<"$ZLIST"
+if grep -Fq 'zsub' <<<"$ZLIST"; then
+  echo 'subagent session leaked through zcode session-list' >&2
+  exit 1
+fi
+
+ZCWD=$($BIN session-cwd --agent zcode --session zactive --codex-bin "$TMP/bin/zcode")
+[[ "$ZCWD" == "$TMP/zwork" ]]
+
+ZTS=$(date -d '+1 day' +%Y%m%d%H%M)
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --session zactive \
+  --prompt 'Z task' --cwd "$TMP/zwork" --output "$TMP/zout.log"
+grep -Fq "'agent-exec'" "$TMP/at.job"
+grep -Fq "'--agent'" "$TMP/at.job"
+grep -Fq "'zcode'" "$TMP/at.job"
+sh "$TMP/at.job" >/dev/null
+
+ZTASK="$TMP/state/tasks/z-task.json"
+cat > "$ZTASK" <<EOF_ZTASK
+{"id":"z-task","status":"scheduled","agent":"zcode","mode":"yolo","cancel_requested":false,"log":"$TMP/state/jobs/z-task.jsonl"}
+EOF_ZTASK
+"$ROOT/bin/harr-schedule" --agent zcode --mode yolo --timestamp "$ZTS" --session zactive \
+  --prompt 'Z task 2' --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-task.jsonl" \
+  --save-answer "$TMP/zanswer.md" --task-state "$ZTASK"
+sh "$TMP/at.job" >/dev/null
+grep -Eq '"status"[[:space:]]*:[[:space:]]*"completed"' "$ZTASK"
+grep -Fq 'z fake answer' "$TMP/state/jobs/z-task.jsonl"
+grep -Fxq 'z fake answer' "$TMP/zanswer.md"
+
+assert_rejected_before_at bad_zcode_mode --agent zcode --mode bogus --session zactive \
+  --prompt p --cwd "$TMP/zwork" --timestamp "$ZTS" --output "$TMP/out.log"
+grep -Fq 'unsupported mode' "$TMP/bad_zcode_mode.out"
+
+unset ZCODE_BIN FAKE_ZCODE_CWD
+
 echo 'native C++ CLI scheduler tests passed'

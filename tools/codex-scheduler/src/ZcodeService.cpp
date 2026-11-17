@@ -214,10 +214,11 @@ std::optional<QJsonObject> ZcodeService::request(const QString &method, const QJ
             if (parse.error != QJsonParseError::NoError || !doc.isObject()) continue;
             const QJsonObject message = doc.object();
             if (!message.contains("id") || message.value("id").toInt(-1) != 1) {
-                // Server-to-client request: method-not-found triggers the
-                // server's compatibility fallback (documented behavior).
-                if (message.contains("method") && !message.contains("result")
-                    && !message.contains("error")) {
+                // Server-to-client request (id + method): method-not-found
+                // triggers the server's compatibility fallback. Notifications
+                // carry no id and are ignored.
+                if (message.contains("id") && message.contains("method")
+                    && !message.contains("result") && !message.contains("error")) {
                     const QJsonObject refusal{
                         {"id", message.value("id")},
                         {"error", QJsonObject{{"code", -32601}, {"message", "Method not found"}}}
@@ -248,7 +249,7 @@ std::optional<QJsonObject> ZcodeService::request(const QString &method, const QJ
             if (!proc.waitForFinished(1000)) proc.kill();
             return message.value("result").toObject();
         }
-        if (proc.state() == QProcess::NotRunning && pending.isEmpty()) break;
+        if (proc.state() == QProcess::NotRunning) break;
     }
     if (error) {
         *error = QString("timed out waiting for zcode app-server response (%1)").arg(method);
@@ -391,7 +392,9 @@ int ZcodeService::runTurn(const QString &session, const QString &prompt, const Q
     turnClock.start();
     QByteArray pending;
     auto readMessage = [&]() -> std::optional<QJsonObject> {
-        while (turnClock.elapsed() < TURN_TIMEOUT_MS && proc.state() != QProcess::NotRunning) {
+        while (true) {
+            // Drain complete lines already buffered, even while the server
+            // is shutting down behind us.
             while (true) {
                 const qsizetype newline = pending.indexOf('\n');
                 if (newline < 0) break;
@@ -402,15 +405,15 @@ int ZcodeService::runTurn(const QString &session, const QString &prompt, const Q
                 const QJsonDocument doc = QJsonDocument::fromJson(line, &parse);
                 if (parse.error == QJsonParseError::NoError && doc.isObject()) return doc.object();
             }
+            if (turnClock.elapsed() >= TURN_TIMEOUT_MS || proc.state() == QProcess::NotRunning)
+                return std::nullopt;
             proc.waitForReadyRead(250);
             pending += proc.readAllStandardOutput();
         }
-        return std::nullopt;
     };
-    // Wait for the response to a specific request id (pass a negative id to
-    // wait for the next terminal notification instead). Notifications are
-    // classified on the way; server-to-client requests are refused so the
-    // server applies its compatibility fallbacks.
+    // Wait for the response to a specific request id. Notifications are
+    // classified on the way; server-to-client requests (id + method) are
+    // refused so the server applies its compatibility fallbacks.
     auto waitResponse = [&](int id, QString *error, int timeoutMs) -> std::optional<QJsonObject> {
         QElapsedTimer step;
         step.start();
@@ -423,7 +426,8 @@ int ZcodeService::runTurn(const QString &session, const QString &prompt, const Q
                                  : QStringLiteral("timed out waiting for zcode app-server");
                 return std::nullopt;
             }
-            if (message->contains("method")) {
+            if (!message->contains("id")) {
+                // Notification: watch for an early terminal event.
                 const TurnTerminal terminal = classifyNotification(*message);
                 if (terminal.terminal) {
                     if (error && !terminal.message.isEmpty()) *error = terminal.message;
@@ -431,11 +435,15 @@ int ZcodeService::runTurn(const QString &session, const QString &prompt, const Q
                 }
                 if (!terminal.message.isEmpty())
                     emitEvent(QJsonObject{{"type", "status"}, {"message", terminal.message}});
-                if (!message->contains("result") && !message->contains("error"))
-                    refuse(*message);
                 continue;
             }
-            if (id >= 0 && message->value("id").toInt(-1) != id) continue;
+            if (message->contains("method") && !message->contains("result")
+                && !message->contains("error")) {
+                // Server-to-client request: refuse with method-not-found.
+                refuse(*message);
+                continue;
+            }
+            if (message->value("id").toInt(-1) != id) continue;
             if (message->contains("error")) {
                 const QJsonValue value = message->value("error");
                 QString detail;
@@ -444,11 +452,33 @@ int ZcodeService::runTurn(const QString &session, const QString &prompt, const Q
                 if (error) *error = detail;
                 return std::nullopt;
             }
-            if (id < 0) continue; // skip unrelated responses while event-waiting
             return message->value("result").toObject();
         }
         if (error) *error = QStringLiteral("timed out waiting for zcode app-server response");
         return std::nullopt;
+    };
+
+    // Drain notifications until the turn reaches a terminal event. Returns 0
+    // on a completed turn, 1 on failure, timeout or server exit.
+    auto waitForTurnEnd = [&](QString *errorText) -> int {
+        while (turnClock.elapsed() < TURN_TIMEOUT_MS && proc.state() != QProcess::NotRunning) {
+            auto message = readMessage();
+            if (!message) break;
+            if (!message->contains("method")) continue; // stray response
+            const TurnTerminal terminal = classifyNotification(*message);
+            if (terminal.terminal)
+                return terminal.failed ? 1 : 0;
+            if (!terminal.message.isEmpty())
+                emitEvent(QJsonObject{{"type", "status"}, {"message", terminal.message}});
+            if (message->contains("id") && !message->contains("result")
+                && !message->contains("error"))
+                refuse(*message);
+        }
+        if (errorText)
+            *errorText = proc.state() == QProcess::NotRunning
+                             ? QStringLiteral("zcode app-server exited during the turn")
+                             : QStringLiteral("zcode turn did not complete in time");
+        return 1;
     };
 
     emitEvent(QJsonObject{{"type", "status"}, {"message", "resuming session " + session}});
@@ -497,13 +527,9 @@ int ZcodeService::runTurn(const QString &session, const QString &prompt, const Q
     if (!accepted) return fail(error.isEmpty() ? QStringLiteral("zcode did not accept the prompt")
                                                : error);
 
-    // The turn is running; wait for its terminal notification. A nullopt
-    // here can mean either a terminal event (turnError filled by the
-    // classifier) or the deadline — fail() reports whichever applies.
+    // The turn is running; drain notifications until its terminal event.
     QString turnError;
-    auto done = waitResponse(-1, &turnError, TURN_TIMEOUT_MS);
-    if (!done) return fail(turnError.isEmpty() ? QStringLiteral("zcode turn did not complete")
-                                               : turnError);
+    if (waitForTurnEnd(&turnError) != 0) return fail(turnError);
 
     // Fetch the transcript and emit the final assistant message so the
     // saved answer and the task transcript stay complete.

@@ -95,21 +95,18 @@ public:
 
     QVector<QJsonObject> listModels(QString *error, const QString &agentBin) override
     {
-        Q_UNUSED(agentBin);
-        return ZcodeService::listModels(error);
+        return ZcodeService::listModels(error, agentBin);
     }
 
     QVector<QJsonObject> listSessions(QString *error, int limit, const QString &agentBin) override
     {
-        Q_UNUSED(agentBin);
-        return ZcodeService::listSessions(error, limit);
+        return ZcodeService::listSessions(error, limit, agentBin);
     }
 
     std::optional<QJsonObject> readSession(const QString &session, QString *error,
                                            const QString &agentBin) override
     {
-        Q_UNUSED(agentBin);
-        return ZcodeService::readSession(session, error);
+        return ZcodeService::readSession(session, error, agentBin);
     }
 
     QStringList execCommand(const AgentExecRequest &req, QString *error) override

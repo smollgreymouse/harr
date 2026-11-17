@@ -18,13 +18,13 @@ file(REMOVE "${OUTPUT}")
 file(MAKE_DIRECTORY "${STAGE_ROOT}/bin" "${PORTABLE_OUTPUT_DIR}")
 
 file(INSTALL DESTINATION "${STAGE_ROOT}" TYPE PROGRAM FILES "${PORTABLE_BINARY}")
-foreach(BIN_FILE codex-schedule codex-scheduler-ui sol terra luna)
+foreach(BIN_FILE harr-schedule codex-schedule codex-scheduler-ui sol terra luna)
     file(INSTALL DESTINATION "${STAGE_ROOT}/bin" TYPE PROGRAM
          FILES "${PORTABLE_SOURCE_DIR}/bin/${BIN_FILE}")
 endforeach()
 file(INSTALL DESTINATION "${STAGE_ROOT}" TYPE FILE
      FILES "${PORTABLE_SOURCE_DIR}/README.md" "${PORTABLE_SOURCE_DIR}/VERSION")
-file(WRITE "${STAGE_ROOT}/INSTALL.txt" [=[Harr Codex Scheduler portable C++ bundle
+file(WRITE "${STAGE_ROOT}/INSTALL.txt" [=[Harr Scheduler portable C++ bundle
 
 Runtime requirements on Ubuntu/Debian:
   sudo apt install at git libqt6core6t64 libqt6gui6t64 libqt6widgets6t64
@@ -36,6 +36,7 @@ Run without installing:
   ./harr-scheduler
 
 CLI selectors:
+  ./bin/harr-schedule --agent codex|zcode ...
   ./bin/sol
   ./bin/terra
   ./bin/luna

@@ -1,37 +1,39 @@
-# Codex Scheduler
+# Harr Scheduler
 
-Native Linux desktop scheduler for existing OpenAI Codex CLI sessions. The scheduler is implemented entirely in **C++20 + Qt 6 Widgets**; there is no Python/PyQt runtime or Python scheduler code.
+Native Linux desktop scheduler for existing agent CLI sessions — **Codex** and **ZCode** today, one shared task store, tray and transcript UI. The scheduler is implemented entirely in **C++20 + Qt 6 Widgets**; there is no Python/PyQt runtime or Python scheduler code.
 
-The three convenience selectors always use **High reasoning** and **Standard speed** (`service_tier="default"`), never Fast:
-
-```bash
-sol   02:05 SESSION_ID "Продолжай"
-terra 02:05 SESSION_ID "Продолжай"
-luna  02:05 SESSION_ID "Продолжай"
-```
-
-The selectors may be run from any directory. Before creating an `at` job, the native scheduler asks the installed Codex binary for the thread through the documented **Codex App Server** stdio API (`initialize` → `initialized` → `thread/read`) and reads `thread.cwd`. It verifies that directory and its Git worktree, then emits an `at` job beginning with `cd <session-cwd>`.
-
-The scheduler never inspects `~/.codex`, SQLite databases, rollout JSONL files, or other private Codex state formats. `--cwd DIR` is available only as a fail-closed explicit fallback and must agree with App Server metadata when both are available.
+Every task targets one agent session. Before creating an `at` job, the scheduler asks the agent's own API for the session's project directory (Codex App Server `thread/read`, ZCode Protocol `session/list`), verifies it and its Git worktree, then emits an `at` job beginning with `cd <session-cwd>`. The scheduler never inspects private agent state formats such as rollout JSONL files or SQLite databases. `--cwd DIR` is available only as a fail-closed explicit fallback and must agree with agent metadata when both are available.
 
 `--timestamp CCYYMMDDhhmm` schedules an absolute local date/time through `at -t`, so GUI tasks can be scheduled days or weeks ahead. CLI `--at` remains available for ordinary `at(1)` expressions.
 
+## Agents
+
+| Agent | Session metadata | Model catalog | Turn execution |
+|---|---|---|---|
+| `codex` | Codex App Server `thread/list` / `thread/read` | App Server `model/list` | `codex exec -m … resume …` |
+| `zcode` | ZCode Protocol `session/list` | the agent's builtin provider config (`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE`, runtime-path fallback) | `harr-scheduler agent-exec` driving the ZCode Protocol app-server |
+
+ZCode tasks additionally expose a **permission mode** selector (`build`, `edit`, `plan`, `yolo`, `guarded`) and default to **yolo**, because scheduled autonomous turns run unattended; the executor refuses unknown server-to-client permission requests, so non-yolo modes degrade to denied tool use.
+
+**Known ZCode limitation (0.17.x):** a standalone ZCode app-server starts with an empty model registry — the desktop client injects account providers and models into its own process. Metadata (sessions, project directories) and the model catalog work regardless, but a scheduled ZCode turn currently fails with a clear `Select a model` configuration error until ZCode exposes standalone model resolution. The executor surfaces that error in the task transcript.
+
 ## One native executable
 
-`harr-codex-scheduler` is both the desktop application and the execution backend. It has internal command modes for scheduling, job execution and Codex metadata lookup:
+`harr-scheduler` is both the desktop application and the execution backend. It has internal command modes for scheduling, job execution, agent turns and agent metadata lookup:
 
 ```text
-harr-codex-scheduler                 # GUI + tray
-harr-codex-scheduler schedule ...
-harr-codex-scheduler job-runner ...
-harr-codex-scheduler session-list ...
-harr-codex-scheduler session-cwd ...
-harr-codex-scheduler self-test
+harr-scheduler                 # GUI + tray
+harr-scheduler schedule ...    # --agent codex|zcode
+harr-scheduler job-runner ...
+harr-scheduler agent-exec ...  # zcode turn executor
+harr-scheduler session-list ...
+harr-scheduler session-cwd ...
+harr-scheduler self-test
 ```
 
-`codex-schedule`, `sol`, `terra`, `luna` and `codex-scheduler-ui` are thin shell entrypoints to that binary.
+`harr-schedule`, `codex-schedule`, `sol`, `terra`, `luna` and `codex-scheduler-ui` are thin shell entrypoints to that binary. The 0.3.x package name `harr-codex-scheduler` is replaced by the `.deb`; postinst keeps a compatibility symlink so at jobs queued before the upgrade still run.
 
-An `at` job always launches a **separate `harr-codex-scheduler job-runner` process**. The running Codex turn therefore does not depend on the GUI/tray process staying alive. The runner launches `codex exec --json`, captures JSONL output, updates the persistent task JSON and optionally writes the clean final answer. Closing or restarting the desktop app cannot lose the job output.
+An `at` job always launches a **separate `harr-scheduler job-runner` process**. The running agent turn therefore does not depend on the GUI/tray process staying alive. The runner launches the agent's executor, captures codex-style JSONL events (zcode turns are normalized to the same event stream by `agent-exec`), updates the persistent task JSON and optionally writes the clean final answer. Closing or restarting the desktop app cannot lose the job output.
 
 The desktop process watches the task-state directory using `QFileSystemWatcher`. Atomic task-state updates from the runner therefore refresh open tabs and tray state promptly. A slow reconciliation timer remains as a fallback; the runner and GUI do not require a socket or service daemon.
 
@@ -40,34 +42,34 @@ The desktop process watches the task-state directory using `QFileSystemWatcher`.
 The Qt Widgets UI is task-oriented:
 
 - every open tab represents one scheduler task;
+- each task page has an agent selector; switching it clears the session binding and repopulates the model/session catalogs for that agent;
+- only the selectors an agent supports are visible: model/reasoning/speed for Codex, model/mode for ZCode;
 - `+` sits directly after the last tab;
 - closing a tab closes only the view; non-empty tasks remain in persistent state;
 - the left tasks sidebar can be hidden from the tab strip;
 - **Active** and **History** are independently collapsible;
 - scheduled tasks that have not started can be reopened for editing; the old `at` job is removed first, then the same task returns to draft state and can be rescheduled;
 - task menus can reopen views, cancel scheduled/running jobs, delete scheduler state/logs, or explicitly delete an exported answer;
-- task state lives under `$XDG_STATE_HOME/harr-codex-scheduler` (normally `~/.local/state/harr-codex-scheduler`).
+- task state lives under `$XDG_STATE_HOME/harr-scheduler` (normally `~/.local/state/harr-scheduler`); 0.3.x state under `harr-codex-scheduler` is migrated once automatically.
 
 ### Models
 
-The model selector is populated from the installed Codex CLI through the App Server `model/list` API. The GUI does not carry a fixed Sol/Terra/Luna catalog. It uses Codex's current display names and selects the server's `isDefault` model for a new draft. Models no longer advertised by Codex are not offered in the selector; an editable draft that references one is moved to the current default model. The catalog is refreshed at startup and periodically while the application is running.
+Model catalogs come from the agent APIs, never from a hardcoded list. Codex fills the selector through the App Server `model/list` API; ZCode reads the account providers and their `builtinModelIds` from the builtin provider config the ZCode CLI itself consumes. The GUI uses the agent's display names and selects the advertised default model for a new draft when one is advertised. The catalog is refreshed at startup and periodically while the application is running.
 
-Reading the model catalog does not start a model turn, so the selector can still be populated when inference usage is exhausted as long as the Codex App Server can return its catalog.
+Reading a model catalog does not start a model turn, so the selector can still be populated when inference usage is exhausted.
 
 ### Sessions
 
-Session choices come only from the documented App Server `thread/list` / `thread/read` APIs. `thread/list` requests `archived: false` and the application also defensively filters any returned `archived=true` entries.
+Session choices come only from the agents' documented APIs (Codex App Server `thread/list`/`thread/read`; ZCode Protocol `session/list`). Archived entries are filtered defensively, and subagent ZCode sessions are hidden.
 
-The visible selector shows the human-readable session name/preview. The actual UUID remains the stored value and is shown in tooltips. A UUID pasted manually remains valid; when metadata is found through `thread/read`, the visible field is replaced by the session name while the UUID remains the real value.
-
-Reading session metadata does not start a model turn, so session selection remains available when model usage is exhausted as long as the local Codex runtime is responsive.
+The visible selector shows the human-readable session name/preview. The actual session id remains the stored value and is shown in tooltips. An id pasted manually remains valid; when metadata is found, the visible field is replaced by the session name while the id remains the real value.
 
 ### Tray-first workflow
 
 The application is designed to live in the system tray. Its tray menu provides:
 
 - **Open main window**;
-- **Schedule for session** → one item per active/non-archived Codex session;
+- **Schedule for session** → one submenu per agent with that agent's active/non-archived sessions;
 - a compact quick-schedule dialog containing only the selected session, run time and prompt;
 - **Active tasks (N)** → clicking a task opens that task in the main window;
 - completion/failure/cancellation notifications when persisted task state changes;
@@ -101,7 +103,7 @@ cmake -S tools/codex-scheduler \
       -DCMAKE_BUILD_TYPE=Debug
 cmake --build tools/codex-scheduler/build
 
-tools/codex-scheduler/build/harr-codex-scheduler
+tools/codex-scheduler/build/harr-scheduler
 ```
 
 Native smoke test:
@@ -109,10 +111,10 @@ Native smoke test:
 ```bash
 QT_QPA_PLATFORM=offscreen \
 HARR_CODEX_THEME=dark \
-tools/codex-scheduler/build/harr-codex-scheduler self-test
+tools/codex-scheduler/build/harr-scheduler self-test
 ```
 
-Full native CLI/job-runner contract:
+Full native CLI/job-runner contract (fake `codex`, `zcode` and `at` executables, no agent quota):
 
 ```bash
 bash tools/codex-scheduler/tests/test_cli.sh
@@ -125,7 +127,7 @@ The supported formats are:
 1. **`.deb` — primary Ubuntu/Debian distribution.** It contains the native C++ executable, desktop entry and thin shell selectors. It has no Python/PyQt dependency.
 2. **`linux-<arch>.tar.gz` — portable/fallback bundle.** It contains the same native executable and uses the host Qt runtime to preserve normal distro/GNOME/Wayland integration.
 
-OpenAI Codex CLI is not bundled and must be installed separately as `codex`.
+Agent CLIs are not bundled; install `codex` and/or `zcode` separately.
 
 ### Build release artifacts
 
@@ -136,17 +138,17 @@ cmake -S tools/codex-scheduler \
 cmake --build tools/codex-scheduler/build-release --target package-release
 ```
 
-With version `0.3.2` on amd64 this produces:
+With version `0.4.0` on amd64 this produces:
 
 ```text
-tools/codex-scheduler/dist/harr-codex-scheduler_0.3.2_amd64.deb
-tools/codex-scheduler/dist/harr-codex-scheduler-0.3.2-linux-amd64.tar.gz
+tools/codex-scheduler/dist/harr-scheduler_0.4.0_amd64.deb
+tools/codex-scheduler/dist/harr-scheduler-0.4.0-linux-amd64.tar.gz
 ```
 
 ### Install `.deb`
 
 ```bash
-sudo apt install ./tools/codex-scheduler/dist/harr-codex-scheduler_0.3.2_amd64.deb
+sudo apt install ./tools/codex-scheduler/dist/harr-scheduler_0.4.0_amd64.deb
 ```
 
 or build and install in one step:
@@ -158,27 +160,27 @@ bash tools/codex-scheduler/install-ubuntu.sh
 Run:
 
 ```bash
-harr-codex-scheduler
+harr-scheduler
 ```
 
 Remove the application:
 
 ```bash
-sudo apt remove harr-codex-scheduler
+sudo apt remove harr-scheduler
 ```
 
 Package removal intentionally preserves task history. To also erase user state/logs:
 
 ```bash
-rm -rf ~/.local/state/harr-codex-scheduler
+rm -rf ~/.local/state/harr-scheduler
 ```
 
 ### Portable bundle
 
 ```bash
-tar -xzf harr-codex-scheduler-0.3.2-linux-amd64.tar.gz
-cd harr-codex-scheduler-0.3.2-linux-amd64
-./harr-codex-scheduler
+tar -xzf harr-scheduler-0.4.0-linux-amd64.tar.gz
+cd harr-scheduler-0.4.0-linux-amd64
+./harr-scheduler
 ```
 
 Runtime dependencies are Qt 6 Widgets/Core/Gui, `at`, and `git`; no Python is required.
@@ -188,22 +190,23 @@ Runtime dependencies are Qt 6 Widgets/Core/Gui, `at`, and `git`; no Python is re
 `tools/codex-scheduler/VERSION` is the release version source of truth. A matching tag builds and publishes the native `.deb` and tarball:
 
 ```bash
-git tag codex-scheduler-v0.3.2
-git push origin codex-scheduler-v0.3.2
+git tag codex-scheduler-v0.4.0
+git push origin codex-scheduler-v0.4.0
 ```
 
 The release workflow rejects a tag whose version does not match `VERSION`.
 
 ## Tests
 
-Tests use fake `codex` and `at` executables and spend no Codex quota. The CI contract verifies:
+Tests use fake `codex`, `zcode` and `at` executables and spend no agent quota. The CI contract verifies:
 
 - native C++/Qt build;
-- state and transcript self-test;
-- App Server cwd/session-list behavior including archived-session filtering;
+- state, migration and transcript self-test;
+- agent registry and per-agent exec command contracts;
+- App Server cwd/session-list behavior including archived-session filtering (both agents);
 - Sol/Terra/Luna High + Standard selector contracts;
 - absolute timestamp validation;
-- same-binary `job-runner` execution and answer/state persistence;
+- same-binary `job-runner` execution and answer/state persistence for codex and zcode turns;
 - `.deb` and portable package contents contain no Python;
 - real `apt install` of the produced native package;
 - installed binary self-test.

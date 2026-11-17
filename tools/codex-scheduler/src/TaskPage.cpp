@@ -681,7 +681,7 @@ void TaskPage::applyStatus(const QJsonObject &task)
     status->setText(statusIcon(state) + " " + statusText(state));
     const bool editable = state == "draft";
     const QVector<QWidget *> widgets{
-        model, reasoning, speed, session, prompt, when, saveButton
+        agent, model, reasoning, speed, mode, session, prompt, when, saveButton
     };
     for (QWidget *widget : widgets) widget->setEnabled(editable);
     m_projectButton->setEnabled(true);
