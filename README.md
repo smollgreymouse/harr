@@ -189,11 +189,17 @@ harr workspace add ../shared-assets
 harr workspace remove ../shared-assets
 harr workspace sync /absolute/current/project /absolute/other/session-root
 harr workspace list
+harr workspace prune --dry-run
+harr workspace prune --all --dry-run
 ```
 
 `harr workspace sync PATH...` is an add-only helper for agent sessions: it canonicalizes the supplied working folders, skips the primary root, existing roots and duplicate inputs, and adds only the missing roots. On Linux, Harr installs the same `$harr-workspace` skill and direct `harr-workspace` control MCP for both Codex and OpenCode, so you can ask either client to "sync/add your working folders to Harr". The skill uses only workspace/root paths already known to that session; it does not scan `$HOME` or guess sibling repositories.
 
 The CLI and the already-running MCP share the same revisioned Workspace store, so a successful add becomes visible to the next MCP request and a remove revokes access on the next request.
+
+`harr workspace prune` removes a registration only when both its primary path and its recorded Git administrative directory are gone. It also removes orphaned `.meta` and `.lock` sidecars. An existing checkout path is retained even when its filesystem identity changed; use `harr workspace prune --all` for an intentional full reset, then run Harr from the primary project and use `harr workspace sync PATH...` to rebuild additional roots. `--dry-run` prints the planned actions as JSON without changing files. The lifecycle lock is kept outside the store directory; applying prune returns `busy` while Harr-managed Workspace operations or strict LeanCTX MCP sessions are active.
+
+Run an applied prune from a terminal after closing Codex/OpenCode sessions that use Harr-managed LeanCTX; those live sessions hold the shared lifecycle lock, so prune reports `busy` until they exit. After upgrading to a Harr version with lifecycle locking, stop old Harr/LeanCTX sessions once before the first applied prune because older sessions do not hold the lifecycle lock. Do not run `workspace-admin` directly while prune is applying; Harr's CLI, Workspace MCP and Workspace panel all coordinate through the same lock. Dry-run is safe while a session is active.
 
 Codex Desktop also gets a direct **Harr Workspace** MCP App. Ask Codex to open/show the Harr Workspace panel (model-visible tool: `show_harr_workspace`). The panel shows the primary root, revision and additional roots, and performs Add/Remove/Refresh through app-only tools with revision/CAS protection. The current MVP accepts a path manually; it does not fake a filesystem picker, and adding a LeanCTX root does not grant Codex new OS/sandbox permissions. The CLI remains the fallback when MCP Apps are unavailable.
 
@@ -661,6 +667,7 @@ harr workspace show
 harr workspace list
 harr workspace add PATH
 harr workspace remove PATH
+harr workspace prune [--dry-run] [--all]
 
 harr install all
 harr install leanctx

@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 import sys
@@ -15,6 +18,134 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DEFAULT_REGISTRY = HERE / "registry.json"
 DEFAULT_TEMPLATE_DIR = HERE
+WORKSPACE_STORE_NAME = re.compile(r"[0-9a-f]{24}\.json\Z")
+WORKSPACE_SIDECAR_NAME = re.compile(r"([0-9a-f]{24}\.json)\.(?:meta|lock)\Z")
+
+
+class WorkspaceLifecycleBusy(RuntimeError):
+    """Another Harr Workspace lifecycle operation currently holds the lock."""
+
+
+class WorkspaceLifecycleLock:
+    """Stable per-config lock coordinated by Harr Workspace users and prune."""
+
+    def __init__(self, *, exclusive: bool = False, inheritable: bool = False):
+        self.path = harr_config_dir() / "workspace-lifecycle.lock"
+        self.exclusive = exclusive
+        self.inheritable = inheritable
+        self.fd: int | None = None
+        self._overlapped = None
+        self._windows_api = None
+        self._windows_locked = False
+
+    def acquire(self) -> "WorkspaceLifecycleLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            existing = self.path.lstat()
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and (stat.S_ISLNK(existing.st_mode) or not stat.S_ISREG(existing.st_mode)):
+            raise RuntimeError(f"Workspace lifecycle lock is not a regular non-symlink file: {self.path}")
+        flags = os.O_RDWR | os.O_CREAT
+        if os.name == "posix":
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            self.fd = os.open(self.path, flags, 0o600)
+            metadata = os.fstat(self.fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError(f"Workspace lifecycle lock is not a regular file: {self.path}")
+            if os.name == "posix":
+                if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+                    raise RuntimeError(f"Workspace lifecycle lock has unsafe owner or permissions: {self.path}")
+                self._acquire_posix()
+            elif os.name == "nt":
+                self._acquire_windows()
+            else:
+                raise RuntimeError(f"Workspace lifecycle locking is unsupported on {os.name}")
+            if self.inheritable and os.name == "posix":
+                os.set_inheritable(self.fd, True)
+            return self
+        except Exception:
+            self.release()
+            raise
+
+    def _acquire_posix(self) -> None:
+        import fcntl
+
+        operation = fcntl.LOCK_EX if self.exclusive else fcntl.LOCK_SH
+        try:
+            fcntl.flock(self.fd, operation | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EAGAIN}:
+                raise WorkspaceLifecycleBusy("Workspace lifecycle is busy") from exc
+            raise
+
+    def _acquire_windows(self) -> None:
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        class Overlapped(ctypes.Structure):
+            _fields_ = [
+                ("Internal", ctypes.c_void_p),
+                ("InternalHigh", ctypes.c_void_p),
+                ("Offset", wintypes.DWORD),
+                ("OffsetHigh", wintypes.DWORD),
+                ("hEvent", wintypes.HANDLE),
+            ]
+
+        api = ctypes.WinDLL("kernel32", use_last_error=True)
+        lock_file = api.LockFileEx
+        lock_file.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                              wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(Overlapped)]
+        lock_file.restype = wintypes.BOOL
+        overlapped = Overlapped()
+        flags = 0x00000001  # LOCKFILE_FAIL_IMMEDIATELY
+        if self.exclusive:
+            flags |= 0x00000002  # LOCKFILE_EXCLUSIVE_LOCK
+        handle = wintypes.HANDLE(msvcrt.get_osfhandle(self.fd))
+        if not lock_file(handle, flags, 0, 1, 0, ctypes.byref(overlapped)):
+            code = ctypes.get_last_error()
+            if code == 33:  # ERROR_LOCK_VIOLATION
+                raise WorkspaceLifecycleBusy("Workspace lifecycle is busy")
+            raise OSError(code, "LockFileEx failed", str(self.path))
+        self._overlapped = overlapped
+        self._windows_api = api
+        self._windows_locked = True
+
+    def release(self) -> None:
+        fd = self.fd
+        if fd is None:
+            return
+        try:
+            if os.name == "posix":
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            elif os.name == "nt" and self._windows_locked:
+                import ctypes
+                import msvcrt
+                from ctypes import wintypes
+
+                unlock_file = self._windows_api.UnlockFileEx
+                unlock_file.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                        wintypes.DWORD, wintypes.DWORD,
+                                        ctypes.POINTER(type(self._overlapped))]
+                unlock_file.restype = wintypes.BOOL
+                handle = wintypes.HANDLE(msvcrt.get_osfhandle(fd))
+                if not unlock_file(handle, 0, 1, 0, ctypes.byref(self._overlapped)):
+                    code = ctypes.get_last_error()
+                    raise OSError(code, "UnlockFileEx failed", str(self.path))
+        finally:
+            self.fd = None
+            os.close(fd)
+            self._windows_locked = False
+
+    def __enter__(self) -> "WorkspaceLifecycleLock":
+        return self.acquire()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.release()
 
 
 def load_registry(path: Path = DEFAULT_REGISTRY) -> dict:
@@ -846,7 +977,267 @@ def with_workspace_warnings(payload: dict) -> dict:
     return payload
 
 
+def workspace_lifecycle_lock(*, exclusive: bool = False, inheritable: bool = False) -> WorkspaceLifecycleLock:
+    return WorkspaceLifecycleLock(exclusive=exclusive, inheritable=inheritable)
+
+
+def _workspace_prune_directory() -> Path | None:
+    directory = harr_config_dir() / "workspaces"
+    try:
+        metadata = directory.lstat()
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise RuntimeError(f"Harr Workspace store path is not a real directory: {directory}")
+    if os.name == "posix" and (metadata.st_uid != os.getuid() or metadata.st_mode & 0o077):
+        raise RuntimeError(f"Harr Workspace store directory has unsafe owner or permissions: {directory}")
+    return directory
+
+
+def _workspace_prune_files(directory: Path) -> list[str]:
+    names: set[str] = set()
+    for entry in directory.iterdir():
+        if WORKSPACE_STORE_NAME.fullmatch(entry.name):
+            names.add(entry.name)
+            continue
+        match = WORKSPACE_SIDECAR_NAME.fullmatch(entry.name)
+        if match:
+            names.add(match.group(1))
+    return sorted(names)
+
+
+def _inspect_workspace_prune_file(path: Path) -> os.stat_result | None:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"managed store member is not a regular non-symlink file: {path.name}")
+    if os.name == "posix" and metadata.st_uid != os.getuid():
+        raise ValueError(f"managed store member has a different owner: {path.name}")
+    return metadata
+
+
+def _read_workspace_prune_json(path: Path, *, limit: int = 4 * 1024 * 1024) -> dict:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        metadata = os.fstat(fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError(f"managed store member is not a regular file: {path.name}")
+        if os.name == "posix" and metadata.st_uid != os.getuid():
+            raise ValueError(f"managed store member has a different owner: {path.name}")
+        if metadata.st_size > limit:
+            raise ValueError(f"managed store member is too large to inspect: {path.name}")
+        with os.fdopen(fd, "r", encoding="utf-8") as stream:
+            fd = -1
+            payload = stream.read(limit + 1)
+        if len(payload) > limit:
+            raise ValueError(f"managed store member is too large to inspect: {path.name}")
+        value = json.loads(payload)
+        if not isinstance(value, dict):
+            raise ValueError(f"Workspace store is not a JSON object: {path.name}")
+        return value
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _workspace_primary_git_dir(metadata_path: Path, state: dict) -> Path | None:
+    try:
+        metadata = _read_workspace_prune_json(metadata_path)
+    except FileNotFoundError:
+        return None
+    versions = metadata.get("versions")
+    if metadata.get("schema_version") != 2 or not isinstance(versions, list):
+        raise ValueError(f"unsupported Workspace metadata: {metadata_path.name}")
+    matches = [
+        item for item in versions
+        if isinstance(item, dict)
+        and item.get("workspace_id") == state.get("id")
+        and item.get("revision") == state.get("revision")
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"Workspace metadata does not match the current store revision: {metadata_path.name}")
+    bindings = matches[0].get("checkout_bindings")
+    if not isinstance(bindings, dict):
+        raise ValueError(f"Workspace metadata has no checkout bindings: {metadata_path.name}")
+    primary = state.get("primary")
+    binding = bindings.get(primary) if isinstance(primary, str) else None
+    if binding is None:
+        return None
+    if not isinstance(binding, dict) or not isinstance(binding.get("git_dir"), str):
+        raise ValueError(f"Workspace primary checkout binding is invalid: {metadata_path.name}")
+    git_dir = Path(binding["git_dir"])
+    if not git_dir.is_absolute():
+        raise ValueError(f"Workspace primary Git directory is not absolute: {metadata_path.name}")
+    return git_dir
+
+
+def _path_entry_exists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _workspace_prune_plan(directory: Path | None, *, full_reset: bool) -> list[dict]:
+    if directory is None:
+        return []
+    plan: list[dict] = []
+    for name in _workspace_prune_files(directory):
+        store = directory / name
+        metadata_path = directory / f"{name}.meta"
+        lock_path = directory / f"{name}.lock"
+        files = [path for path in (store, metadata_path, lock_path) if _path_entry_exists(path)]
+        item = {"store": str(store), "files": [path.name for path in files]}
+        if not files:
+            continue
+        try:
+            for path in files:
+                _inspect_workspace_prune_file(path)
+        except (OSError, ValueError) as exc:
+            item.update(status="blocked", reason="unsafe-store-file", error=str(exc))
+            plan.append(item)
+            continue
+        if full_reset:
+            item.update(status="planned", reason="full-reset")
+            plan.append(item)
+            continue
+        if not store.exists():
+            item.update(status="planned", reason="orphaned-sidecar")
+            plan.append(item)
+            continue
+        try:
+            state = _read_workspace_prune_json(store)
+            primary = state.get("primary")
+            workspace_id = state.get("id")
+            revision = state.get("revision")
+            additional = state.get("additional")
+            if (
+                not isinstance(primary, str)
+                or not Path(primary).is_absolute()
+                or not isinstance(workspace_id, str)
+                or not workspace_id
+                or not isinstance(revision, int)
+                or isinstance(revision, bool)
+                or revision < 1
+                or not isinstance(additional, list)
+                or not all(isinstance(path, str) for path in additional)
+            ):
+                raise ValueError("Workspace store has invalid core fields")
+            if _path_entry_exists(Path(primary)):
+                item.update(status="retained", reason="primary-path-present")
+                plan.append(item)
+                continue
+            primary_git_dir = _workspace_primary_git_dir(metadata_path, state) if metadata_path.exists() else None
+            if primary_git_dir is not None and _path_entry_exists(primary_git_dir):
+                item.update(status="retained", reason="git-admin-directory-present")
+                plan.append(item)
+                continue
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            item.update(status="blocked", reason="workspace-state-unavailable", error=str(exc))
+            plan.append(item)
+            continue
+        item.update(status="planned", reason="primary-and-git-admin-missing")
+        plan.append(item)
+    return plan
+
+
+def _sync_workspace_prune_directory(directory: Path) -> None:
+    if os.name != "posix":
+        return
+    fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def workspace_prune_command(args: argparse.Namespace) -> None:
+    full_reset = bool(args.full_reset)
+    if args.paths:
+        raise SystemExit("workspace prune does not accept paths")
+    if args.dry_run:
+        try:
+            directory = _workspace_prune_directory()
+            plan = _workspace_prune_plan(directory, full_reset=full_reset)
+        except (OSError, RuntimeError) as exc:
+            print(json.dumps({
+                "mode": "all" if full_reset else "prune",
+                "dry_run": True,
+                "results": [{"status": "blocked", "reason": "unsafe-store-directory", "error": str(exc)}],
+            }, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from exc
+    else:
+        try:
+            with workspace_lifecycle_lock(exclusive=True):
+                directory = _workspace_prune_directory()
+                plan = _workspace_prune_plan(directory, full_reset=full_reset)
+                if full_reset and any(item["status"] == "blocked" for item in plan):
+                    for item in plan:
+                        if item["status"] == "planned":
+                            item.update(status="blocked", reason="full-reset-preflight-failed")
+                elif directory is not None:
+                    for item in plan:
+                        if item["status"] != "planned":
+                            continue
+                        store = Path(item["store"])
+                        deleted: list[str] = []
+                        try:
+                            for path in (store, Path(f"{store}.meta"), Path(f"{store}.lock")):
+                                if _path_entry_exists(path):
+                                    path.unlink()
+                                    deleted.append(path.name)
+                            item.update(status="removed", files=deleted)
+                        except OSError as exc:
+                            item.update(status="blocked", reason="delete-failed", error=str(exc), files=deleted)
+                    if any(item.get("status") == "removed" for item in plan):
+                        try:
+                            _sync_workspace_prune_directory(directory)
+                        except OSError as exc:
+                            plan.append({
+                                "status": "blocked",
+                                "reason": "directory-sync-failed",
+                                "error": str(exc),
+                            })
+        except WorkspaceLifecycleBusy as exc:
+            print(json.dumps({
+                "mode": "all" if full_reset else "prune",
+                "dry_run": False,
+                "results": [{"status": "blocked", "reason": "busy", "error": str(exc)}],
+            }, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from exc
+        except (OSError, RuntimeError) as exc:
+            print(json.dumps({
+                "mode": "all" if full_reset else "prune",
+                "dry_run": False,
+                "results": [{"status": "blocked", "reason": "unsafe-store-directory", "error": str(exc)}],
+            }, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from exc
+    summary = {
+        status: sum(item.get("status") == status for item in plan)
+        for status in ("planned", "removed", "retained", "blocked")
+    }
+    print(json.dumps({
+        "mode": "all" if full_reset else "prune",
+        "dry_run": bool(args.dry_run),
+        "results": plan,
+        "summary": summary,
+    }, ensure_ascii=False, indent=2))
+    if any(item.get("status") == "blocked" for item in plan):
+        raise SystemExit(1)
+
+
 def workspace_command(args: argparse.Namespace) -> None:
+    if args.action == "prune":
+        if args.project is not None or args.expected_revision is not None:
+            raise SystemExit("--project and --expected-revision do not apply to workspace prune")
+        workspace_prune_command(args)
+        return
+    if args.dry_run or args.full_reset:
+        raise SystemExit("--dry-run and --all apply only to workspace prune")
     real = Path(args.real).expanduser().resolve()
     if not real.is_file():
         raise SystemExit(f"LeanCTX binary not found: {real}")
@@ -944,41 +1335,49 @@ def workspace_command(args: argparse.Namespace) -> None:
 
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
-    if leanctx_is_mcp(args.rest):
-        # rmcp logs whole initialize payloads at info, including base64 icons.
-        # These can overflow a host's nonblocking stderr and panic discovery.
-        # Keep normal server logs while allowing an explicit LeanCTX override.
-        env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
-        # The managed server-info icon lives beside the installed MCP runtime.
-        # Keep the source checkout fallback useful for direct development runs.
-        icon = HERE / "assets" / "harr.png"
-        if not icon.is_file():
-            checkout_icon = HERE.parents[1] / "harr.png"
-            if checkout_icon.is_file():
-                icon = checkout_icon
-        if icon.is_file():
-            env["HARR_MCP_ICON_PATH"] = str(icon)
-    if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
-        primary = workspace_root()
-        store = ensure_workspace_store(args.real, primary)
-        env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
-        # Workspace changes root authority, not the familiar Harr tool surface.
-        # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
-        # strict session; LeanCTX still enforces request-scoped Workspace roots.
-        env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
-        env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
-    secret_root = harr_config_dir() / "secrets"
-    for _, secret in secret_records(data):
-        path = secret_root / secret["file"]
-        if not path.is_file():
-            continue
-        value = path.read_text(encoding="utf-8").strip()
-        if value:
-            env[memento_var(secret["memento_id"])] = value
-    cmd = [args.real, *args.rest]
-    if os.name == "nt":
-        raise SystemExit(subprocess.call(cmd, env=env))
-    os.execvpe(cmd[0], cmd, env)
+    lifecycle_lock = None
+    try:
+        if leanctx_is_mcp(args.rest):
+            # rmcp logs whole initialize payloads at info, including base64 icons.
+            # These can overflow a host's nonblocking stderr and panic discovery.
+            # Keep normal server logs while allowing an explicit LeanCTX override.
+            env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
+            # The managed server-info icon lives beside the installed MCP runtime.
+            # Keep the source checkout fallback useful for direct development runs.
+            icon = HERE / "assets" / "harr.png"
+            if not icon.is_file():
+                checkout_icon = HERE.parents[1] / "harr.png"
+                if checkout_icon.is_file():
+                    icon = checkout_icon
+            if icon.is_file():
+                env["HARR_MCP_ICON_PATH"] = str(icon)
+        if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
+            lifecycle_lock = workspace_lifecycle_lock(inheritable=True).acquire()
+            primary = workspace_root()
+            store = ensure_workspace_store(args.real, primary)
+            env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
+            # Workspace changes root authority, not the familiar Harr tool surface.
+            # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
+            # strict session; LeanCTX still enforces request-scoped Workspace roots.
+            env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
+            env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
+        secret_root = harr_config_dir() / "secrets"
+        for _, secret in secret_records(data):
+            path = secret_root / secret["file"]
+            if not path.is_file():
+                continue
+            value = path.read_text(encoding="utf-8").strip()
+            if value:
+                env[memento_var(secret["memento_id"])] = value
+        cmd = [args.real, *args.rest]
+        if os.name == "nt":
+            raise SystemExit(subprocess.call(cmd, env=env))
+        os.execvpe(cmd[0], cmd, env)
+    finally:
+        # On POSIX a successful exec keeps this inherited descriptor locked until
+        # LeanCTX exits. On Windows subprocess.call returns only when it exits.
+        if lifecycle_lock is not None:
+            lifecycle_lock.release()
 
 
 def component_rows(args: argparse.Namespace, data: dict) -> None:
@@ -1065,17 +1464,20 @@ def main() -> None:
     p_exec.add_argument("rest", nargs=argparse.REMAINDER)
 
     p_workspace = sub.add_parser("workspace")
-    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync"])
+    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync", "prune"])
     p_workspace.add_argument("paths", nargs="*")
     p_workspace.add_argument("--real", required=True)
     p_workspace.add_argument("--project")
     p_workspace.add_argument("--expected-revision", type=int)
+    p_workspace.add_argument("--dry-run", action="store_true")
+    p_workspace.add_argument("--all", dest="full_reset", action="store_true")
 
     p_components = sub.add_parser("components")
     p_components.add_argument("--npm-prefix")
 
     args = parser.parse_args()
-    data = load_registry(args.registry)
+    is_workspace_prune = args.command == "workspace" and args.action == "prune"
+    data = {} if is_workspace_prune else load_registry(args.registry)
 
     if args.command == "names":
         for item in servers(data, args.lifecycle):
@@ -1107,7 +1509,14 @@ def main() -> None:
             args.rest = args.rest[1:]
         exec_leanctx(args, data)
     elif args.command == "workspace":
-        workspace_command(args)
+        if args.action == "prune":
+            workspace_command(args)
+        else:
+            try:
+                with workspace_lifecycle_lock():
+                    workspace_command(args)
+            except WorkspaceLifecycleBusy as exc:
+                raise SystemExit(str(exc)) from exc
     elif args.command == "components":
         component_rows(args, data)
 
