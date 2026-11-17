@@ -978,7 +978,7 @@ def with_workspace_warnings(payload: dict) -> dict:
 
 
 def workspace_lifecycle_lock(*, exclusive: bool = False, inheritable: bool = False) -> WorkspaceLifecycleLock:
-    return WorkspaceLifecycleLock(exclusive=exclusive, inheritable=inheritable).acquire()
+    return WorkspaceLifecycleLock(exclusive=exclusive, inheritable=inheritable)
 
 
 def _workspace_prune_directory() -> Path | None:
@@ -1352,7 +1352,7 @@ def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
             if icon.is_file():
                 env["HARR_MCP_ICON_PATH"] = str(icon)
         if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
-            lifecycle_lock = workspace_lifecycle_lock(inheritable=True)
+            lifecycle_lock = workspace_lifecycle_lock(inheritable=True).acquire()
             primary = workspace_root()
             store = ensure_workspace_store(args.real, primary)
             env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
