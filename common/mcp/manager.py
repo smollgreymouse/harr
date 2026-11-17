@@ -1491,6 +1491,11 @@ def effective_servers(data: dict, session: dict) -> tuple[list[dict], list[dict]
         if provider.get("oauth"):
             entry["oauth"] = True
         if profile_doc and profile_doc.get("secret"):
+            if entry.get("oauth"):
+                raise SystemExit(
+                    f"instance {name}: profile supplies a secret but the provider uses OAuth; "
+                    "bind it to a token-based provider (the gateway cannot carry both)"
+                )
             entry["secret_headers"] = {
                 "Authorization": {
                     "id": profile_doc["secret"]["memento_id"],

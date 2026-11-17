@@ -282,6 +282,38 @@ with tempfile.TemporaryDirectory() as tmp:
         assert "is disabled" in str(exc)
         profiles_mod.set_state(profiles_dir, "remote-alpha-prod", "enabled")
 
+        # OAuth provider with a profile secret is rejected: the gateway cannot
+        # carry an OAuth flow and a wired Authorization header at once.
+        oauth_providers = {
+            "remote-oauth": {
+                "label": "Remote OAuth",
+                "transport": "http",
+                "profile_endpoint": True,
+                "oauth": True,
+                "lifecycle": "on-demand",
+            },
+        }
+        oauth_root = root / "oauth"
+        profiles_mod.write_profile(profiles_dir, {
+            "id": "oauth-prod",
+            "provider": "remote-oauth",
+            "kind": "http",
+            "endpoint": "https://oauth.example.com/mcp",
+            "secret": {"file": "oauth-token", "memento_id": "mcp/test/oauth"},
+            "state": "enabled",
+            "bound_projects": [overlay.project_key(oauth_root)],
+        })
+        oauth_manifest_path = oauth_root / ".harr" / "mcp.json"
+        write_json(oauth_manifest_path, {
+            "schema": 1,
+            "instances": {"remote-oauth": {"provider": "remote-oauth", "profile": "oauth-prod"}},
+        })
+        oauth_manifest = overlay.load_manifest(oauth_manifest_path)
+        oauth_data = {"schema": 1, "servers": base_servers(), "providers": oauth_providers}
+        exc = expect_error(SystemExit, manager.effective_servers, oauth_data,
+                           {"overlay": overlay, "manifest": oauth_manifest, "root": oauth_root})
+        assert "uses OAuth" in str(exc)
+
         # Unknown provider and name conflicts fail closed.
         bad_manifest3_path = root / "unknown-provider" / ".harr" / "mcp.json"
         write_json(bad_manifest3_path, {"schema": 1, "instances": {"x": {"provider": "nope"}}})

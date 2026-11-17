@@ -98,8 +98,9 @@ Overlay-путь ленив: без `.harr/mcp.json` поведение поба
    создаётся пользователем), сохранить как новый секрет + профиль.
 2. Проверить `initialize`/`tools/list` официального эндпоинта этим токеном → снять
    поверхность провайдера B, дополнить матрицу.
-3. В registry.json поправить определение `gitlab-official` (`oauth: true` →
-   secret_headers Bearer профиль без oauth) и прогнать тесты.
+3. ✅ ВЫПОЛНЕНО: registry.json — `gitlab-official` без `oauth` (profile_endpoint +
+   Bearer-профиль); `effective_servers` отклоняет oauth+secret-конфликты fail-closed;
+   тест oauth-конфликта добавлен в `tests/mcp-project-overlay.py`; все тесты PASS.
 4. Создать новый PR из ветки `design/project-mcp-adapters` (после revert PR #15
    закрыт как merged и reopened быть не может) либо повторно смёржить по решению
    пользователя.
