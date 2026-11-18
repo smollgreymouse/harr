@@ -52,7 +52,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           HARR_CODEX_THEME: dark
         run: |
-          tools/codex-scheduler/build/harr-codex-scheduler self-test
+          tools/codex-scheduler/build/harr-scheduler self-test
           bash tools/codex-scheduler/tests/test_cli.sh
           bash tools/codex-scheduler/tests/test_packaging.sh
 
@@ -62,7 +62,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: harr-codex-scheduler-${{ steps.version.outputs.version }}
+          name: harr-scheduler-${{ steps.version.outputs.version }}
           path: |
             tools/codex-scheduler/dist/*.deb
             tools/codex-scheduler/dist/*.tar.gz
