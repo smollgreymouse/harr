@@ -558,14 +558,14 @@ Then it restores the exact pre-Harr global snapshot, removes paths Harr created 
 
 ### MCP launch from hosts with global working directories (OpenCode, ZCode, and others)
 
-Harr resolves the LeanCTX MCP authority mode before locks, stores or runtime state are touched. The default `auto` mode grants a workspace **only** from a valid explicit `HARR_WORKSPACE_ROOT`; a user-level MCP host launched from `$HOME` or an application directory otherwise starts rootless instead of inheriting an unsafe cwd-derived root.
+Harr resolves the LeanCTX MCP authority mode before locks, stores or runtime state are touched. In the default `auto` mode, an explicit `HARR_WORKSPACE_ROOT` selects the primary root. Without one, Harr uses the launcher's working directory: the nearest `.git` root, or that directory when it is outside a Git checkout. LeanCTX validates the candidate read-only before Harr creates or changes a Workspace store. A valid project binds automatically; an unsuitable candidate, such as `$HOME` during a pre-session MCP launch, stays rootless.
 
-- Set `HARR_WORKSPACE_ROOT` in the MCP server environment to the **absolute directory of the intended project** (for example `/home/user/Projects/my-repo`) to get strict workspace authority. Hosts that support per-project MCP definitions should scope this setting to the project. Do not set one fixed project root in a global multi-project MCP if sessions should be isolated by project.
-- Without an explicit root the MCP starts rootless: the initial tool surface is exactly `ctx_tools` and `ctx_workspace_get` (`ctx_workspace_get` answers `no-workspace` without opening a store), resources are empty, and paths are denied with `workspace required`. Client roots, initialize arguments and later `roots/list_changed` notifications cannot raise authority; the gateway exposes only downstream servers explicitly configured with `workspace_required = false` (Harr ships that flag only for independently verified GitLab, Grafana, Kibana, Jira and Redash integrations).
-- To gain project authority, register the known folders through the direct Workspace control plane (`harr workspace sync` or `workspace_sync`), then restart/reconnect LeanCTX with the explicit primary root. Registering roots never changes an already-running rootless process. For a global multi-project host, bind the root per project/session instead of setting one fixed global root.
-- `HARR_WORKSPACE_MODE=strict` keeps the old resolver (explicit root, else nearest `.git`, else the current directory candidate with the existing safety validation); `none` forbids `HARR_WORKSPACE_ROOT` outright; `legacy` is the explicit pre-Workspace compatibility branch and never parses the new resolver. An empty or unknown mode, an explicitly invalid root, or `none` with a root fail closed.
+- `HARR_WORKSPACE_ROOT` is an optional explicit override for `auto` and `strict`; do not set one fixed project root in a global multi-project MCP. `HARR_WORKSPACE_MODE=none` forces rootless startup, and `legacy` is the explicit pre-Workspace compatibility branch.
+- If the launcher has no suitable project candidate, the MCP starts rootless: the initial tool surface is exactly `ctx_tools` and `ctx_workspace_get` (`ctx_workspace_get` answers `no-workspace` without opening a store), resources are empty, and paths are denied with `workspace required`. Client roots, initialize arguments and later `roots/list_changed` notifications cannot raise authority; the gateway exposes only downstream servers explicitly configured with `workspace_required = false` (Harr ships that flag only for independently verified GitLab, Grafana, Kibana, Jira and Redash integrations).
+- To use a project after a pre-session rootless launch, register known folders through the direct Workspace control plane (`harr workspace sync` or `workspace_sync`) and restart/reconnect the host MCP in the selected project context. The default `auto` mode then binds the project from the launch directory; no explicit root or per-project global configuration is needed. Registering roots never changes an already-running rootless process.
+- `HARR_WORKSPACE_MODE=strict` keeps explicit-root-or-launch-directory resolution with Workspace safety validation. An empty or unknown mode, an explicitly invalid root, or `none` with an explicit root fail closed.
 
-Before any launch into a new mode pair Harr runs the capability probe (`lean-ctx harr-capabilities --json`) against the exact binary and refuses a runtime that does not report schema 1, the `lean-ctx` runtime name and the required capabilities (`authority-mode-v1`, `no-workspace-v1`, `workspace-sibling-checkouts-v1`). The failure happens before the lifecycle lock or any Workspace store mutation, with no fallback and no cache.
+Before any launch into a new mode pair Harr runs the capability probe (`lean-ctx harr-capabilities --json`) against the exact binary and refuses a runtime that does not report schema 1, the `lean-ctx` runtime name and the core capabilities (`authority-mode-v1`, `no-workspace-v1`, `workspace-sibling-checkouts-v1`). `auto` launches that validate a cwd-derived candidate also require `workspace-root-validation-v1`. A missing capability or validator/store error is fatal before unsafe authority can be granted.
 
 ### Installed layout
 
@@ -583,7 +583,7 @@ Linux:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.11.0-harr-unified.8/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-unified.9/lean-ctx
 
 ~/.local/share/harr/npm/
 ~/.local/share/harr-state/pre-harr/
@@ -627,7 +627,7 @@ macOS:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.11.0-harr-unified.8/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-unified.9/lean-ctx
 
 ~/.config/harr/
   mcp-selection.json
@@ -648,7 +648,7 @@ Windows:
   libexec\
     common\
     windows\
-    vendor\lean-ctx\3.11.0-harr-unified.8\lean-ctx.exe
+    vendor\lean-ctx\3.11.0-harr-unified.9\lean-ctx.exe
   share\npm\
   logs\<service-mcp>.log
 

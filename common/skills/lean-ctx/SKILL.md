@@ -1,6 +1,6 @@
 ---
 name: lean-ctx
-description: LeanCTX-specific troubleshooting/reference on a Harr-managed machine: minimal ctx_* surface, gateway semantics, rootless startup and explicit project binding, secret handling, and repair. Do not load for normal repository investigation; global Harr policy already defines tool order.
+description: LeanCTX-specific troubleshooting/reference on a Harr-managed machine: minimal ctx_* surface, gateway semantics, automatic project binding and rootless startup, secret handling, and repair. Do not load for normal repository investigation; global Harr policy already defines tool order.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -12,9 +12,9 @@ Harr owns LeanCTX and currently pins the Harr progress-aware LeanCTX 3.11.0 buil
 
 ## Rootless global host sessions
 
-Harr-managed LeanCTX resolves authority when the MCP process starts. OpenCode/ZCode global MCP entries start rootless when no explicit `HARR_WORKSPACE_ROOT` is supplied; the process does not infer a project from its cwd, client roots, or initialize arguments. In this mode, `ctx_workspace_get` reports `no-workspace`, file/path access is denied, and only `ctx_tools` plus `ctx_workspace_get` are exposed by LeanCTX.
+Harr-managed LeanCTX resolves authority when the MCP process starts. In the default `auto` mode, Harr passes its launcher working directory to LeanCTX's read-only Workspace validator: a suitable nearest Git root (or the directory itself outside a Git checkout) becomes the primary Workspace. An explicit `HARR_WORKSPACE_ROOT` overrides that candidate; `HARR_WORKSPACE_MODE=none` always starts rootless. A pre-session MCP launch with no project selected commonly inherits an unsuitable broad directory such as `$HOME`, so it safely remains rootless. In that mode, `ctx_workspace_get` reports `no-workspace`, file/path access is denied, and only `ctx_tools` plus `ctx_workspace_get` are exposed by LeanCTX.
 
-When the user later supplies a project root, use the direct Harr Workspace control plane to initialize/read that root's Workspace and add the other known working folders. That updates the Workspace store but does not elevate an already-running rootless LeanCTX process. Restart/reconnect LeanCTX with `HARR_WORKSPACE_ROOT` set to the explicit primary project root (use per-project/session host configuration where available); then the primary and registered additional roots are available under the normal Workspace policy. Do not set one fixed root in a global multi-project MCP configuration.
+When the user later supplies project folders, use the direct Harr Workspace control plane to initialize/read the chosen project and add the other known working folders. This updates the Workspace store but does not elevate an already-running rootless LeanCTX process. Reconnect/restart the host's project-context MCP so Harr launches LeanCTX from that project directory; default `auto` binds it without per-project configuration or a manually set root. Do not set one fixed root in a global multi-project MCP configuration.
 
 Direct Harr profile:
 

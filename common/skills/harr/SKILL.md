@@ -1,6 +1,6 @@
 ---
 name: harr
-description: Harr installation, status, doctor/repair, managed component configuration, transports, secrets, agent setup, and rootless LeanCTX startup with explicit project binding. Do not load for ordinary repository investigation.
+description: Harr installation, status, doctor/repair, managed component configuration, transports, secrets, agent setup, and LeanCTX project/rootless startup. Do not load for ordinary repository investigation.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -29,7 +29,7 @@ Use `harr doctor NAME` for end-to-end failures. Never run `harr doctor --repair`
 
 Do not bypass Harr with upstream installers or manual replacement of Harr-owned runtime/config files.
 
-For global OpenCode/ZCode sessions that start without a project, LeanCTX starts rootless by default. If the user later supplies project folders, follow `harr-workspace` to register those exact paths and `lean-ctx` to explain how a new LeanCTX launch binds the primary root. Workspace sync alone does not grant access to a running rootless process.
+LeanCTX `auto` authority binds to the launcher working directory's nearest Git root (or the directory itself when it is not inside a Git checkout), after LeanCTX validates that candidate. When an agent starts MCP before a project is selected, or its launch directory is unsuitable such as `$HOME`, it stays rootless with the minimal tool surface. If the user later supplies project folders, follow `harr-workspace` to register those exact paths; a running rootless process must reconnect or restart in the project context to bind automatically. `HARR_WORKSPACE_ROOT` remains an explicit override, and `HARR_WORKSPACE_MODE=none` forces rootless startup.
 
 Load only the reference needed for the current operation:
 

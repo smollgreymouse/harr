@@ -11,8 +11,27 @@ with tempfile.TemporaryDirectory(prefix='harr-workspace-manager-') as td:
     for p in (home,cfg,child): p.mkdir(parents=True,exist_ok=True)
     (repo/'.git').mkdir()
     fake=base/'leanctx'
-    fake.write_text('''#!/usr/bin/env python3\nimport json,sys,uuid\nfrom pathlib import Path\na=sys.argv[1:]\nif a==["harr-capabilities","--json"]:\n print(json.dumps({"schema_version":1,"runtime":"lean-ctx","capabilities":["authority-mode-v1","no-workspace-v1","workspace-sibling-checkouts-v1"]})); sys.exit(0)\nif a[:2]==["workspace-admin","create"]:\n p=Path(a[2]); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps({"id":str(uuid.uuid4()),"revision":1,"primary":str(Path(a[3]).resolve()),"additional":[]})); p.chmod(0o600); sys.exit(0)\nif a[:2]==["workspace-admin","show"]:\n print(Path(a[2]).read_text()); sys.exit(0)\nif a[:2]==["workspace-admin","reconcile"]:\n print(Path(a[2]).read_text()); sys.exit(0)\nsys.exit(2)\n'''); fake.chmod(0o755)
+    fake.write_text('''#!/usr/bin/env python3
+import json,sys,uuid
+from pathlib import Path
+a=sys.argv[1:]
+if a==["harr-capabilities","--json"]:
+ print(json.dumps({"schema_version":1,"runtime":"lean-ctx","capabilities":["authority-mode-v1","no-workspace-v1","workspace-sibling-checkouts-v1","workspace-root-validation-v1"]})); sys.exit(0)
+if a[:2]==["workspace-admin","validate-root"]:
+ p=Path(a[2]).resolve()
+ if p.name=="home" or p==Path(p.anchor): print(json.dumps({"schema_version":1,"operation":"validate-root","status":"unsuitable","reason":"unavailable-or-unsafe"}))
+ else: print(json.dumps({"schema_version":1,"operation":"validate-root","status":"valid","root":str(p)}))
+ sys.exit(0)
+if a[:2]==["workspace-admin","create"]:
+ p=Path(a[2]); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps({"id":str(uuid.uuid4()),"revision":1,"primary":str(Path(a[3]).resolve()),"additional":[]})); p.chmod(0o600); sys.exit(0)
+if a[:2]==["workspace-admin","show"]:
+ print(Path(a[2]).read_text()); sys.exit(0)
+if a[:2]==["workspace-admin","reconcile"]:
+ print(Path(a[2]).read_text()); sys.exit(0)
+sys.exit(2)
+'''); fake.chmod(0o755)
     os.environ['HOME']=str(home); os.environ['XDG_CONFIG_HOME']=str(cfg)
+    os.environ.pop('HARR_WORKSPACE_ROOT', None); os.environ.pop('HARR_WORKSPACE_MODE', None)
     gitdir=base/'git-admin'; gitdir.mkdir(); marker=gitdir/'description'; marker.write_text('fixture')
     marker_stat=marker.stat(); marker_ctime_ns=marker_stat.st_ctime_ns
     assert m.git_admin_generation(gitdir) == (
@@ -66,14 +85,23 @@ with tempfile.TemporaryDirectory(prefix='harr-workspace-manager-') as td:
             raise AssertionError('empty root was accepted')
         except SystemExit as exc:
             assert 'non-empty' in str(exc)
+    with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto', 'HARR_WORKSPACE_ROOT': 'relative/project'}):
+        with patch.object(m.subprocess, 'run', side_effect=AssertionError('invalid explicit root must fail before probing')):
+            try:
+                m.resolve_mcp_authority()
+                raise AssertionError('invalid explicit root was accepted by auto')
+            except SystemExit as exc:
+                assert 'absolute' in str(exc)
     with patch.dict(os.environ, {'HARR_WORKSPACE_ROOT': str(home)}):
         # Rust's workspace-admin validation rejects unsafe broad roots such as HOME.
         assert m.mcp_workspace_root() == home.resolve()
     os.environ.pop('HARR_WORKSPACE_ROOT', None)
-    # `auto` never derives authority from the cwd: a Git checkout below the
-    # process cwd grants nothing without an explicit root.
+    # `auto` preserves the old CWD resolver. The actual Workspace root is
+    # selected from the launch context, nearest .git first and plain CWD next.
     with patch.object(m.Path, 'cwd', return_value=child):
         assert m.mcp_workspace_root() is None
+        with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto'}):
+            assert m.resolve_mcp_authority() == ('auto-candidate', repo.resolve())
         # `strict` keeps the existing resolver: nearest .git from the cwd.
         with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'strict'}):
             assert m.resolve_mcp_authority() == ('workspace', repo.resolve())
@@ -93,8 +121,9 @@ with tempfile.TemporaryDirectory(prefix='harr-workspace-manager-') as td:
                 assert 'HARR_WORKSPACE_MODE' in str(exc)
     rootless_cfg = base/'rootless-config'
     with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto', 'XDG_CONFIG_HOME': str(rootless_cfg)}):
-        with patch.object(m.Path, 'cwd', return_value=home):
-            assert m.mcp_workspace_root() is None
+        with patch.object(m, 'workspace_root', return_value=home.resolve()):
+            resolved = m.resolve_mcp_authority()
+            assert resolved == ('auto-candidate', home.resolve()), resolved
             with patch.object(m.os, 'execvpe', side_effect=RuntimeError('exec intercepted')) as exec_mock:
                 try:
                     m.exec_leanctx(SimpleNamespace(real=str(fake), rest=['mcp']), {'servers': []})
@@ -106,6 +135,103 @@ with tempfile.TemporaryDirectory(prefix='harr-workspace-manager-') as td:
                 assert 'LEAN_CTX_WORKSPACE_FILE' not in child_env
                 assert 'LEAN_CTX_STRICT_WORKSPACE' not in child_env
                 assert not (rootless_cfg/'harr'/'workspaces').exists()
+    # An ordinary Git project regains automatic Workspace binding without an
+    # explicit root variable, including when the MCP host starts before chat.
+    auto_repo_cfg = base/'auto-repo-config'
+    with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto', 'XDG_CONFIG_HOME': str(auto_repo_cfg)}):
+        with patch.object(m.Path, 'cwd', return_value=child):
+            with patch.object(m.os, 'execvpe', side_effect=RuntimeError('exec intercepted')) as exec_mock:
+                try:
+                    m.exec_leanctx(SimpleNamespace(real=str(fake), rest=['mcp']), {'servers': []})
+                    raise AssertionError('exec should have been intercepted')
+                except RuntimeError as exc:
+                    assert str(exc) == 'exec intercepted'
+                auto_env = exec_mock.call_args.args[2]
+                auto_store = Path(auto_env['LEAN_CTX_WORKSPACE_FILE'])
+                auto_state = json.loads(auto_store.read_text())
+                assert auto_state['primary'] == str(repo.resolve())
+                assert auto_env['LEAN_CTX_AUTHORITY_MODE'] == 'workspace'
+    # A gitless CWD also follows the historical fallback and binds that exact
+    # directory when the LeanCTX validator accepts it.
+    gitless = base/'gitless'; gitless.mkdir()
+    gitless_cfg = base/'gitless-config'
+    with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto', 'XDG_CONFIG_HOME': str(gitless_cfg)}):
+        with patch.object(m.Path, 'cwd', return_value=gitless):
+            exists = Path.exists
+            def fixture_only_git_markers(path):
+                if path.name == '.git' and base not in path.parents:
+                    return False
+                return exists(path)
+            with patch.object(m.Path, 'exists', fixture_only_git_markers):
+                with patch.object(m.os, 'execvpe', side_effect=RuntimeError('exec intercepted')) as exec_mock:
+                    try:
+                        m.exec_leanctx(SimpleNamespace(real=str(fake), rest=['mcp']), {'servers': []})
+                        raise AssertionError('exec should have been intercepted')
+                    except RuntimeError as exc:
+                        assert str(exc) == 'exec intercepted'
+                    gitless_env = exec_mock.call_args.args[2]
+                    gitless_state = json.loads(Path(gitless_env['LEAN_CTX_WORKSPACE_FILE']).read_text())
+                    assert gitless_state['primary'] == str(gitless.resolve())
+                    assert gitless_env['LEAN_CTX_AUTHORITY_MODE'] == 'workspace'
+    # Explicit none stays rootless even when the launcher CWD is a project.
+    none_cfg = base/'explicit-none-config'
+    with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'none', 'XDG_CONFIG_HOME': str(none_cfg)}):
+        with patch.object(m.Path, 'cwd', return_value=child):
+            with patch.object(m, 'validate_leanctx_workspace_root', side_effect=AssertionError('none must not inspect CWD')):
+                with patch.object(m.os, 'execvpe', side_effect=RuntimeError('exec intercepted')) as exec_mock:
+                    try:
+                        m.exec_leanctx(SimpleNamespace(real=str(fake), rest=['mcp']), {'servers': []})
+                        raise AssertionError('exec should have been intercepted')
+                    except RuntimeError as exc:
+                        assert str(exc) == 'exec intercepted'
+                    none_env = exec_mock.call_args.args[2]
+                    assert none_env['LEAN_CTX_AUTHORITY_MODE'] == 'none'
+                    assert not (none_cfg/'harr'/'workspaces').exists()
+    # Validator execution and protocol failures are fatal. Harr must not
+    # convert an unavailable LeanCTX validator into a successful rootless run.
+    validator_cfg = base/'validator-failure-config'
+    capabilities = json.dumps({
+        'schema_version': 1,
+        'runtime': 'lean-ctx',
+        'capabilities': sorted(m.LEANCTX_REQUIRED_CAPABILITIES | {m.LEANCTX_WORKSPACE_ROOT_VALIDATION_CAPABILITY}),
+    })
+    with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto', 'XDG_CONFIG_HOME': str(validator_cfg)}):
+        with patch.object(m.Path, 'cwd', return_value=child):
+            with patch.object(m.subprocess, 'run', side_effect=[
+                SimpleNamespace(returncode=0, stdout=capabilities, stderr=''),
+                SimpleNamespace(returncode=1, stdout='', stderr='validator I/O failure'),
+            ]):
+                with patch.object(m.os, 'execvpe', side_effect=AssertionError('failed validation must not exec')):
+                    try:
+                        m.exec_leanctx(SimpleNamespace(real=str(fake), rest=['mcp']), {'servers': []})
+                        raise AssertionError('validator failure was swallowed')
+                    except SystemExit as exc:
+                        assert 'Workspace root validation failed' in str(exc)
+                    assert not (validator_cfg/'harr'/'workspaces').exists()
+    for malformed in (
+        'not json',
+        json.dumps({'schema_version': 1, 'operation': 'validate-root', 'status': 'future'}),
+        json.dumps({'schema_version': 1, 'operation': 'validate-root', 'status': 'valid', 'root': 'relative'}),
+    ):
+        with patch.object(m.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=malformed, stderr='')):
+            try:
+                m.validate_leanctx_workspace_root(fake, repo)
+                raise AssertionError('malformed validator response was accepted')
+            except SystemExit:
+                pass
+    # A valid preflight followed by a store-creation error remains a startup
+    # error; it cannot silently downgrade to rootless.
+    store_failure_cfg = base/'store-failure-config'
+    with patch.dict(os.environ, {'HARR_WORKSPACE_MODE': 'auto', 'XDG_CONFIG_HOME': str(store_failure_cfg)}):
+        with patch.object(m.Path, 'cwd', return_value=child):
+            with patch.object(m, 'ensure_workspace_store', side_effect=SystemExit('store failure')):
+                with patch.object(m.os, 'execvpe', side_effect=AssertionError('store failure must not exec')):
+                    try:
+                        m.exec_leanctx(SimpleNamespace(real=str(fake), rest=['mcp']), {'servers': []})
+                        raise AssertionError('store failure was swallowed')
+                    except SystemExit as exc:
+                        assert 'store failure' in str(exc)
+                    assert not (store_failure_cfg/'harr'/'workspaces').exists()
     # The capability probe runs with launcher-owned authority variables cleared,
     # so a stale parent environment cannot influence runtime admission.
     with patch.dict(os.environ, {'LEAN_CTX_AUTHORITY_MODE': 'none', 'LEAN_CTX_WORKSPACE_FILE': '/stale', 'LEAN_CTX_STRICT_WORKSPACE': '1', 'LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS': '1'}):
@@ -114,6 +240,11 @@ with tempfile.TemporaryDirectory(prefix='harr-workspace-manager-') as td:
             probe_env = run_mock.call_args.kwargs['env']
             for key in m.LEANCTX_LAUNCHER_AUTHORITY_VARS:
                 assert key not in probe_env, key
+            try:
+                m.verify_leanctx_capabilities(fake, require_workspace_root_validation=True)
+                raise AssertionError('old LeanCTX runtime without root validation capability was accepted for auto CWD')
+            except SystemExit as exc:
+                assert m.LEANCTX_WORKSPACE_ROOT_VALIDATION_CAPABILITY in str(exc)
     os.environ.pop('LEAN_CTX_AUTHORITY_MODE', None); os.environ.pop('LEAN_CTX_WORKSPACE_FILE', None)
     os.environ.pop('LEAN_CTX_STRICT_WORKSPACE', None); os.environ.pop('LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS', None)
     # Explicit `legacy` is a separate branch: no probe, no store setup, only the

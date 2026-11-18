@@ -613,10 +613,13 @@ LEANCTX_REQUIRED_CAPABILITIES = frozenset({
     "no-workspace-v1",
     "workspace-sibling-checkouts-v1",
 })
+LEANCTX_WORKSPACE_ROOT_VALIDATION_CAPABILITY = "workspace-root-validation-v1"
 LEANCTX_CAPABILITY_OUTPUT_LIMIT = 16 * 1024
 
 
-def verify_leanctx_capabilities(real: str | Path) -> Path:
+def verify_leanctx_capabilities(
+    real: str | Path, *, require_workspace_root_validation: bool = False
+) -> Path:
     """Verify the exact LeanCTX runtime before any Harr Workspace side effect."""
     binary = Path(real).expanduser().resolve(strict=False)
     # The probe must see the runtime as the MCP child will be launched, minus
@@ -663,10 +666,71 @@ def verify_leanctx_capabilities(real: str | Path) -> Path:
     capabilities = payload.get("capabilities")
     if not isinstance(capabilities, list) or any(not isinstance(item, str) for item in capabilities):
         raise SystemExit("LeanCTX capability response has an invalid capabilities list")
-    missing = sorted(LEANCTX_REQUIRED_CAPABILITIES.difference(capabilities))
+    required = set(LEANCTX_REQUIRED_CAPABILITIES)
+    if require_workspace_root_validation:
+        required.add(LEANCTX_WORKSPACE_ROOT_VALIDATION_CAPABILITY)
+    missing = sorted(required.difference(capabilities))
     if missing:
         raise SystemExit("LeanCTX runtime is missing required capabilities: " + ", ".join(missing))
     return binary
+
+
+def validate_leanctx_workspace_root(binary: str | Path, candidate: Path) -> Path | None:
+    """Ask LeanCTX's Workspace validator whether an automatic CWD root fits."""
+    runtime = Path(binary).expanduser().resolve(strict=False)
+    probe_env = os.environ.copy()
+    for key in LEANCTX_LAUNCHER_AUTHORITY_VARS:
+        probe_env.pop(key, None)
+    try:
+        result = subprocess.run(
+            [str(runtime), "workspace-admin", "validate-root", str(candidate)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=probe_env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(f"LeanCTX Workspace root validation timed out: {runtime}") from exc
+    except OSError as exc:
+        raise SystemExit(f"cannot run LeanCTX Workspace root validation at {runtime}: {exc}") from exc
+
+    if (
+        len(result.stdout.encode("utf-8")) > LEANCTX_CAPABILITY_OUTPUT_LIMIT
+        or len(result.stderr.encode("utf-8")) > LEANCTX_CAPABILITY_OUTPUT_LIMIT
+    ):
+        raise SystemExit("LeanCTX Workspace root validation output exceeded 16 KiB")
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise SystemExit(f"LeanCTX Workspace root validation failed: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"LeanCTX returned invalid Workspace root validation JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit("LeanCTX Workspace root validation response must be a JSON object")
+    if type(payload.get("schema_version")) is not int or payload["schema_version"] != 1:
+        raise SystemExit("LeanCTX Workspace root validation response has an unsupported schema_version")
+    if payload.get("operation") != "validate-root":
+        raise SystemExit("LeanCTX Workspace root validation response has an invalid operation")
+    status = payload.get("status")
+    if status == "valid":
+        if set(payload) != {"schema_version", "operation", "status", "root"}:
+            raise SystemExit("LeanCTX Workspace root validation response has invalid fields")
+        canonical = payload.get("root")
+        if not isinstance(canonical, str) or not canonical or not Path(canonical).is_absolute():
+            raise SystemExit("LeanCTX Workspace root validation response has an invalid root")
+        return Path(canonical)
+    if status == "unsuitable":
+        if set(payload) != {"schema_version", "operation", "status", "reason"}:
+            raise SystemExit("LeanCTX Workspace root validation response has invalid fields")
+        if payload.get("reason") != "unavailable-or-unsafe":
+            raise SystemExit("LeanCTX Workspace root validation response has an invalid reason")
+        return None
+    raise SystemExit("LeanCTX Workspace root validation response has an unknown status")
 
 
 LEANCTX_LAUNCHER_AUTHORITY_VARS = (
@@ -681,9 +745,9 @@ def resolve_mcp_authority() -> tuple[str, Path | None]:
     """Resolve the launcher authority mode for a managed MCP launch.
 
     Fixed contract:
-    - absent / ``auto``: only a valid explicit ``HARR_WORKSPACE_ROOT`` grants a
-      workspace; without one the launch is rootless (``none``). The launch cwd,
-      ``.git`` markers, client roots and tool arguments never contribute.
+    - absent / ``auto``: an explicit ``HARR_WORKSPACE_ROOT`` grants the
+      workspace; otherwise the launch cwd is the legacy automatic candidate.
+      The candidate is checked by LeanCTX before Harr creates a store.
     - ``strict``: the explicit root, or the existing ``workspace_root()``
       resolver (nearest ``.git``, else the cwd candidate) followed by the
       existing canonical/safety validation in the Workspace layer. An
@@ -716,7 +780,7 @@ def resolve_mcp_authority() -> tuple[str, Path | None]:
         # is validated later by the Workspace layer (canonical/safety), so an
         # unsafe or unavailable one errors instead of downgrading to rootless.
         return "workspace", workspace_root()
-    return ("workspace", root) if root is not None else ("none", None)
+    return ("workspace", root) if root is not None else ("auto-candidate", workspace_root())
 
 
 def build_leanctx_authority_env(
@@ -2283,7 +2347,15 @@ def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
                 # a Workspace store. Use this exact absolute path for probe and
                 # exec; the probe runs with launcher-owned authority variables
                 # cleared so a stale parent env cannot influence it.
-                leanctx_binary = verify_leanctx_capabilities(args.real)
+                auto_candidate = authority_mode == "auto-candidate"
+                leanctx_binary = verify_leanctx_capabilities(
+                    args.real,
+                    require_workspace_root_validation=auto_candidate,
+                )
+                if auto_candidate:
+                    assert primary is not None
+                    primary = validate_leanctx_workspace_root(leanctx_binary, primary)
+                    authority_mode = "workspace" if primary is not None else "none"
                 if authority_mode == "workspace":
                     assert primary is not None
                     lifecycle_lock = workspace_lifecycle_lock(inheritable=True).acquire()

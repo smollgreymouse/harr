@@ -21,7 +21,7 @@ Do **not** discover candidates by walking `$HOME`, listing sibling repositories,
 
 ## Starting from a rootless global MCP
 
-OpenCode/ZCode global MCP sessions start rootless when the Harr launcher has no explicit `HARR_WORKSPACE_ROOT`. If the user later provides the project path, that exact path is now known to the session and can be passed as `project` to `workspace_get` / `workspace_sync`; the direct Workspace control plane can initialize its store and register additional known folders. This sync does not grant access to the already-running rootless LeanCTX process. Restart/reconnect LeanCTX with `HARR_WORKSPACE_ROOT` set to the explicit primary project path before using LeanCTX on those folders. Prefer per-project/session binding when the host supports it; do not put one project's root into a global multi-project MCP entry.
+An OpenCode/ZCode MCP launched before a project is selected may be rootless because its inherited working directory is unsuitable, such as `$HOME`. If the user later provides the project path, that exact path is now known to the session and can be passed as `project` to `workspace_get` / `workspace_sync`; the direct Workspace control plane can initialize its store and register known additional folders. This sync does not grant access to the already-running rootless LeanCTX process. Restart/reconnect the host's MCP in the project context; Harr's default `auto` mode then binds the nearest Git root (or the project directory outside Git) after LeanCTX validates it. No explicit `HARR_WORKSPACE_ROOT` or per-project global configuration is needed.
 
 If the host exposes only the current working directory and no additional roots, sync only that directory and report that no other session roots were available.
 
@@ -91,4 +91,4 @@ harr workspace show
 - Never remove a Workspace root unless the user separately asks for removal.
 - Never add `$HOME`, `/`, broad parent directories, or unrelated repositories merely because they are readable.
 - Do not claim that adding a root grants the agent OS/sandbox permissions. It only authorizes that root inside Harr-managed LeanCTX; the client may still be unable to read/write it because of its own sandbox.
-- When LeanCTX is already bound to the same primary root, do not restart Codex/OpenCode or LeanCTX after a successful sync; the live Workspace store makes the added roots available to the next request. A rootless LeanCTX process remains rootless after sync and must be restarted/reconnected with the explicit primary root before it can access those folders.
+- When LeanCTX is already bound to the same primary root, do not restart Codex/OpenCode or LeanCTX after a successful sync; the live Workspace store makes added roots available to the next request. A rootless LeanCTX process remains rootless after sync and must be restarted/reconnected in the selected project context before it can access those folders.

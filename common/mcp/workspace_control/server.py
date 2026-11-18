@@ -112,7 +112,7 @@ def tools() -> list[dict]:
         },
         {
             "name": "workspace_sync",
-            "description": "Add already-known working directories from the current agent session to Harr Workspace. Add-only; never removes roots. Rejects filesystem root, user HOME and broad parents of the primary root. This does not grant access to an already-running rootless LeanCTX process; restart/reconnect LeanCTX with HARR_WORKSPACE_ROOT set to the explicit primary root.",
+            "description": "Add already-known working directories from the current agent session to Harr Workspace. Add-only; never removes roots. Rejects filesystem root, user HOME and broad parents of the primary root. This does not grant access to an already-running rootless LeanCTX process; restart/reconnect the host MCP in the selected project context, and default auto mode binds that project after LeanCTX validates it. No explicit HARR_WORKSPACE_ROOT is needed.",
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
             "inputSchema": {
                 "type": "object",

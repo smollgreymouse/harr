@@ -79,6 +79,8 @@ raise SystemExit(2)
         assert 'result' in rpc(p,1,'initialize',{})
         tools=rpc(p,2,'tools/list',{})['result']['tools']; names={x['name'] for x in tools}
         assert names=={'workspace_get','workspace_sync','workspace_owner_get','workspace_owner_claim','workspace_owner_release'},names
+        sync_description=next(x['description'] for x in tools if x['name']=='workspace_sync')
+        assert 'default auto mode binds that project' in sync_description and 'No explicit HARR_WORKSPACE_ROOT is needed' in sync_description
         got=rpc(p,3,'tools/call',{'name':'workspace_get','arguments':{'project':str(repo)}})['result']['structuredContent']; assert got['revision']==1 and got['primary']==str(repo)
         synced=rpc(p,4,'tools/call',{'name':'workspace_sync','arguments':{'project':str(repo),'paths':[str(repo),str(extra)]}})['result']['structuredContent']
         assert synced['beforeRevision']==1 and synced['revision']==2 and synced['sync']['added']==[str(extra)],synced
