@@ -1,6 +1,6 @@
 ---
 name: lean-ctx
-description: LeanCTX-specific troubleshooting/reference on a Harr-managed machine: minimal ctx_* surface, gateway semantics, cwd/project binding, secret handling, and repair. Do not load for normal repository investigation; global Harr policy already defines tool order.
+description: LeanCTX-specific troubleshooting/reference on a Harr-managed machine: minimal ctx_* surface, gateway semantics, rootless startup and explicit project binding, secret handling, and repair. Do not load for normal repository investigation; global Harr policy already defines tool order.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -9,6 +9,12 @@ description: LeanCTX-specific troubleshooting/reference on a Harr-managed machin
 Use this skill only for LeanCTX-specific behavior or failures. Normal tool routing is already injected into the host's global `AGENTS.md` by Harr.
 
 Harr owns LeanCTX and currently pins the Harr progress-aware LeanCTX 3.11.0 build. Do not run upstream `lean-ctx setup`, `lean-ctx onboard`, or `lean-ctx update`.
+
+## Rootless global host sessions
+
+Harr-managed LeanCTX resolves authority when the MCP process starts. OpenCode/ZCode global MCP entries start rootless when no explicit `HARR_WORKSPACE_ROOT` is supplied; the process does not infer a project from its cwd, client roots, or initialize arguments. In this mode, `ctx_workspace_get` reports `no-workspace`, file/path access is denied, and only `ctx_tools` plus `ctx_workspace_get` are exposed by LeanCTX.
+
+When the user later supplies a project root, use the direct Harr Workspace control plane to initialize/read that root's Workspace and add the other known working folders. That updates the Workspace store but does not elevate an already-running rootless LeanCTX process. Restart/reconnect LeanCTX with `HARR_WORKSPACE_ROOT` set to the explicit primary project root (use per-project/session host configuration where available); then the primary and registered additional roots are available under the normal Workspace policy. Do not set one fixed root in a global multi-project MCP configuration.
 
 Direct Harr profile:
 

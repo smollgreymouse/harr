@@ -37,6 +37,7 @@
       "label": "GitLab",
       "description": "GitLab API, merge requests, pipelines and issues",
       "required": false,
+      "workspace_required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
@@ -93,6 +94,7 @@
       "label": "Grafana",
       "description": "Grafana dashboards and datasources",
       "required": false,
+      "workspace_required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
@@ -152,6 +154,7 @@
       "label": "Kibana",
       "description": "read-only Kibana/Elasticsearch logs, mappings and search",
       "required": false,
+      "workspace_required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
@@ -218,6 +221,7 @@
       "label": "Jira",
       "description": "Jira Server/Data Center issues and JQL via local REST MCP",
       "required": false,
+      "workspace_required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {
@@ -394,6 +398,7 @@
       "label": "Redash",
       "description": "metadata-only Redash queries, dashboards and schemas (no SQL execution or writes)",
       "required": false,
+      "workspace_required": false,
       "transport": "stdio",
       "lifecycle": "on-demand",
       "runtime": {

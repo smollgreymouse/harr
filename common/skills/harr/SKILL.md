@@ -1,6 +1,6 @@
 ---
 name: harr
-description: Harr installation, status, doctor/repair, managed component configuration, transports, secrets, and agent setup. Do not load for ordinary repository investigation.
+description: Harr installation, status, doctor/repair, managed component configuration, transports, secrets, agent setup, and rootless LeanCTX startup with explicit project binding. Do not load for ordinary repository investigation.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -28,6 +28,8 @@ harr secret status
 Use `harr doctor NAME` for end-to-end failures. Never run `harr doctor --repair` merely because doctor reports a failure. Repair mutates Harr-owned runtime state: run `--repair` only when the user explicitly asks to repair, restore, fix, recover, or equivalent. If repair is `BLOCKED` or `ROLLED_BACK`, stop and report the evidence rather than inventing a second repair path.
 
 Do not bypass Harr with upstream installers or manual replacement of Harr-owned runtime/config files.
+
+For global OpenCode/ZCode sessions that start without a project, LeanCTX starts rootless by default. If the user later supplies project folders, follow `harr-workspace` to register those exact paths and `lean-ctx` to explain how a new LeanCTX launch binds the primary root. Workspace sync alone does not grant access to a running rootless process.
 
 Load only the reference needed for the current operation:
 
