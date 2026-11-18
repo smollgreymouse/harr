@@ -1,6 +1,7 @@
 .codegraph/
 .idea/
 /dist/
+/build/
 tools/codex-scheduler/build/
 tools/codex-scheduler/build-*/
 tools/codex-scheduler/dist/
