@@ -110,7 +110,7 @@ grep -q 'Agent harness: enabled' "${TMP}/harness.default"
 # Orchestration is opt-in: default/off installs neither Asa artifacts nor routing.
 "${ROOT}/linux/harr" agents orchestration status >"${TMP}/orchestration.default"
 grep -q 'Orchestration: disabled' "${TMP}/orchestration.default"
-grep -q 'Asa model: gpt-6.1-sol' "${TMP}/orchestration.default"
+grep -q 'Asa model: gpt-6.2-sol' "${TMP}/orchestration.default"
 grep -q 'Asa effort: xhigh' "${TMP}/orchestration.default"
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]

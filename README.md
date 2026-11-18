@@ -60,7 +60,7 @@ is disabled without activating it:
 harr agents orchestration status
 harr agents orchestration enable
 harr agents orchestration disable
-harr agents asa configure --model gpt-6.1-sol --effort xhigh
+harr agents asa configure --model gpt-6.2-sol --effort xhigh
 ```
 
 On ZCode the same switch installs the `$asa` skill (a ZCode-specific contract
