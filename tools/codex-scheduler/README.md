@@ -2,20 +2,33 @@
 
 Native Linux desktop scheduler for existing agent CLI sessions — **Codex** and **ZCode** today, one shared task store, tray and transcript UI. The scheduler is implemented entirely in **C++20 + Qt 6 Widgets**; there is no Python/PyQt runtime or Python scheduler code.
 
-Every task targets one agent session. Before creating an `at` job, the scheduler asks the agent's own API for the session's project directory (Codex App Server `thread/read`, ZCode Protocol `session/list`), verifies it and its Git worktree, then emits an `at` job beginning with `cd <session-cwd>`. The scheduler never inspects private agent state formats such as rollout JSONL files or SQLite databases. `--cwd DIR` is available only as a fail-closed explicit fallback and must agree with agent metadata when both are available.
+Every task targets one agent session. Before creating an `at` job, the scheduler asks the agent's own public API for the session's project directory (Codex App Server `thread/read`), verifies it and its Git worktree, then emits an `at` job beginning with `cd <session-cwd>`. The scheduler never inspects private agent state formats such as rollout JSONL files, SQLite databases, desktop runtime files or provider configs. `--cwd DIR` is available only as a fail-closed explicit fallback and must agree with agent metadata when both are available.
 
 `--timestamp CCYYMMDDhhmm` schedules an absolute local date/time through `at -t`, so GUI tasks can be scheduled days or weeks ahead. CLI `--at` remains available for ordinary `at(1)` expressions.
 
 ## Agents
 
+Every agent sits behind a small adapter that uses **public CLI/API surfaces only**. Internal app-server protocols, desktop-only transports and private state files are out of bounds.
+
 | Agent | Session metadata | Model catalog | Turn execution |
 |---|---|---|---|
 | `codex` | Codex App Server `thread/list` / `thread/read` | App Server `model/list` | `codex exec -m … resume …` |
-| `zcode` | ZCode Protocol `session/list` | the agent's builtin provider config (`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE`, runtime-path fallback) | `harr-scheduler agent-exec` driving the ZCode Protocol app-server |
+| `zcode` | **unavailable** — no public session-list CLI/API yet | **unavailable** — no public model-catalog CLI/API yet | `zcode [--resume <id>] --prompt <text> --cwd <workspace> --mode <mode> --json` |
 
-ZCode tasks additionally expose a **permission mode** selector (`build`, `edit`, `plan`, `yolo`, `guarded`) and default to **yolo**, because scheduled autonomous turns run unattended; the executor refuses unknown server-to-client permission requests, so non-yolo modes degrade to denied tool use.
+### ZCode (public CLI contract)
 
-**Known ZCode limitation (0.17.x):** a standalone ZCode app-server starts with an empty model registry — the desktop client injects account providers and models into its own process. Metadata (sessions, project directories) and the model catalog work regardless, but a scheduled ZCode turn currently fails with a clear `Select a model` configuration error until ZCode exposes standalone model resolution. The executor surfaces that error in the task transcript.
+Scheduled ZCode turns call the documented standalone CLI directly:
+
+```text
+zcode --prompt <text> --cwd <workspace> --mode <build|edit|plan|yolo|guarded> --json
+zcode --resume <sessionId> --prompt <text> --cwd <workspace> --mode <mode> --json
+```
+
+- `--resume` is added only when the task targets an existing session; sessions are not enumerable, so the GUI keeps the session field as manual paste and project verification stays explicitly unavailable until ZCode exposes a public session API.
+- The CLI documents no `--model` launch flag (model selection is configuration-driven), so the scheduler forwards none; the model catalog stays blocked until a public enumeration API appears.
+- `--json` emits NDJSON; the terminal `type=result` record carries the final response and feeds the saved answer and transcript.
+- Permission modes default to **yolo** for unattended scheduled turns.
+- Because headless ZCode runs currently cannot select a model ("Select a model before sending a message" on resume/new turns), actual turn execution remains blocked upstream until ZCode ships a public model-selection contract; the scheduler surfaces that error in the task transcript rather than working around it with internal APIs.
 
 ## One native executable
 
@@ -25,7 +38,6 @@ ZCode tasks additionally expose a **permission mode** selector (`build`, `edit`,
 harr-scheduler                 # GUI + tray
 harr-scheduler schedule ...    # --agent codex|zcode
 harr-scheduler job-runner ...
-harr-scheduler agent-exec ...  # zcode turn executor
 harr-scheduler session-list ...
 harr-scheduler session-cwd ...
 harr-scheduler self-test
@@ -33,7 +45,7 @@ harr-scheduler self-test
 
 `harr-schedule`, `codex-schedule`, `sol`, `terra`, `luna` and `codex-scheduler-ui` are thin shell entrypoints to that binary. The 0.3.x package name `harr-codex-scheduler` is replaced by the `.deb`; postinst keeps a compatibility symlink so at jobs queued before the upgrade still run.
 
-An `at` job always launches a **separate `harr-scheduler job-runner` process**. The running agent turn therefore does not depend on the GUI/tray process staying alive. The runner launches the agent's executor, captures codex-style JSONL events (zcode turns are normalized to the same event stream by `agent-exec`), updates the persistent task JSON and optionally writes the clean final answer. Closing or restarting the desktop app cannot lose the job output.
+An `at` job always launches a **separate `harr-scheduler job-runner` process**. The running agent turn therefore does not depend on the GUI/tray process staying alive. The runner launches the agent's CLI executor, captures its JSONL event stream (codex events natively, zcode `--json` NDJSON via the shared parser), updates the persistent task JSON and optionally writes the clean final answer. Closing or restarting the desktop app cannot lose the job output.
 
 The desktop process watches the task-state directory using `QFileSystemWatcher`. Atomic task-state updates from the runner therefore refresh open tabs and tray state promptly. A slow reconciliation timer remains as a fallback; the runner and GUI do not require a socket or service daemon.
 
@@ -202,8 +214,9 @@ Tests use fake `codex`, `zcode` and `at` executables and spend no agent quota. T
 
 - native C++/Qt build;
 - state, migration and transcript self-test;
-- agent registry and per-agent exec command contracts;
-- App Server cwd/session-list behavior including archived-session filtering (both agents);
+- agent registry, per-agent exec command contracts and explicit unavailability of zcode session/model surfaces;
+- Codex App Server cwd/session-list behavior including archived-session filtering;
+- zcode public-CLI process contract: new turn, resume, mode, NDJSON result parsing, non-zero exit, cancel, cwd handling — and that `app-server` is never invoked;
 - Sol/Terra/Luna High + Standard selector contracts;
 - absolute timestamp validation;
 - same-binary `job-runner` execution and answer/state persistence for codex and zcode turns;

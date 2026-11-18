@@ -180,7 +180,7 @@ int runJobRunner(const QStringList &args)
     }
     const QString finalStatus = cancelled ? "cancelled" : (rc == 0 ? "completed" : "failed");
     QJsonObject finalPatch{{"status", finalStatus}, {"pid", QJsonValue::Null}, {"finished_at", utcNow()}};
-    if (!cancelled && rc != 0) finalPatch.insert("error", QString("Codex exited with status %1").arg(rc));
+    if (!cancelled && rc != 0) finalPatch.insert("error", QString("agent exited with status %1").arg(rc));
     else finalPatch.insert("error", QJsonValue::Null);
     patchState(finalPatch);
     return rc;

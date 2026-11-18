@@ -240,11 +240,15 @@ void TaskPage::applyAgent(const QString &agentId, bool force)
     if (!force && next == currentAgent()) return;
     setChoiceValue(agent, next);
     const AgentCapabilities caps = agentService(next)->capabilities();
+    model->setVisible(caps.modelSelector);
     reasoning->setVisible(caps.reasoning);
     speed->setVisible(caps.speed);
     mode->setVisible(caps.mode);
-    session->setToolTip(QString("Recent active %1 sessions; paste a session ID with Ctrl+V")
-                            .arg(agentDisplayName(next)));
+    session->setToolTip(caps.sessionSelector
+        ? QString("Recent active %1 sessions; paste a session ID with Ctrl+V")
+              .arg(agentDisplayName(next))
+        : QString("%1 sessions are not enumerable via the public CLI yet; "
+                  "paste a session ID manually").arg(agentDisplayName(next)));
     if (force) return;
 
     // Session ids are not portable across agents: drop the selection and
@@ -538,15 +542,28 @@ void TaskPage::primaryAction()
 
 void TaskPage::schedule()
 {
-    const QString id = session->sessionId();
-    const QString text = prompt->toPlainText().trimmed();
-    if (id.isEmpty() || text.isEmpty()) {
-        QMessageBox::warning(this, APP_NAME, "Session and prompt are required.");
-        return;
-    }
     const QString agentId = currentAgent();
     AgentService *service = agentService(agentId);
     const AgentCapabilities caps = service ? service->capabilities() : AgentCapabilities{};
+    const QString id = session->sessionId();
+    const QString text = prompt->toPlainText().trimmed();
+    if (text.isEmpty() || (caps.sessionRequired && id.isEmpty())) {
+        QMessageBox::warning(this, APP_NAME,
+                             caps.sessionRequired ? "Session and prompt are required."
+                                                  : "Prompt is required.");
+        return;
+    }
+    if (!caps.sessionRequired && caps.mode && m_cwd.isEmpty()) {
+        // Without a public session API there is no verified project
+        // directory; scheduling stays explicitly blocked in the GUI.
+        QMessageBox::warning(
+            this, APP_NAME,
+            QString("%1 sessions are not enumerable via the public CLI yet, so no project "
+                    "directory can be verified here.\nSchedule %1 turns from the terminal "
+                    "with `harr-schedule --agent %2 --cwd ...`.")
+                .arg(agentDisplayName(agentId), agentId));
+        return;
+    }
     if (caps.modelRequired && choiceValue(model).isEmpty()) {
         QMessageBox::warning(this, APP_NAME,
                              QString("No %1 model is available.").arg(agentDisplayName(agentId)));

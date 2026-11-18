@@ -124,12 +124,20 @@ int runSelfTest()
     if (harr::agentIds().size() != 2 || harr::agentDisplayName("zcode") != "ZCode") return 20;
     {
         const harr::AgentExecRequest execReq{
-            "sess-1", "do things", "account:zai/GLM-5.3-Flash", {}, {}, "yolo", {}, false};
+            "sess-1", "do things", "/tmp/wk", "account:zai/GLM-5.3-Flash",
+            {}, {}, "yolo", {}, false};
         QString agentError;
         const QStringList command = harr::agentService("zcode")->execCommand(execReq, &agentError);
         if (command.isEmpty()) return 21;
-        const int agentExecIndex = command.indexOf("agent-exec");
-        if (agentExecIndex < 0 || !command.contains("--mode") || !command.contains("yolo")) return 22;
+        if (command.indexOf("agent-exec") >= 0 || !command.contains("--prompt")
+            || !command.contains("do things") || !command.contains("--resume")
+            || !command.contains("sess-1") || !command.contains("--cwd")
+            || !command.contains("/tmp/wk") || !command.contains("--mode")
+            || !command.contains("yolo") || !command.contains("--json")) return 22;
+        QString catalogError;
+        if (!harr::agentService("zcode")->listModels(&catalogError).isEmpty()
+            || catalogError.isEmpty()
+            || !catalogError.contains("public CLI")) return 24;
     }
 
     {
@@ -177,7 +185,6 @@ int main(int argc, char **argv)
         if (mode == "job-runner") return harr::runJobRunner(args);
         if (mode == "session-list") return harr::runSessionListCli(args);
         if (mode == "session-cwd") return harr::runSessionCwdCli(args);
-        if (mode == "agent-exec") return harr::runAgentExec(args);
         QTextStream(stderr) << "Unknown mode: " << mode << '\n';
         return 2;
     }

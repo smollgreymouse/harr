@@ -187,75 +187,87 @@ if "$ROOT/bin/codex-schedule" --model gpt-5.6-sol --reasoning high --speed stand
 fi
 grep -Fq -- '--cwd mismatch' "$TMP/mismatch.out"
 
-# --- ZCode agent -----------------------------------------------------------
+# --- ZCode agent (public CLI contract only) --------------------------------
 mkdir -p "$TMP/zwork"
 git init -q "$TMP/zwork"
 
+# Fake zcode CLI: emits NDJSON on --json and honours the documented
+# standalone flags. It must never be called with app-server.
 cat > "$TMP/bin/zcode" <<'EOF_ZCODE'
 #!/bin/sh
 set -eu
-if [ "${1:-}" = app-server ]; then
-  while IFS= read -r line; do
-    id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-    method=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
-    case "$method" in
-      session/list)
-        printf '{"id":%s,"result":{"sessions":[{"sessionId":"zactive","title":"Zed session","sessionKind":"interactive","status":"idle","updatedAt":500,"workspace":{"workspacePath":"%s","workspaceKey":"%s"}},{"sessionId":"zsub","title":"subagent","sessionKind":"subagent","status":"idle","updatedAt":600,"workspace":{"workspacePath":"%s"}}]}}\n' "$id" "$FAKE_ZCODE_CWD" "$FAKE_ZCODE_CWD" "$FAKE_ZCODE_CWD"
-        ;;
-      session/create)
-        printf '{"id":%s,"result":{"session":{"sessionId":"zactive"}}}\n' "$id"
-        ;;
-      session/setMode)
-        printf '{"id":%s,"result":{}}\n' "$id"
-        ;;
-      session/lifecycle/ensureReady)
-        printf '{"id":%s,"result":{"completed":true}}\n' "$id"
-        ;;
-      session/send)
-        printf '{"id":%s,"result":{"accepted":true}}\n' "$id"
-        printf '{"method":"state.updated","params":{"patch":{"status":"running"}}}\n'
-        printf '{"method":"v4/telemetry/event","params":{"kind":"turn.started"}}\n'
-        printf '{"method":"v4/telemetry/event","params":{"kind":"turn.terminal","status":"completed"}}\n'
-        ;;
-      session/read)
-        printf '{"id":%s,"result":{"messages":[{"info":{"role":"assistant","semantics":{"kind":"assistant_response"}},"parts":[{"type":"text","text":"z fake answer"}]}]}}\n' "$id"
-        ;;
-      *)
-        printf '{"id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$id"
-        ;;
-    esac
-  done
-  exit 0
+for arg in "$@"; do
+  [ "$arg" != "app-server" ] || { echo 'zcode: app-server is not part of the public CLI' >&2; exit 2; }
+done
+prompt=''; resume=''; mode=''; cwd=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --prompt) prompt=$2; shift 2;;
+    --resume) resume=$2; shift 2;;
+    --mode) mode=$2; shift 2;;
+    --cwd) cwd=$2; shift 2;;
+    --json) shift;;
+    *) shift;;
+  esac
+done
+[ -n "$prompt" ] || { echo 'zcode: --prompt is required' >&2; exit 2; }
+[ -n "$cwd" ] || { echo 'zcode: --cwd is required' >&2; exit 2; }
+[ -n "$mode" ] || mode=yolo
+if [ -n "${FAKE_ZCODE_FAIL:-}" ]; then
+  echo 'zcode fake failure' >&2
+  exit "$FAKE_ZCODE_FAIL"
 fi
-echo "unexpected zcode invocation: $*" >&2
-exit 2
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess_zfake"}'
+printf '%s\n' '{"type":"assistant","message":{"text":"z fake partial"}}'
+printf '%s\n' '{"type":"result","session_id":"sess_zfake","result":"z fake answer","is_error":false}'
 EOF_ZCODE
 chmod +x "$TMP/bin/zcode"
-export FAKE_ZCODE_CWD="$TMP/zwork" ZCODE_BIN="$TMP/bin/zcode"
+export ZCODE_BIN="$TMP/bin/zcode"
 
-ZLIST=$($BIN session-list --agent zcode --codex-bin "$TMP/bin/zcode")
-grep -Fq 'zactive' <<<"$ZLIST"
-if grep -Fq 'zsub' <<<"$ZLIST"; then
-  echo 'subagent session leaked through zcode session-list' >&2
+# Catalog/session surfaces without a public CLI/API stay explicitly blocked.
+if $BIN session-list --agent zcode >/tmp/zlist.out 2>&1; then
+  echo 'zcode session-list must be unavailable' >&2
+  exit 1
+fi
+grep -q 'public CLI' /tmp/zlist.out
+if $BIN session-cwd --agent zcode --session sess_zfake >/tmp/zcwd.out 2>&1; then
+  echo 'zcode session-cwd must be unavailable' >&2
+  exit 1
+fi
+grep -q 'public CLI' /tmp/zcwd.out
+
+ZTS=$(date -d '+1 day' +%Y%m%d%H%M)
+# Resume turn: --resume + --cwd + --mode + --json on the direct CLI command.
+"$ROOT/bin/harr-schedule" --agent zcode --mode build --timestamp "$ZTS" --session sess_zfake \
+  --prompt 'Z task' --cwd "$TMP/zwork" --output "$TMP/zout.log"
+grep -Fq "'--resume'" "$TMP/at.job"
+grep -Fq "'sess_zfake'" "$TMP/at.job"
+grep -Fq "'--cwd'" "$TMP/at.job"
+grep -Fq "'--mode'" "$TMP/at.job"
+grep -Fq "'build'" "$TMP/at.job"
+grep -Fq "'--json'" "$TMP/at.job"
+if grep -Fq "'app-server'" "$TMP/at.job"; then
+  echo 'zcode at job must not use app-server' >&2
+  exit 1
+fi
+sh "$TMP/at.job" >/dev/null
+grep -Fq 'sess_zfake' "$TMP/zout.log"
+
+# New turn without a session: no --resume, but --prompt/--cwd/--mode/--json stay.
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" \
+  --prompt 'Z fresh' --cwd "$TMP/zwork" --output "$TMP/zfresh.log"
+grep -Fq "'--prompt'" "$TMP/at.job"
+if grep -Fq "'--resume'" "$TMP/at.job"; then
+  echo 'new zcode turn must not pass --resume' >&2
   exit 1
 fi
 
-ZCWD=$($BIN session-cwd --agent zcode --session zactive --codex-bin "$TMP/bin/zcode")
-[[ "$ZCWD" == "$TMP/zwork" ]]
-
-ZTS=$(date -d '+1 day' +%Y%m%d%H%M)
-"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --session zactive \
-  --prompt 'Z task' --cwd "$TMP/zwork" --output "$TMP/zout.log"
-grep -Fq "'agent-exec'" "$TMP/at.job"
-grep -Fq "'--agent'" "$TMP/at.job"
-grep -Fq "'zcode'" "$TMP/at.job"
-sh "$TMP/at.job" >/dev/null
-
+# Runner-driven resume turn: NDJSON result parsing, answer + state persistence.
 ZTASK="$TMP/state/tasks/z-task.json"
 cat > "$ZTASK" <<EOF_ZTASK
 {"id":"z-task","status":"scheduled","agent":"zcode","mode":"yolo","cancel_requested":false,"log":"$TMP/state/jobs/z-task.jsonl"}
 EOF_ZTASK
-"$ROOT/bin/harr-schedule" --agent zcode --mode yolo --timestamp "$ZTS" --session zactive \
+"$ROOT/bin/harr-schedule" --agent zcode --mode yolo --timestamp "$ZTS" --session sess_zfake \
   --prompt 'Z task 2' --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-task.jsonl" \
   --save-answer "$TMP/zanswer.md" --task-state "$ZTASK"
 sh "$TMP/at.job" >/dev/null
@@ -263,10 +275,40 @@ grep -Eq '"status"[[:space:]]*:[[:space:]]*"completed"' "$ZTASK"
 grep -Fq 'z fake answer' "$TMP/state/jobs/z-task.jsonl"
 grep -Fxq 'z fake answer' "$TMP/zanswer.md"
 
-assert_rejected_before_at bad_zcode_mode --agent zcode --mode bogus --session zactive \
+# Non-zero CLI exit must fail the task and surface the exit status.
+ZFAIL="$TMP/state/tasks/z-fail.json"
+cat > "$ZFAIL" <<EOF_ZFAIL
+{"id":"z-fail","status":"scheduled","agent":"zcode","cancel_requested":false,"log":"$TMP/state/jobs/z-fail.jsonl"}
+EOF_ZFAIL
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --prompt 'Z boom' \
+  --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-fail.jsonl" --task-state "$ZFAIL"
+FAKE_ZCODE_FAIL=3 sh "$TMP/at.job" >/dev/null 2>&1 || true
+grep -Eq '"status"[[:space:]]*:[[:space:]]*"failed"' "$ZFAIL"
+grep -Eq 'agent exited with status 3' "$ZFAIL"
+
+# Cancel: a requested cancel turns the finished run into a cancelled task.
+ZCANCEL="$TMP/state/tasks/z-cancel.json"
+cat > "$ZCANCEL" <<EOF_ZCANCEL
+{"id":"z-cancel","status":"running","agent":"zcode","pid":null,"cancel_requested":true,"log":"$TMP/state/jobs/z-cancel.jsonl"}
+EOF_ZCANCEL
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --prompt 'Z cancel' \
+  --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-cancel.jsonl" --task-state "$ZCANCEL"
+sh "$TMP/at.job" >/dev/null
+grep -Eq '"status"[[:space:]]*:[[:space:]]*"cancelled"' "$ZCANCEL"
+
+# Mode validation is agent-aware; bogus modes never reach at.
+assert_rejected_before_at bad_zcode_mode --agent zcode --mode bogus --session sess_zfake \
   --prompt p --cwd "$TMP/zwork" --timestamp "$ZTS" --output "$TMP/out.log"
 grep -Fq 'unsupported mode' "$TMP/bad_zcode_mode.out"
 
-unset ZCODE_BIN FAKE_ZCODE_CWD
+# Without --cwd (and without a public session API) scheduling is refused.
+if "$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --session sess_zfake \
+  --prompt p --output "$TMP/out.log" >"$TMP/zcwd-missing.out" 2>&1; then
+  echo 'zcode schedule without verified cwd must fail' >&2
+  exit 1
+fi
+grep -q 'public CLI' "$TMP/zcwd-missing.out"
+
+unset ZCODE_BIN
 
 echo 'native C++ CLI scheduler tests passed'

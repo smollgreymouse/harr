@@ -2,7 +2,6 @@
 #include "CodexService.h"
 #include "ZcodeService.h"
 
-#include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>
 #include <QtCore/QProcess>
 
@@ -41,7 +40,11 @@ class CodexAgentService final : public AgentService {
 public:
     QString id() const override { return QStringLiteral("codex"); }
     QString displayName() const override { return QStringLiteral("Codex"); }
-    AgentCapabilities capabilities() const override { return {true, true, true, false}; }
+    AgentCapabilities capabilities() const override
+    {
+        return {/*sessionRequired*/ true, /*sessionSelector*/ true, /*modelRequired*/ true,
+                /*modelSelector*/ true, /*reasoning*/ true, /*speed*/ true, /*mode*/ false};
+    }
 
     QVector<QJsonObject> listModels(QString *error, const QString &agentBin) override
     {
@@ -85,44 +88,52 @@ public:
     }
 };
 
-// Zcode runs its turns through the `agent-exec` mode of this very binary,
-// which drives the ZCode Protocol app-server for the whole turn.
+// Zcode uses the public standalone CLI only. Session enumeration and the
+// model catalog have no documented public CLI/API yet, so those lookups
+// stay explicitly unavailable instead of falling back to internal state.
 class ZcodeAgentService final : public AgentService {
 public:
     QString id() const override { return QStringLiteral("zcode"); }
     QString displayName() const override { return QStringLiteral("ZCode"); }
-    AgentCapabilities capabilities() const override { return {false, false, false, true}; }
+    AgentCapabilities capabilities() const override
+    {
+        return {/*sessionRequired*/ false, /*sessionSelector*/ false, /*modelRequired*/ false,
+                /*modelSelector*/ false, /*reasoning*/ false, /*speed*/ false, /*mode*/ true};
+    }
 
     QVector<QJsonObject> listModels(QString *error, const QString &agentBin) override
     {
-        return ZcodeService::listModels(error, agentBin);
+        Q_UNUSED(agentBin);
+        if (error)
+            *error = QStringLiteral(
+                "zcode model catalog is not available via the public CLI yet");
+        return {};
     }
 
     QVector<QJsonObject> listSessions(QString *error, int limit, const QString &agentBin) override
     {
-        return ZcodeService::listSessions(error, limit, agentBin);
+        Q_UNUSED(limit);
+        Q_UNUSED(agentBin);
+        if (error)
+            *error = QStringLiteral(
+                "zcode session enumeration is not available via the public CLI yet");
+        return {};
     }
 
     std::optional<QJsonObject> readSession(const QString &session, QString *error,
                                            const QString &agentBin) override
     {
-        return ZcodeService::readSession(session, error, agentBin);
+        Q_UNUSED(session);
+        Q_UNUSED(agentBin);
+        if (error)
+            *error = QStringLiteral(
+                "zcode session metadata is not available via the public CLI yet");
+        return std::nullopt;
     }
 
     QStringList execCommand(const AgentExecRequest &req, QString *error) override
     {
-        const QString zcode = ZcodeService::zcodeExecutable(req.agentBin);
-        if (zcode.isEmpty()) {
-            if (error) *error = "zcode executable not found";
-            return {};
-        }
-        QStringList args{QCoreApplication::applicationFilePath(), QStringLiteral("agent-exec"),
-                         QStringLiteral("--agent"), QStringLiteral("zcode"),
-                         QStringLiteral("--session"), req.session,
-                         QStringLiteral("--prompt"), req.prompt};
-        if (!req.model.isEmpty()) args << QStringLiteral("--model") << req.model;
-        if (!req.mode.isEmpty()) args << QStringLiteral("--mode") << req.mode;
-        return args;
+        return ZcodeService::turnCommand(req, error);
     }
 };
 

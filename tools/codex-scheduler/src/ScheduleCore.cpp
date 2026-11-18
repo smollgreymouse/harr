@@ -1,7 +1,6 @@
 #include "Scheduler.h"
 #include "AgentService.h"
 #include "Common.h"
-#include "ZcodeService.h"
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDateTime>
@@ -60,7 +59,8 @@ ScheduleResult scheduleJob(ScheduleRequest req)
 
     QStringList missing;
     if (caps.modelRequired && req.model.isEmpty()) missing << QStringLiteral("--model");
-    if (req.session.trimmed().isEmpty()) missing << QStringLiteral("--session");
+    if (caps.sessionRequired && req.session.trimmed().isEmpty())
+        missing << QStringLiteral("--session");
     if (req.prompt.trimmed().isEmpty()) missing << QStringLiteral("--prompt");
     if (!missing.isEmpty()) {
         result.output = missing.join(", ") + QStringLiteral(" are required");
@@ -105,27 +105,10 @@ ScheduleResult scheduleJob(ScheduleRequest req)
         return result;
     }
 
-    AgentExecRequest execReq;
-    execReq.session = req.session.trimmed();
-    execReq.prompt = req.prompt.trimmed();
-    execReq.model = req.model.trimmed();
-    execReq.reasoning = req.reasoning;
-    execReq.speed = req.speed;
-    execReq.mode = req.mode;
-    execReq.agentBin = req.agentBin;
-    execReq.emitEvents = !req.logJson.isEmpty();
-    QString execError;
-    const QStringList command = service->execCommand(execReq, &execError);
-    if (command.isEmpty()) {
-        result.exitCode = 127;
-        result.output = execError;
-        return result;
-    }
-
     QString resolveError;
     QString cwd;
     {
-        auto sessionInfo = service->readSession(execReq.session, &resolveError);
+        auto sessionInfo = service->readSession(req.session.trimmed(), &resolveError);
         if (sessionInfo) {
             auto resolved = service->validateSessionCwd(*sessionInfo, &resolveError, true);
             if (resolved) cwd = *resolved;
@@ -152,6 +135,24 @@ ScheduleResult scheduleJob(ScheduleRequest req)
         cwd = manual;
     } else if (cwd.isEmpty()) {
         result.output = resolveError + "\nrefusing to schedule without a verified session cwd";
+        return result;
+    }
+
+    AgentExecRequest execReq;
+    execReq.session = req.session.trimmed();
+    execReq.prompt = req.prompt.trimmed();
+    execReq.workspace = cwd;
+    execReq.model = req.model.trimmed();
+    execReq.reasoning = req.reasoning;
+    execReq.speed = req.speed;
+    execReq.mode = req.mode;
+    execReq.agentBin = req.agentBin;
+    execReq.emitEvents = !req.logJson.isEmpty();
+    QString execError;
+    const QStringList command = service->execCommand(execReq, &execError);
+    if (command.isEmpty()) {
+        result.exitCode = 127;
+        result.output = execError;
         return result;
     }
 
@@ -328,36 +329,6 @@ int runSessionCwdCli(const QStringList &args)
     }
     QTextStream(stdout) << *cwd << '\n';
     return 0;
-}
-
-int runAgentExec(const QStringList &args)
-{
-    QString agent = defaultAgentId(), session, prompt, model, mode;
-    for (int i = 0; i < args.size(); ++i) {
-        const QString arg = args[i];
-        auto next = [&](QString &dst) -> bool {
-            if (i + 1 >= args.size()) return false;
-            dst = args[++i];
-            return true;
-        };
-        if (arg == "--agent") { if (!next(agent)) return 2; }
-        else if (arg == "--session") { if (!next(session)) return 2; }
-        else if (arg == "--prompt") { if (!next(prompt)) return 2; }
-        else if (arg == "--model") { if (!next(model)) return 2; }
-        else if (arg == "--mode") { if (!next(mode)) return 2; }
-        else {
-            QTextStream(stderr) << "agent-exec: unknown argument: " << arg << '\n';
-            return 2;
-        }
-    }
-    if (session.isEmpty() || prompt.isEmpty()) {
-        QTextStream(stderr) << "agent-exec: --session and --prompt are required\n";
-        return 2;
-    }
-    if (agent == QLatin1String("zcode"))
-        return ZcodeService::runTurn(session, prompt, model, mode);
-    QTextStream(stderr) << "agent-exec: unsupported agent: " << agent << '\n';
-    return 2;
 }
 
 } // namespace harr
