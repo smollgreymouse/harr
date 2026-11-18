@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 
-DEFAULT_MODEL = "gpt-6.1-sol"
+DEFAULT_MODEL = "gpt-6.2-sol"
 # The working default is the chat plan's model; point zcode_model at a larger
 # GLM (for example account:<plan>/GLM-5.3) once that provider is connected.
 DEFAULT_ZCODE_MODEL = "account:zai-start-plan/GLM-5.3-Flash"

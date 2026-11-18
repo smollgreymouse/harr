@@ -81,7 +81,7 @@ assert "exact escalation question for the user" in skill
 assert "Root surfaces that question to the user" in skill
 assert "Do not re-fork the parent history" in skill
 assert "Prompt-cache reuse is opportunistic, not guaranteed." in skill
-assert "gpt-6.1-sol" not in skill
+assert "gpt-6.2-sol" not in skill
 assert "xhigh" not in skill.lower()
 
 host = HOST.read_text(encoding="utf-8")
