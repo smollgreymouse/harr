@@ -22,6 +22,7 @@ LAUNCHER = ROOT / "common/hosts/leanctx-mcp-host.py"
 def request(binary: Path, config_dir: Path, host: str) -> tuple[str, set[str], str]:
     env = dict(os.environ)
     env["LEAN_CTX_CONFIG_DIR"] = str(config_dir)
+    env["LEAN_CTX_DATA_DIR"] = str(config_dir / f"data-{host}")
     env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
     env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
     env.pop("LEAN_CTX_TOOL_PROFILE", None)
@@ -57,14 +58,55 @@ def request(binary: Path, config_dir: Path, host: str) -> tuple[str, set[str], s
         if (item := json.loads(line)).get("id") is not None
     }
     names = {tool["name"] for tool in replies[2]["result"]["tools"]}
+    if "result" not in replies[3]:
+        raise AssertionError(f"{host}: ctx_call returned a JSON-RPC error: {replies[3]}")
     recovery_text = " ".join(c.get("text", "") for c in replies[3]["result"]["content"])
     return host, names, recovery_text
+
+
+def verify_zcode_launcher_context() -> None:
+    """The host adapter must preserve the session project CWD for Harr auto-binding."""
+    if os.name == "nt":
+        return
+    with tempfile.TemporaryDirectory(prefix="harr-zcode-launch-context-") as temp:
+        temp_path = Path(temp)
+        project = temp_path / "project"
+        project.mkdir()
+        fake_binary = temp_path / "lean-ctx-probe"
+        fake_binary.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os\n"
+            "print(json.dumps({\n"
+            "  'cwd': os.getcwd(),\n"
+            "  'profile': os.environ.get('LEAN_CTX_CONFIG_PROFILE'),\n"
+            "  'workspace_root': os.environ.get('HARR_WORKSPACE_ROOT'),\n"
+            "}))\n",
+            encoding="utf-8",
+        )
+        fake_binary.chmod(0o755)
+        env = dict(os.environ)
+        env.pop("HARR_WORKSPACE_ROOT", None)
+        env.pop("LEAN_CTX_CONFIG_PROFILE", None)
+        proc = subprocess.run(
+            [sys.executable, str(LAUNCHER), "zcode", str(fake_binary)],
+            text=True, capture_output=True, env=env, cwd=project, timeout=5,
+            check=False,
+        )
+        if proc.returncode:
+            raise AssertionError(f"ZCode host adapter failed: {proc.stderr[-1000:]}")
+        context = json.loads(proc.stdout)
+        assert context == {
+            "cwd": str(project),
+            "profile": "harr-zcode",
+            "workspace_root": None,
+        }, context
 
 
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("usage: test_leanctx_host_mcp_surface.py LEANCTX_BINARY")
     binary = Path(sys.argv[1]).resolve(strict=True)
+    verify_zcode_launcher_context()
     template = (ROOT / "common/leanctx/config.base.toml").read_text()
     template = template.replace("{{HARR_ALLOW_PATHS}}", "").replace(
         "{{HARR_SHELL_ALLOWLIST_EXTRA}}", ""

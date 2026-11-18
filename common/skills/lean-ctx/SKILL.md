@@ -16,6 +16,12 @@ Harr-managed LeanCTX resolves authority when the MCP process starts. In the defa
 
 When the user later supplies project folders, use the direct Harr Workspace control plane to initialize/read the chosen project and add the other known working folders. This updates the Workspace store but does not elevate an already-running rootless LeanCTX process. Reconnect/restart the host's project-context MCP so Harr launches LeanCTX from that project directory; default `auto` binds it without per-project configuration or a manually set root. Do not set one fixed root in a global multi-project MCP configuration.
 
+### ZCode: refresh a bound session
+
+ZCode may keep a healthy LeanCTX connection for an existing `sessionId` when that session's workspace changes. A reconnect with `revalidate: true` can reuse the old rootless connection, and disconnect/connect can reuse its pooled entry during the idle grace period. For an existing ZCode session, use the host operation `io.sessionLifecycleRestart(sessionId, workspace)`: it awaits closing that session's runtime resources, including its MCP lease, then activates the same session and workspace again. This gives LeanCTX a fresh launch from the selected project directory while leaving other session IDs alone. The operation restarts all runtime resources for that ZCode session, so preserve the host's normal stop validation and workspace activation checks. Do not close the shared MCP pool or change server isolation to refresh one session.
+
+After the restart, check `ctx_workspace_get` for the expected primary/authorized Workspace and `ctx_tools list` for project-scoped services such as CodeGraph. Verify a second active chat still has its own working LeanCTX connection. The fresh-session and same-session-restart checks are recorded in [`tests/zcode-leanctx-session-binding-acceptance.md`](../../../tests/zcode-leanctx-session-binding-acceptance.md).
+
 Direct Harr profile:
 
 - `ctx_read`

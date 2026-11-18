@@ -31,6 +31,8 @@ Do not bypass Harr with upstream installers or manual replacement of Harr-owned 
 
 LeanCTX `auto` authority binds to the launcher working directory's nearest Git root (or the directory itself when it is not inside a Git checkout), after LeanCTX validates that candidate. When an agent starts MCP before a project is selected, or its launch directory is unsuitable such as `$HOME`, it stays rootless with the minimal tool surface. If the user later supplies project folders, follow `harr-workspace` to register those exact paths; a running rootless process must reconnect or restart in the project context to bind automatically. `HARR_WORKSPACE_ROOT` remains an explicit override, and `HARR_WORKSPACE_MODE=none` forces rootless startup.
 
+For an existing ZCode chat whose LeanCTX connection is still rootless, use ZCode's scoped `io.sessionLifecycleRestart(sessionId, workspace)` host operation after the project workspace is selected. It replaces that session's runtime and MCP lease while preserving other session IDs; it restarts the entire ZCode session, so keep the host's stop/activation checks. A generic disconnect/connect can reuse the old pooled connection. See the LeanCTX skill's ZCode section and its [session-binding acceptance checklist](../../../tests/zcode-leanctx-session-binding-acceptance.md).
+
 Load only the reference needed for the current operation:
 
 - installation/component/config commands -> `references/operations.md`
