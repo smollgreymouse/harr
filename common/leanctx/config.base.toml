@@ -76,6 +76,15 @@ raw_commands = [
 ]
 threshold_chars = 800
 
+# Named MCP-host overlays: the shared gateway/security config stays in one
+# managed file, while tools/list advertises only tools usable by each host.
+# Hosts select these with LEAN_CTX_CONFIG_PROFILE at MCP launch.
+[profiles.harr-zcode]
+tools_enabled = ["ctx_shell", "ctx_tools", "ctx_call"]
+
+[profiles.harr-opencode]
+tools_enabled = ["ctx_shell", "ctx_tools", "ctx_call"]
+
 [gateway]
 enabled = true
 cache_ttl_secs = 300

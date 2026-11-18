@@ -135,7 +135,13 @@ def clean_mapping(config: dict[str, Any], key: str, owned: set[str]) -> None:
 
 
 def expected_leanctx_entry() -> dict[str, Any]:
-    return {"type": "local", "command": [str(LEANCTX)], "enabled": True, "timeout": MCP_TOOL_TIMEOUT_MS}
+    launcher = Path(__file__).with_name("leanctx-mcp-host.py")
+    return {
+        "type": "local",
+        "command": [sys.executable, str(launcher), "opencode", str(LEANCTX)],
+        "enabled": True,
+        "timeout": MCP_TOOL_TIMEOUT_MS,
+    }
 
 
 def workspace_server_path() -> Path:

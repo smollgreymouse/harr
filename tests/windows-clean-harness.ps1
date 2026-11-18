@@ -70,7 +70,9 @@ enabled = false
     $codexAgents = Get-Content -Raw (Join-Path $CodexDir 'AGENTS.md')
     $openAgents = Get-Content -Raw (Join-Path $OpenCodeDir 'AGENTS.md')
     if ($codexAgents -notmatch 'codegraph::codegraph_explore' -or $codexAgents -notmatch 'through `ctx_shell`') { throw 'Codex Harr policy was not applied' }
-    if ($openAgents -notmatch 'lean-ctx_ctx_tools' -or $openAgents -notmatch 'Do not use native read/grep/glob/bash') { throw 'OpenCode Harr policy was not applied' }
+    if ($openAgents -notmatch 'lean-ctx_ctx_tools' -or $openAgents -notmatch 'OpenCode native-first routing') { throw 'OpenCode Harr policy was not applied' }
+    if ($codexAgents -match 'harr-host:' -or $openAgents -match 'harr-host:') { throw 'Host condition markers leaked into rendered policy' }
+    if ($openAgents -match 'Investigation uses MCP; editing uses the native host editor') { throw 'Codex-only routing leaked into OpenCode policy' }
     if ($codexAgents -match '\$asa' -or $codexAgents -match 'Spawn native workers only for genuinely independent parallel scopes') { throw 'Default-off orchestration leaked into Codex policy' }
     if ($openAgents -match '\$asa') { throw 'Codex-only Asa routing leaked into OpenCode policy' }
     if ($codexAgents -match 'GitLab MR/pipeline' -or $codexAgents -match 'Grafana dashboard work') { throw 'Disabled MCP routing leaked into Codex policy' }
@@ -101,7 +103,13 @@ if (-not $runtimeSource.Contains("LeanBuild = '3.11.0-harr-unified.7'")) { throw
     $open = Get-Content -Raw (Join-Path $OpenCodeDir 'opencode.jsonc') | ConvertFrom-Json
     if ($open.provider.'external-provider'.api -ne 'keep') { throw 'Unrelated OpenCode provider was not preserved' }
     if ($open.mcp.'external-mcp'.url -ne 'https://example.invalid/mcp') { throw 'Unrelated OpenCode MCP was not preserved' }
-    if ($open.mcp.'lean-ctx'.command[0] -ne $leanCommand) { throw "Wrong OpenCode LeanCTX command: $($open.mcp.'lean-ctx'.command[0])" }
+    $openLeanCommand = @($open.mcp.'lean-ctx'.command)
+    if ($openLeanCommand.Count -ne 4 -or $openLeanCommand[2] -ne 'opencode' -or $openLeanCommand[3] -ne $leanCommand -or -not $openLeanCommand[1].EndsWith('leanctx-mcp-host.py')) {
+        throw "Wrong OpenCode profiled LeanCTX command: $($openLeanCommand -join ' ')"
+    }
+    if ($openAgents -match 'Never call lean-ctx_ctx_read' -or $openAgents -notmatch 'ctx_call solely to recover an archived shell result') { throw 'OpenCode policy does not match its MCP surface' }
+    $parsedLean = Get-Content -Raw (Join-Path $ConfigDir 'lean-ctx\config.toml')
+    if ($parsedLean -notmatch '\[profiles\.harr-opencode\]' -or $parsedLean -notmatch '\[profiles\.harr-zcode\]') { throw 'Host-specific LeanCTX profiles missing' }
     $mcpNames = @($open.mcp.PSObject.Properties.Name)
     if ($mcpNames -contains 'codegraph' -or $mcpNames -contains 'gitlab') { throw 'Direct Harr MCP routes were not removed from OpenCode' }
     if (Test-Path (Join-Path $OpenCodeDir 'commands\quick.md')) { throw 'Retired workflow command survived clean takeover' }

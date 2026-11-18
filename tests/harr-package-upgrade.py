@@ -24,7 +24,7 @@ def run(args, env, *, check=True):
 def check_hosts(command, env):
     output = run([str(command), "hosts", "status"], env).stdout
     rows = {parts[0]: parts[1] for line in output.splitlines()[1:] if len(parts := line.split()) >= 2}
-    assert rows == {"opencode": "managed", "codex": "managed"}, output
+    assert rows == {"opencode": "managed", "codex": "managed", "zcode": "managed"}, output
     # Doctor must use the invoking CLI and survive the libexec env it passes to children.
     result = run([str(command), "doctor", "--local", "--json"], env, check=False)
     if not result.stdout.startswith("{"):

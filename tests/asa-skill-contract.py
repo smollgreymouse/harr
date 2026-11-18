@@ -141,6 +141,7 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
         "enabled": False,
         "model": "gpt-6-luna",
         "effort": "high",
+        "zcode_model": "account:zai-start-plan/GLM-5.3-Flash",
     }
 
     # Explicit enable + sync installs the configured role.
@@ -196,14 +197,50 @@ with tempfile.TemporaryDirectory(prefix="harr-asa-contract-") as raw:
     run("sync", "--force")
     assert role.read_text(encoding="utf-8").startswith("# harr-managed-agent-v1\n")
 
-    # Explicit disable removes only the Harr-managed role and remains disabled after sync.
+    # The same sync installs the managed ZCode Asa saved workflow.
+    zcode_workflow = tmp / "zcode/workflows/asa.dwf.ts"
+    env["HARR_ZCODE_HOME"] = str(tmp / "zcode")
+    run("sync")
+    assert zcode_workflow.exists()
+    ztext = zcode_workflow.read_text(encoding="utf-8")
+    assert ztext.startswith("/* zcode-workflow\n")
+    assert "name: asa" in ztext
+    assert "scope: global" in ztext
+    assert "root_session_id:" in ztext
+    assert f'model("account:zai-start-plan/GLM-5.3-Flash")' in ztext
+    assert "// harr-managed-agent-v1" in ztext
+    assert "dedicated architect context" in ztext
+    assert "Session reading protocol" in ztext
+    assert "ReadSession(root_session_id, view=summary)" in ztext
+    assert "Forbidden: shell or terminal tools" in ztext
+    assert "do not go get it yourself" in ztext
+    assert "do not choose it; return the exact escalation question" in ztext
+    # The xhigh effort maps to the max ZCode thought level.
+    run("configure", "--effort", "xhigh")
+    run("sync")
+    assert '"max"' in zcode_workflow.read_text(encoding="utf-8")
+    # The ZCode model can be configured independently while disabled or enabled.
+    run("configure", "--zcode-model", "account:bigmodel-individual-coding-plan/GLM-5.3")
+    assert 'model("account:bigmodel-individual-coding-plan/GLM-5.3")' in zcode_workflow.read_text(encoding="utf-8")
+
+    # Non-Harr ZCode workflow remains fail-closed unless an owning caller forces takeover.
+    zcode_workflow.write_text("// external\n", encoding="utf-8")
+    failed = run("sync", check=False)
+    assert failed.returncode != 0
+    assert "refusing to overwrite non-Harr Asa workflow" in failed.stderr + failed.stdout
+    run("sync", "--force")
+    assert "// harr-managed-agent-v1" in zcode_workflow.read_text(encoding="utf-8")
+
+    # Explicit disable removes only the Harr-managed role/workflow and remains disabled after sync.
     run("disable")
     run("sync")
     assert not role.exists()
+    assert not zcode_workflow.exists()
     status = run("status").stdout
     assert "Orchestration: disabled" in status
     assert "Asa model: gpt-6-luna" in status
-    assert "Asa effort: high" in status
+    assert "Asa effort: xhigh" in status
+    assert "ZCode workflow: missing" in status
     assert run("enabled", check=False).returncode == 1
 
 print("Orchestration/Asa opt-in contract: PASS")

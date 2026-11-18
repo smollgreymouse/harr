@@ -15,6 +15,28 @@ def load_servers(path: Path) -> list[dict]:
     return data["servers"]
 
 
+def strip_host_blocks(text: str, host: str | None) -> str:
+    """Keep `<!-- harr-host:NAME,...:start -->` blocks whose list contains host."""
+    start_re = re.compile(r"<!-- harr-host:([^:>]+):start -->")
+    end_re = re.compile(r"<!-- harr-host:([^:>]+):end -->")
+    starts = start_re.findall(text)
+    ends = end_re.findall(text)
+    if len(starts) != len(ends) or sorted(starts) != sorted(ends):
+        raise SystemExit("unbalanced Harr host markers")
+    if starts and host is None:
+        raise SystemExit("input contains harr-host markers but no --host was given")
+    for names in dict.fromkeys(starts):
+        allowed = {name.strip() for name in names.split(",")}
+        start = f"<!-- harr-host:{names}:start -->"
+        end = f"<!-- harr-host:{names}:end -->"
+        if host is not None and host in allowed:
+            text = text.replace(start + "\n", "").replace(start, "")
+            text = text.replace(end + "\n", "").replace(end, "")
+        else:
+            text = re.sub(r"\n?" + re.escape(start) + r".*?" + re.escape(end) + r"\n?", "\n", text, flags=re.S)
+    return text
+
+
 def strip_conditional_blocks(text: str, catalog: list[dict], active: set[str]) -> str:
     for server in catalog:
         name = str(server["name"])
@@ -52,6 +74,7 @@ def active_names(path: Path) -> set[str]:
 
 def filter_text(args: argparse.Namespace) -> None:
     text = args.input.read_text(encoding="utf-8")
+    text = strip_host_blocks(text, args.host)
     rendered = strip_conditional_blocks(text, load_servers(args.catalog), active_names(args.registry))
     tools = named_ein_tools(args.registry)
     if tools:
@@ -68,6 +91,10 @@ def filter_skill(args: argparse.Namespace) -> None:
     if args.output.exists():
         shutil.rmtree(args.output)
     shutil.copytree(args.source, args.output)
+    # Per-host SKILL.<agent>.md variants are source material only; the rendered
+    # installable skill always carries exactly one canonical SKILL.md.
+    for variant in args.output.glob("SKILL.*.md"):
+        variant.unlink()
     for path in args.output.rglob("*.md"):
         path.write_text(strip_conditional_blocks(path.read_text(encoding="utf-8"), catalog, active), encoding="utf-8")
     tools = named_ein_tools(args.registry)
@@ -106,6 +133,7 @@ def main() -> None:
     p_text = sub.add_parser("filter-text")
     p_text.add_argument("--catalog", type=Path, required=True)
     p_text.add_argument("--registry", type=Path, required=True)
+    p_text.add_argument("--host")
     p_text.add_argument("--input", type=Path, required=True)
     p_text.add_argument("--output", type=Path, required=True)
     p_skill = sub.add_parser("filter-skill")

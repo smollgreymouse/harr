@@ -94,6 +94,30 @@ assert kibana["runtime"]["probe_args"] == ["--offline", "--from", "git+https://g
 assert kibana["secrets"] == [{"name":"kibana","file":"kibana-api-key","prompt":"Kibana API key(s), comma-separated in KIBANA_URL order when different","memento_id":"mcp/kibana/default","target":{"kind":"env","name":"KIBANA_API_KEY"}}]
 assert kibana["doctor"]["required_tools"] == ["list_kibana_endpoints", "list_data_views"]
 
+# Z.ai service MCPs: remote HTTP servers behind LeanCTX, billed per tool call.
+for name, expected_url, expected_tools in (
+    ("websearch", "https://api.z.ai/api/mcp/web_search_prime/mcp", ["webSearchPrime"]),
+    ("webreader", "https://api.z.ai/api/mcp/web_reader/mcp", ["webReader"]),
+    ("zread", "https://api.z.ai/api/mcp/zread/mcp", ["search_doc", "get_repo_structure"]),
+):
+    entry = servers[name]
+    assert entry["transport"] == "http"
+    assert entry["lifecycle"] == "on-demand"
+    assert entry["url"] == expected_url
+    assert "runtime" not in entry and "env_template" not in entry
+    assert entry["secrets"] == [
+        {
+            "name": name,
+            "file": "zai-coding-plan-key",
+            "prompt": entry["secrets"][0]["prompt"],
+            "memento_id": "mcp/zai-coding-plan/default",
+            "target": {"kind": "header", "name": "Authorization", "format": "Bearer {secret}"},
+        }
+    ]
+    assert entry["doctor"]["required_tools"] == expected_tools
+    assert entry["doctor"]["probe"] == {"kind": "catalog-only", "timeout_sec": 20}
+    assert entry["doctor"]["repair"] == {"runtime_reinstall": False, "credential_auto_repair": False}
+
 for platform in ("linux", "windows"):
     with tempfile.TemporaryDirectory() as tmp:
         output = Path(tmp) / "config.toml"
@@ -126,6 +150,17 @@ for platform in ("linux", "windows"):
         assert kibana_rendered["args"] == ["kibana"]
         assert kibana_rendered["secret_env"]["KIBANA_API_KEY"] == {"id": "mcp/kibana/default"}
 
+        websearch_rendered = rendered["websearch"]
+        assert websearch_rendered["transport"] == "http"
+        assert websearch_rendered["url"] == "https://api.z.ai/api/mcp/web_search_prime/mcp"
+        assert "command" not in websearch_rendered and "args" not in websearch_rendered
+        assert websearch_rendered["secret_headers"]["Authorization"] == {
+            "id": "mcp/zai-coding-plan/default",
+            "format": "Bearer {secret}",
+        }
+        assert rendered["webreader"]["url"] == "https://api.z.ai/api/mcp/web_reader/mcp"
+        assert rendered["zread"]["url"] == "https://api.z.ai/api/mcp/zread/mcp"
+
         assert not {"gigacode", "einherjar"}.intersection(rendered)
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -143,7 +178,16 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "KIBANA_URL=https://kibana.example.com,https://kibana-staging.example.com" in kibana_env
     assert "KIBANA_MCP_ALLOWED_URLS" not in kibana_env
     assert "KIBANA_API_KEY=" not in kibana_env
+    for name in ("websearch", "webreader", "zread"):
+        assert not (target / f"{name}.env").exists()
 
+assert manager.memento_var("mcp/zai-coding-plan/default") == "LEAN_CTX_SECRET_6D63702F7A61692D636F64696E672D706C616E2F64656661756C74"
+try:
+    manager.run_server(type("Args", (), {"name": "websearch"})(), manager.load_registry(REGISTRY_PATH))
+except SystemExit as exc:
+    assert "remote HTTP server reached directly by LeanCTX" in str(exc)
+else:
+    raise AssertionError("run_server accepted a remote HTTP MCP")
 assert manager.memento_var("mcp/grafana/default") == "LEAN_CTX_SECRET_6D63702F67726166616E612F64656661756C74"
 assert manager.memento_var("mcp/kibana/default") == "LEAN_CTX_SECRET_6D63702F6B6962616E612F64656661756C74"
 with patch.object(manager.shutil, "which", return_value="/tmp/uvx"):

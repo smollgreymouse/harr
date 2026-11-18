@@ -255,7 +255,7 @@ def gateway_entry_from_server(server: dict, runner_command: str) -> dict:
         raise SystemExit(f"unsupported MCP transport for {name}: {transport}")
 
     secret_env: list[tuple[str, str]] = []
-    secret_headers: list[tuple[str, str]] = []
+    secret_headers: list[tuple[str, str, str]] = []
     for secret in server.get("secrets", []):
         target = secret.get("target", {})
         item = (target.get("name"), secret.get("memento_id"))
@@ -264,13 +264,19 @@ def gateway_entry_from_server(server: dict, runner_command: str) -> dict:
         if target.get("kind") == "env":
             secret_env.append(item)  # type: ignore[arg-type]
         elif target.get("kind") == "header":
-            secret_headers.append(item)  # type: ignore[arg-type]
+            fmt = str(target.get("format") or "")
+            if fmt and "{secret}" not in fmt:
+                raise SystemExit(f"secret header format for MCP {name} has no {{secret}} placeholder")
+            secret_headers.append((*item, fmt))  # type: ignore[arg-type]
         else:
             raise SystemExit(f"unsupported secret target for MCP {name}: {target.get('kind')}")
     if secret_env and transport == "stdio":
         entry["secret_env"] = dict(secret_env)
     if secret_headers and transport == "http":
-        entry["secret_headers"] = {key: {"id": secret_id} for key, secret_id in secret_headers}
+        entry["secret_headers"] = {
+            key: ({"id": secret_id, "format": fmt} if fmt else {"id": secret_id})
+            for key, secret_id, fmt in secret_headers
+        }
     return entry
 
 
@@ -921,6 +927,10 @@ def jira_preflight(env: dict[str, str]) -> int:
 
 def run_server(args: argparse.Namespace, data: dict) -> None:
     server = server_by_name(data, args.name)
+    if server.get("transport") == "http":
+        raise SystemExit(
+            f"MCP {server['name']} is a remote HTTP server reached directly by LeanCTX; no local runner command exists"
+        )
     # Gateway memento env vars belong to the gateway process only; the real
     # upstream receives its own wired credential via service_secret_env below.
     env = {key: value for key, value in os.environ.items() if not key.startswith("LEAN_CTX_SECRET_")}

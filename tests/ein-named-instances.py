@@ -161,7 +161,7 @@ print(json.dumps({"status":"DONE","summary":"named fake worker done","changed":[
     assert len([x for x in data['servers'] if x['name']=='gigacode'])==1
     assets=ROOT/'common/mcp/assets.py'
     rendered=base/'generated-policy.md'
-    subprocess.run([PYTHON,str(assets),'filter-text','--catalog',str(ROOT/'common/mcp/registry.json'),'--registry',str(effective),'--input',str(ROOT/'common/policy/tool-routing.template.md'),'--output',str(rendered)],check=True,env=env)
+    subprocess.run([PYTHON,str(assets),'filter-text','--catalog',str(ROOT/'common/mcp/registry.json'),'--registry',str(effective),'--host','codex','--input',str(ROOT/'common/policy/tool-routing.template.md'),'--output',str(rendered)],check=True,env=env)
     assert 'fake-one::ein' in rendered.read_text() and 'fake-two::ein' in rendered.read_text()
     assert 'gigacode::ein' in rendered.read_text()
     assert 'gigacode::gigacode' not in rendered.read_text()

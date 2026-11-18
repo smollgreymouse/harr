@@ -61,6 +61,9 @@ def check(spec: str, expected: list[str]) -> None:
         assert ("grafana" in secret_names) == ("grafana" in expected)
         assert ("kibana" in secret_names) == ("kibana" in expected)
         assert ("jira" in secret_names) == ("jira" in expected)
+        assert ("websearch" in secret_names) == ("websearch" in expected)
+        assert ("webreader" in secret_names) == ("webreader" in expected)
+        assert ("zread" in secret_names) == ("zread" in expected)
 
         config_dir = tmp / "mcp-config"
         run(MANAGER, "--registry", effective, "install-configs", "--config-dir", config_dir)
@@ -87,7 +90,7 @@ def check(spec: str, expected: list[str]) -> None:
             assert [item["name"] for item in parsed["gateway"]["servers"]] == expected
 
         filtered_policy = tmp / "policy.md"
-        run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--input", POLICY, "--output", filtered_policy)
+        run(ASSETS, "filter-text", "--catalog", CATALOG, "--registry", effective, "--host", "codex", "--input", POLICY, "--output", filtered_policy)
         policy = filtered_policy.read_text(encoding="utf-8")
         assert "codegraph::codegraph_explore" in policy
         assert "prefer `{{CTX_SEARCH}}`" in policy
@@ -206,7 +209,7 @@ for retired in ("gigacode", "einherjar"):
     failed = subprocess.run([sys.executable, str(SELECTOR), "--catalog", str(CATALOG), "--selection", "/tmp/no-selection.json", "--effective", "/tmp/no-effective.json", "--spec", retired], capture_output=True, text=True)
     assert failed.returncode != 0 and "standalone executor MCP choices are retired" in failed.stderr
 check("kibana", ["codegraph", "kibana"])
-check("all", ["codegraph", "gitlab", "grafana", "kibana", "jira", "redash"])
+check("all", ["codegraph", "gitlab", "grafana", "kibana", "jira", "websearch", "webreader", "zread", "redash"])
 
 # Normal reinstall/update without an explicit selection must reuse the saved
 # optional set instead of resetting to required-only or all.
@@ -270,7 +273,7 @@ with tempfile.TemporaryDirectory() as tmp_raw:
     assert names(effective) == ["codegraph"]
 
     run(SELECTOR, "--catalog", CATALOG, "--selection", selection, "--effective", effective, "--add", "all")
-    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "jira", "redash"]
+    assert names(effective) == ["codegraph", "gitlab", "grafana", "kibana", "jira", "websearch", "webreader", "zread", "redash"]
 
     failed = subprocess.run(
         [

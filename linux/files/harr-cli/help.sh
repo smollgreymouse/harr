@@ -16,12 +16,12 @@ CLI:
   harr doctor [NAME] [--local|--json|--verbose|--strict] [--repair [--dry-run]]
   harr hosts apply
   harr hosts status
-  harr agents apply [all|codex|opencode]
+  harr agents apply [all|codex|opencode|zcode]
   harr agents status
   harr agents harness {status|enable|disable}
   harr agents orchestration {status|enable|disable}
   harr agents asa status
-  harr agents asa configure [--model MODEL] [--effort EFFORT]
+  harr agents asa configure [--model MODEL] [--effort EFFORT] [--zcode-model MODEL]
   harr agents asa apply
   harr secret set NAME
   harr secret status

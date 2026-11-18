@@ -281,6 +281,115 @@
       }
     },
     {
+      "name": "websearch",
+      "label": "Web Search",
+      "description": "Z.ai Web Search Prime: web research and real-time information (remote coding-plan MCP, billed per call)",
+      "required": false,
+      "transport": "http",
+      "lifecycle": "on-demand",
+      "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
+      "skill_reference": "websearch.md",
+      "secrets": [
+        {
+          "name": "websearch",
+          "file": "zai-coding-plan-key",
+          "prompt": "GLM Coding Plan API key from z.ai (shared by Web Search / Web Reader / Zread)",
+          "memento_id": "mcp/zai-coding-plan/default",
+          "target": {
+            "kind": "header",
+            "name": "Authorization",
+            "format": "Bearer {secret}"
+          }
+        }
+      ],
+      "doctor": {
+        "required_tools": [
+          "webSearchPrime"
+        ],
+        "probe": {
+          "kind": "catalog-only",
+          "timeout_sec": 20
+        },
+        "repair": {
+          "runtime_reinstall": false,
+          "credential_auto_repair": false
+        }
+      }
+    },
+    {
+      "name": "webreader",
+      "label": "Web Reader",
+      "description": "Z.ai Web Reader: fetch and extract public web page content (remote coding-plan MCP, billed per call)",
+      "required": false,
+      "transport": "http",
+      "lifecycle": "on-demand",
+      "url": "https://api.z.ai/api/mcp/web_reader/mcp",
+      "skill_reference": "webreader.md",
+      "secrets": [
+        {
+          "name": "webreader",
+          "file": "zai-coding-plan-key",
+          "prompt": "GLM Coding Plan API key from z.ai (shared by Web Search / Web Reader / Zread)",
+          "memento_id": "mcp/zai-coding-plan/default",
+          "target": {
+            "kind": "header",
+            "name": "Authorization",
+            "format": "Bearer {secret}"
+          }
+        }
+      ],
+      "doctor": {
+        "required_tools": [
+          "webReader"
+        ],
+        "probe": {
+          "kind": "catalog-only",
+          "timeout_sec": 20
+        },
+        "repair": {
+          "runtime_reinstall": false,
+          "credential_auto_repair": false
+        }
+      }
+    },
+    {
+      "name": "zread",
+      "label": "Zread",
+      "description": "Z.ai Zread: public GitHub repository docs, structure and file contents (remote coding-plan MCP, billed per call)",
+      "required": false,
+      "transport": "http",
+      "lifecycle": "on-demand",
+      "url": "https://api.z.ai/api/mcp/zread/mcp",
+      "skill_reference": "zread.md",
+      "secrets": [
+        {
+          "name": "zread",
+          "file": "zai-coding-plan-key",
+          "prompt": "GLM Coding Plan API key from z.ai (shared by Web Search / Web Reader / Zread)",
+          "memento_id": "mcp/zai-coding-plan/default",
+          "target": {
+            "kind": "header",
+            "name": "Authorization",
+            "format": "Bearer {secret}"
+          }
+        }
+      ],
+      "doctor": {
+        "required_tools": [
+          "search_doc",
+          "get_repo_structure"
+        ],
+        "probe": {
+          "kind": "catalog-only",
+          "timeout_sec": 20
+        },
+        "repair": {
+          "runtime_reinstall": false,
+          "credential_auto_repair": false
+        }
+      }
+    },
+    {
       "name": "redash",
       "label": "Redash",
       "description": "metadata-only Redash queries, dashboards and schemas (no SQL execution or writes)",

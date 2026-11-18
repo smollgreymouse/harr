@@ -24,6 +24,7 @@ agent_skill_root() {
   case "$1" in
     codex) printf '%s\n' "${CODEX_HOME:-${HOME}/.codex}/skills" ;;
     opencode) printf '%s\n' "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills" ;;
+    zcode) printf '%s\n' "${HARR_ZCODE_HOME:-${HOME}/.zcode}/skills" ;;
     *) die "unknown agent: $1" ;;
   esac
 }
@@ -32,6 +33,7 @@ agent_policy_target() {
   case "$1" in
     codex) printf '%s\n' "${CODEX_HOME:-${HOME}/.codex}/AGENTS.md" ;;
     opencode) printf '%s\n' "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/AGENTS.md" ;;
+    zcode) printf '%s\n' "${HARR_ZCODE_HOME:-${HOME}/.zcode}/AGENTS.md" ;;
     *) die "unknown agent: $1" ;;
   esac
 }
@@ -40,18 +42,22 @@ agent_adapter() { printf '%s/%s.env\n' "$HARR_HOSTS_SOURCE_DIR" "$1"; }
 agent_targets() {
   local requested="${1:-all}"
   case "$requested" in
-    all) printf '%s\n' codex opencode ;;
-    codex|opencode) printf '%s\n' "$requested" ;;
-    *) die 'usage: harr agents apply [all|codex|opencode]' ;;
+    all) printf '%s\n' codex opencode zcode ;;
+    codex|opencode|zcode) printf '%s\n' "$requested" ;;
+    *) die 'usage: harr agents apply [all|codex|opencode|zcode]' ;;
   esac
 }
 skill_source_dir() { printf '%s/%s\n' "$HARR_SKILLS_SOURCE_DIR" "$1"; }
 
 filter_mcp_text() {
-  local input="$1" output="$2"
+  local input="$1" output="$2" host="${3:-}"
   ensure_mcp_effective
   [[ -r "$HARR_MCP_ASSETS" ]] || die "Harr MCP asset renderer missing: $HARR_MCP_ASSETS"
-  python3 "$HARR_MCP_ASSETS" filter-text --catalog "$HARR_MCP_CATALOG" --registry "$HARR_MCP_EFFECTIVE" --input "$input" --output "$output"
+  if [[ -n "$host" ]]; then
+    python3 "$HARR_MCP_ASSETS" filter-text --catalog "$HARR_MCP_CATALOG" --registry "$HARR_MCP_EFFECTIVE" --host "$host" --input "$input" --output "$output"
+  else
+    python3 "$HARR_MCP_ASSETS" filter-text --catalog "$HARR_MCP_CATALOG" --registry "$HARR_MCP_EFFECTIVE" --input "$input" --output "$output"
+  fi
 }
 
 render_harr_skill() {
@@ -61,7 +67,7 @@ render_harr_skill() {
 }
 
 install_one_skill() {
-  local agent="$1" skill="$2" root source_dir target_dir
+  local agent="$1" skill="$2" root source_dir target_dir variant
   root="$(agent_skill_root "$agent")"
   source_dir="$(skill_source_dir "$skill")"
   target_dir="${root}/${skill}"
@@ -73,6 +79,15 @@ install_one_skill() {
     rm -rf -- "$target_dir"
     install -d -m 0755 "$target_dir"
     cp -a "${source_dir}/." "$target_dir/"
+    # Non-rendered skills copy the source verbatim; drop per-host variant files
+    # so every installed skill carries exactly one canonical SKILL.md.
+    rm -f "${target_dir}"/SKILL.*.md
+  fi
+  # A host-specific SKILL.<agent>.md contract overrides the rendered/shared
+  # SKILL.md for that agent only; shared sources stay byte-identical for all hosts.
+  variant="${source_dir}/SKILL.${agent}.md"
+  if [[ -r "$variant" ]]; then
+    install -m 0644 "$variant" "${target_dir}/SKILL.md"
   fi
 }
 
@@ -122,6 +137,7 @@ cmd_agents_orchestration() {
       require_clean_ownership
       asa_config "$sub"
       cmd_agents_apply codex
+      cmd_agents_apply zcode
       cmd_leanctx_apply
       ;;
     *) die 'usage: harr agents orchestration {status|enable|disable}' ;;
@@ -175,7 +191,7 @@ render_agent_policy() {
   # shellcheck disable=SC1090
   source "$adapter"
   [[ -n "$CTX_READ" && -n "$CTX_SHELL" && -n "$CTX_SEARCH" && -n "$CTX_GLOB" && -n "$CTX_TOOLS" && -n "$CTX_CALL" && -n "$HOST_NATIVE_POLICY" ]] || die "incomplete Harr host adapter: $adapter"
-  if [[ "$agent" != codex ]] || ! orchestration_enabled; then
+  if [[ "$agent" != codex && "$agent" != zcode ]] || ! orchestration_enabled; then
     HOST_ORCHESTRATION_POLICY=''
   fi
   expanded="$(mktemp)"
@@ -189,7 +205,7 @@ render_agent_policy() {
     -e "s|{{HOST_ORCHESTRATION_POLICY}}|${HOST_ORCHESTRATION_POLICY}|g" \
     -e "s|{{HOST_NATIVE_POLICY}}|${HOST_NATIVE_POLICY}|g" \
     "$HARR_POLICY_TEMPLATE" >"$expanded"
-  filter_mcp_text "$expanded" "$output"
+  filter_mcp_text "$expanded" "$output" "$agent"
   rm -f -- "$expanded"
 }
 
@@ -242,6 +258,11 @@ restore_agent_harness() {
         restore_agent_snapshot_item "$key"
       done
       ;;
+    zcode)
+      for key in zcode-agents zcode-skill-harr zcode-skill-workspace zcode-skill-leanctx zcode-skill-ein; do
+        restore_agent_snapshot_item "$key"
+      done
+      ;;
     *) die "unknown agent: $agent" ;;
   esac
 }
@@ -249,11 +270,11 @@ restore_agent_harness() {
 cmd_agents_apply() {
   require_clean_ownership
   local requested="${1:-all}"
-  [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode]'
+  [[ $# -le 1 ]] || die 'usage: harr agents apply [all|codex|opencode|zcode]'
   local agent skill root
   if ! agent_harness_enabled; then
     while IFS= read -r agent; do
-      if [[ "$agent" == codex ]]; then
+      if [[ "$agent" == codex || "$agent" == zcode ]]; then
         if orchestration_enabled; then
           install_one_skill "$agent" asa
         else
@@ -277,12 +298,12 @@ cmd_agents_apply() {
     fi
     remove_managed_skill "$agent" gigacode-executor
     remove_managed_skill "$agent" einherjar-worker
-    if [[ "$agent" == codex ]] && orchestration_enabled; then
+    if [[ ( "$agent" == codex || "$agent" == zcode ) ]] && orchestration_enabled; then
       install_one_skill "$agent" asa
     else
       remove_managed_skill "$agent" asa
     fi
-    if [[ "$agent" == codex ]]; then
+    if [[ "$agent" == codex || "$agent" == zcode ]]; then
       sync_asa_role
     fi
     if ((einherjar_enabled)); then
@@ -294,22 +315,31 @@ cmd_agents_apply() {
 }
 
 skill_state() {
-  local agent="$1" skill="$2" source_dir target_dir target expected
+  local agent="$1" skill="$2" source_dir target_dir target expected compare variant
   source_dir="$(skill_source_dir "$skill")"
   target_dir="$(agent_skill_root "$agent")/${skill}"
   target="${target_dir}/SKILL.md"
   if [[ ! -e "$target_dir" ]]; then printf 'missing'; return; fi
   if [[ ! -r "${source_dir}/SKILL.md" ]]; then printf 'source-missing'; return; fi
+  variant="${source_dir}/SKILL.${agent}.md"
   if [[ "$skill" == harr ]]; then
     expected="$(mktemp -d)"
     render_harr_skill "$expected"
-    if diff -qr "$expected" "$target_dir" >/dev/null 2>&1; then printf 'managed';
-    elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then printf 'modified';
-    else printf 'external'; fi
-    rm -rf -- "$expected"
-  elif diff -qr "$source_dir" "$target_dir" >/dev/null 2>&1; then printf 'managed';
+    [[ -r "$variant" ]] && install -m 0644 "$variant" "${expected}/SKILL.md"
+    compare="$expected"
+  elif [[ -r "$variant" ]]; then
+    expected="$(mktemp -d)"
+    cp -a "${source_dir}/." "$expected/"
+    rm -f "${expected}"/SKILL.*.md
+    install -m 0644 "$variant" "${expected}/SKILL.md"
+    compare="$expected"
+  else
+    compare="$source_dir"
+  fi
+  if diff -qr "$compare" "$target_dir" >/dev/null 2>&1; then printf 'managed';
   elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then printf 'modified';
   else printf 'external'; fi
+  if [[ -n "${expected:-}" ]]; then rm -rf -- "$expected"; fi
 }
 
 cmd_agents_status() {
@@ -320,9 +350,9 @@ cmd_agents_status() {
   printf 'harness: %s\n' "$(if agent_harness_enabled; then printf enabled; else printf disabled; fi)"
   printf 'orchestration: %s\n' "$(if orchestration_enabled; then printf enabled; else printf disabled; fi)"
   printf '%-12s %-12s %-14s %-12s %-10s %-10s %s\n' AGENT POLICY LEAN-CTX HARR ASA EIN WORKSPACE
-  for agent in codex opencode; do
+  for agent in codex opencode zcode; do
     local asa_state='n/a'
-    [[ "$agent" == codex ]] && asa_state="$(skill_state "$agent" asa)"
+    [[ "$agent" == codex || "$agent" == zcode ]] && asa_state="$(skill_state "$agent" asa)"
     printf '%-12s %-12s %-14s %-12s %-10s %-10s %s\n' "$agent" "$(policy_state "$agent")" "$(skill_state "$agent" lean-ctx)" "$(skill_state "$agent" harr)" "$asa_state" "$(skill_state "$agent" ein)" "$(skill_state "$agent" harr-workspace)"
   done
 }
@@ -336,7 +366,7 @@ cmd_agents() {
     harness) cmd_agents_harness "$@" ;;
     orchestration) cmd_agents_orchestration "$@" ;;
     asa) cmd_agents_asa "$@" ;;
-    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode]' '  harr agents status' '  harr agents harness {status|enable|disable}' '  harr agents orchestration {status|enable|disable}' '  harr agents asa status' '  harr agents asa configure [--model MODEL] [--effort EFFORT]' '  harr agents asa apply' ;;
+    help|-h|--help) printf '%s\n' 'Usage:' '  harr agents apply [all|codex|opencode|zcode]' '  harr agents status' '  harr agents harness {status|enable|disable}' '  harr agents orchestration {status|enable|disable}' '  harr agents asa status' '  harr agents asa configure [--model MODEL] [--effort EFFORT] [--zcode-model MODEL]' '  harr agents asa apply' ;;
     *) die "unknown agents command: $command (see harr help)" ;;
   esac
 }
