@@ -189,6 +189,9 @@ assert lean['allow_paths'] == [
     str(config / 'opencode/skills/harr'),
     str(config / 'opencode/skills/lean-ctx'),
     str(config / 'opencode/skills/ein'),
+    str(home / '.zcode/skills/harr'),
+    str(home / '.zcode/skills/lean-ctx'),
+    str(home / '.zcode/skills/ein'),
 ]
 selection = json.loads((config / 'harr/mcp-selection.json').read_text())
 effective = json.loads((config / 'harr/mcp-registry.json').read_text())
@@ -259,6 +262,13 @@ cmp -s "${TMP}/leanctx.before" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 [[ ! -e "${CODEX_HOME}/skills/ein" ]]
 [[ ! -e "${CODEX_HOME}/agents/asa-architect.toml" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/opencode/skills/ein" ]]
+[[ ! -e "${HOME}/.zcode/AGENTS.md" ]]
+[[ ! -e "${HOME}/.zcode/cli/config.json" ]]
+[[ ! -e "${HOME}/.zcode/skills/harr" ]]
+[[ ! -e "${HOME}/.zcode/skills/lean-ctx" ]]
+[[ ! -e "${HOME}/.zcode/skills/ein" ]]
+[[ ! -e "${HOME}/.zcode/skills/asa" ]]
+[[ ! -e "${HOME}/.zcode/workflows/asa.dwf.ts" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-selection.json" ]]
 [[ ! -e "${XDG_CONFIG_HOME}/harr/mcp-registry.json" ]]
 [[ ! -e "${HOME}/.local/libexec/harr" ]]
