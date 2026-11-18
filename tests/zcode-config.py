@@ -12,6 +12,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "common" / "hosts" / "zcode-config.py"
 LEANCTX = "/tmp/harr-test-lean-ctx"
+LAUNCHER = ROOT / "common" / "hosts" / "leanctx-mcp-host.py"
+
+
+def managed_entry() -> dict:
+    return {"type": "stdio", "command": sys.executable, "args": [str(LAUNCHER), "zcode", LEANCTX]}
 
 
 def run(env: dict[str, str], *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -37,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix="harr-zcode-config-") as raw:
     failed = run(env, "status", check=False)
     assert failed.returncode == 1 and "missing" in failed.stdout
     run(env, "apply")
-    assert entry(config_path) == {"type": "stdio", "command": LEANCTX, "args": ["mcp"]}
+    assert entry(config_path) == managed_entry()
     ok = run(env, "status")
     assert ok.returncode == 0 and "managed" in ok.stdout
 
@@ -52,17 +57,26 @@ with tempfile.TemporaryDirectory(prefix="harr-zcode-config-") as raw:
     assert data["plugins"] == {"some-plugin": True}
     assert data["hooks"] == {"enabled": False}
     assert data["mcp"]["servers"]["other-server"] == {"type": "stdio", "command": "other"}
-    assert entry(config_path) == {"type": "stdio", "command": LEANCTX, "args": ["mcp"]}
+    assert entry(config_path) == managed_entry()
     assert run(env, "status").returncode == 0
+
+    # The previous Harr direct registration is adoptable but reported stale.
+    data = json.loads(config_path.read_text(encoding="utf-8"))
+    data["mcp"]["servers"]["lean-ctx"] = {"type": "stdio", "command": LEANCTX, "args": ["mcp"]}
+    config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    failed = run(env, "status", check=False)
+    assert failed.returncode == 1 and "legacy unprofiled" in failed.stdout
+    run(env, "apply")
+    assert entry(config_path) == managed_entry()
 
     # The pre-Harr bootstrap registration (relative command) is adoptable and reported stale.
     data = json.loads(config_path.read_text(encoding="utf-8"))
     data["mcp"]["servers"]["lean-ctx"] = {"type": "stdio", "command": "lean-ctx", "args": ["mcp"]}
     config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     failed = run(env, "status", check=False)
-    assert failed.returncode == 1 and "bootstrap" in failed.stdout
+    assert failed.returncode == 1 and "legacy unprofiled" in failed.stdout
     run(env, "apply")
-    assert entry(config_path) == {"type": "stdio", "command": LEANCTX, "args": ["mcp"]}
+    assert entry(config_path) == managed_entry()
 
     # A foreign lean-ctx entry is never overwritten: apply fails closed and the
     # file stays byte-identical.
@@ -88,6 +102,6 @@ with tempfile.TemporaryDirectory(prefix="harr-zcode-config-") as raw:
     # An empty config file adopts the managed entry.
     config_path.write_text("", encoding="utf-8")
     run(env, "apply")
-    assert entry(config_path) == {"type": "stdio", "command": LEANCTX, "args": ["mcp"]}
+    assert entry(config_path) == managed_entry()
 
 print("ZCode host config contract: PASS")

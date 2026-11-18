@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("harr_doctor", ROOT / "common" / "doctor.py")
@@ -303,10 +305,18 @@ with tempfile.TemporaryDirectory() as td:
     os.environ["HARR_LEANCTX_ID"] = "package-test-id"
     os.environ["HARR_LEANCTX_VERSION"] = "3.11.0"
     try:
-        rc = doctor.write_manifest(
-            paths,
-            SimpleNamespace(source_root=None, harr_version="0.test", install_type="package"),
-        )
+        # This contract tests path selection. Avoid executing the POSIX fixture
+        # as a native process on Windows; the binary identity probe has its own
+        # platform-specific behavior.
+        with patch.object(
+            doctor,
+            "safe_run",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ):
+            rc = doctor.write_manifest(
+                paths,
+                SimpleNamespace(source_root=None, harr_version="0.test", install_type="package"),
+            )
     finally:
         for key, value in saved.items():
             if value is None:
@@ -315,9 +325,11 @@ with tempfile.TemporaryDirectory() as td:
                 os.environ[key] = value
     assert rc == 0
     payload = json.loads(paths.manifest.read_text(encoding="utf-8"))
-    assert Path(payload["leanctx"]["real_path"]) == package_real
+    expected_package_real = package_real.resolve()
+    assert Path(payload["leanctx"]["real_path"]).resolve() == expected_package_real
     payload["leanctx"]["real_path"] = str(libexec / "vendor" / "lean-ctx" / "package-test-build" / "lean-ctx")
-    assert doctor.manifest_expected_real(paths, payload) == package_real
+    expected_real = doctor.manifest_expected_real(paths, payload)
+    assert expected_real is not None and expected_real.resolve() == expected_package_real
 
 linux_harr = (ROOT / "linux" / "harr").read_text(encoding="utf-8")
 linux_install = (ROOT / "linux" / "install.sh").read_text(encoding="utf-8")

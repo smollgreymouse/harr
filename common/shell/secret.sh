@@ -4,7 +4,12 @@ write_secret_file() {
   local file="$1" value="$2"
   ensure_private_dir "$HARR_SECRETS_DIR"
   umask 077
-  printf '%s\n' "$value" >"$file"
+  # Atomic rotation: write a same-dir temporary and rename it over the target
+  # so an interrupted `harr secret set` never leaves a partial secret behind.
+  local tmp="$file.tmp.$$"
+  printf '%s\n' "$value" >"$tmp"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$file"
   chmod 0600 "$file"
 }
 

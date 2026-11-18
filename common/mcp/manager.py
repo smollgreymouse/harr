@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 import sys
@@ -15,6 +18,134 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DEFAULT_REGISTRY = HERE / "registry.json"
 DEFAULT_TEMPLATE_DIR = HERE
+WORKSPACE_STORE_NAME = re.compile(r"[0-9a-f]{24}\.json\Z")
+WORKSPACE_SIDECAR_NAME = re.compile(r"([0-9a-f]{24}\.json)\.(?:meta|lock)\Z")
+
+
+class WorkspaceLifecycleBusy(RuntimeError):
+    """Another Harr Workspace lifecycle operation currently holds the lock."""
+
+
+class WorkspaceLifecycleLock:
+    """Stable per-config lock coordinated by Harr Workspace users and prune."""
+
+    def __init__(self, *, exclusive: bool = False, inheritable: bool = False):
+        self.path = harr_config_dir() / "workspace-lifecycle.lock"
+        self.exclusive = exclusive
+        self.inheritable = inheritable
+        self.fd: int | None = None
+        self._overlapped = None
+        self._windows_api = None
+        self._windows_locked = False
+
+    def acquire(self) -> "WorkspaceLifecycleLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            existing = self.path.lstat()
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and (stat.S_ISLNK(existing.st_mode) or not stat.S_ISREG(existing.st_mode)):
+            raise RuntimeError(f"Workspace lifecycle lock is not a regular non-symlink file: {self.path}")
+        flags = os.O_RDWR | os.O_CREAT
+        if os.name == "posix":
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            self.fd = os.open(self.path, flags, 0o600)
+            metadata = os.fstat(self.fd)
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError(f"Workspace lifecycle lock is not a regular file: {self.path}")
+            if os.name == "posix":
+                if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
+                    raise RuntimeError(f"Workspace lifecycle lock has unsafe owner or permissions: {self.path}")
+                self._acquire_posix()
+            elif os.name == "nt":
+                self._acquire_windows()
+            else:
+                raise RuntimeError(f"Workspace lifecycle locking is unsupported on {os.name}")
+            if self.inheritable and os.name == "posix":
+                os.set_inheritable(self.fd, True)
+            return self
+        except Exception:
+            self.release()
+            raise
+
+    def _acquire_posix(self) -> None:
+        import fcntl
+
+        operation = fcntl.LOCK_EX if self.exclusive else fcntl.LOCK_SH
+        try:
+            fcntl.flock(self.fd, operation | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno in {errno.EACCES, errno.EAGAIN}:
+                raise WorkspaceLifecycleBusy("Workspace lifecycle is busy") from exc
+            raise
+
+    def _acquire_windows(self) -> None:
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        class Overlapped(ctypes.Structure):
+            _fields_ = [
+                ("Internal", ctypes.c_void_p),
+                ("InternalHigh", ctypes.c_void_p),
+                ("Offset", wintypes.DWORD),
+                ("OffsetHigh", wintypes.DWORD),
+                ("hEvent", wintypes.HANDLE),
+            ]
+
+        api = ctypes.WinDLL("kernel32", use_last_error=True)
+        lock_file = api.LockFileEx
+        lock_file.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                              wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(Overlapped)]
+        lock_file.restype = wintypes.BOOL
+        overlapped = Overlapped()
+        flags = 0x00000001  # LOCKFILE_FAIL_IMMEDIATELY
+        if self.exclusive:
+            flags |= 0x00000002  # LOCKFILE_EXCLUSIVE_LOCK
+        handle = wintypes.HANDLE(msvcrt.get_osfhandle(self.fd))
+        if not lock_file(handle, flags, 0, 1, 0, ctypes.byref(overlapped)):
+            code = ctypes.get_last_error()
+            if code == 33:  # ERROR_LOCK_VIOLATION
+                raise WorkspaceLifecycleBusy("Workspace lifecycle is busy")
+            raise OSError(code, "LockFileEx failed", str(self.path))
+        self._overlapped = overlapped
+        self._windows_api = api
+        self._windows_locked = True
+
+    def release(self) -> None:
+        fd = self.fd
+        if fd is None:
+            return
+        try:
+            if os.name == "posix":
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            elif os.name == "nt" and self._windows_locked:
+                import ctypes
+                import msvcrt
+                from ctypes import wintypes
+
+                unlock_file = self._windows_api.UnlockFileEx
+                unlock_file.argtypes = [wintypes.HANDLE, wintypes.DWORD,
+                                        wintypes.DWORD, wintypes.DWORD,
+                                        ctypes.POINTER(type(self._overlapped))]
+                unlock_file.restype = wintypes.BOOL
+                handle = wintypes.HANDLE(msvcrt.get_osfhandle(fd))
+                if not unlock_file(handle, 0, 1, 0, ctypes.byref(self._overlapped)):
+                    code = ctypes.get_last_error()
+                    raise OSError(code, "UnlockFileEx failed", str(self.path))
+        finally:
+            self.fd = None
+            os.close(fd)
+            self._windows_locked = False
+
+    def __enter__(self) -> "WorkspaceLifecycleLock":
+        return self.acquire()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.release()
 
 
 def load_registry(path: Path = DEFAULT_REGISTRY) -> dict:
@@ -101,49 +232,97 @@ def toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def render_gateway(data: dict, runner_command: str) -> str:
-    chunks: list[str] = []
-    for server in data["servers"]:
-        name = server["name"]
-        transport = server.get("transport")
-        lines = ["[[gateway.servers]]", f"name = {toml_string(name)}", f"transport = {toml_string(transport)}", "enabled = true"]
-        if transport == "stdio":
-            lines += [f"command = {toml_string(runner_command)}", f"args = [{toml_string(name)}]", 'url = ""', "", "[gateway.servers.env]", "", "[gateway.servers.headers]"]
-        elif transport == "http":
-            url = server.get("url")
-            if not url:
-                raise SystemExit(f"HTTP MCP {name} has no url")
-            lines += [f"url = {toml_string(url)}", "", "[gateway.servers.headers]"]
-        else:
-            raise SystemExit(f"unsupported MCP transport for {name}: {transport}")
+def gateway_entry_from_server(server: dict, runner_command: str) -> dict:
+    """Normalize a registry server entry into a gateway entry description."""
+    name = server["name"]
+    transport = server.get("transport")
+    entry: dict = {"name": name, "transport": transport, "enabled": True}
+    if transport == "stdio":
+        entry["command"] = runner_command
+        entry["args"] = [name]
+        entry["url"] = ""
+        entry["env"] = {}
+        entry["headers"] = {}
+    elif transport == "http":
+        url = server.get("url")
+        if not url:
+            raise SystemExit(f"HTTP MCP {name} has no url")
+        entry["url"] = url
+        entry["headers"] = {}
+        if server.get("oauth"):
+            entry["oauth"] = True
+    else:
+        raise SystemExit(f"unsupported MCP transport for {name}: {transport}")
 
-        secret_env: list[tuple[str, str]] = []
-        secret_headers: list[tuple[str, str, str]] = []
-        for secret in server.get("secrets", []):
-            target = secret.get("target", {})
-            item = (target.get("name"), secret.get("memento_id"))
-            if not all(item):
-                raise SystemExit(f"invalid secret target for MCP {name}")
-            if target.get("kind") == "env":
-                secret_env.append(item)  # type: ignore[arg-type]
-            elif target.get("kind") == "header":
-                secret_headers.append((*item, str(target.get("format") or "")))  # type: ignore[arg-type]
-            else:
-                raise SystemExit(f"unsupported secret target for MCP {name}: {target.get('kind')}")
-        if secret_env and transport == "stdio":
-            lines += ["", "[gateway.servers.secret_env]"]
-            lines += [f"{key} = {{ id = {toml_string(secret_id)} }}" for key, secret_id in secret_env]
-        if secret_headers and transport == "http":
-            lines += ["", "[gateway.servers.secret_headers]"]
-            for key, secret_id, fmt in secret_headers:
-                ref = f"id = {toml_string(secret_id)}"
-                if fmt:
-                    if "{secret}" not in fmt:
-                        raise SystemExit(f"secret header format for MCP {name} has no {{secret}} placeholder")
-                    ref += f", format = {toml_string(fmt)}"
-                lines.append(f"{toml_string(key)} = {{ {ref} }}")
-        chunks.append("\n".join(lines))
+    secret_env: list[tuple[str, str]] = []
+    secret_headers: list[tuple[str, str, str]] = []
+    for secret in server.get("secrets", []):
+        target = secret.get("target", {})
+        item = (target.get("name"), secret.get("memento_id"))
+        if not all(item):
+            raise SystemExit(f"invalid secret target for MCP {name}")
+        if target.get("kind") == "env":
+            secret_env.append(item)  # type: ignore[arg-type]
+        elif target.get("kind") == "header":
+            fmt = str(target.get("format") or "")
+            if fmt and "{secret}" not in fmt:
+                raise SystemExit(f"secret header format for MCP {name} has no {{secret}} placeholder")
+            secret_headers.append((*item, fmt))  # type: ignore[arg-type]
+        else:
+            raise SystemExit(f"unsupported secret target for MCP {name}: {target.get('kind')}")
+    if secret_env and transport == "stdio":
+        entry["secret_env"] = dict(secret_env)
+    if secret_headers and transport == "http":
+        entry["secret_headers"] = {
+            key: ({"id": secret_id, "format": fmt} if fmt else {"id": secret_id})
+            for key, secret_id, fmt in secret_headers
+        }
+    return entry
+
+
+def render_gateway_entry(entry: dict) -> str:
+    """Render one `[[gateway.servers]]` block from a normalized entry."""
+    name = entry["name"]
+    transport = entry["transport"]
+    lines = ["[[gateway.servers]]", f"name = {toml_string(name)}", f"transport = {toml_string(transport)}", "enabled = true"]
+    if transport == "stdio":
+        rendered_args = ", ".join(toml_string(item) for item in entry.get("args", []))
+        lines += [f"command = {toml_string(entry['command'])}", f"args = [{rendered_args}]", 'url = ""', "", "[gateway.servers.env]", "", "[gateway.servers.headers]"]
+    elif transport == "http":
+        url = entry.get("url")
+        if not url:
+            raise SystemExit(f"HTTP MCP {name} has no url")
+        lines += [f"url = {toml_string(url)}"]
+        if entry.get("oauth"):
+            lines += ["oauth = true"]
+        lines += ["", "[gateway.servers.headers]"]
+    else:
+        raise SystemExit(f"unsupported MCP transport for {name}: {transport}")
+
+    secret_env = entry.get("secret_env") or {}
+    if secret_env and transport == "stdio":
+        lines += ["", "[gateway.servers.secret_env]"]
+        lines += [f"{key} = {{ id = {toml_string(secret_id)} }}" for key, secret_id in secret_env.items()]
+    secret_headers = entry.get("secret_headers") or {}
+    if secret_headers and transport == "http":
+        lines += ["", "[gateway.servers.secret_headers]"]
+        for key, reference in secret_headers.items():
+            fields = f"id = {toml_string(reference['id'] if isinstance(reference, dict) else reference)}"
+            fmt = reference.get("format") if isinstance(reference, dict) else None
+            if fmt:
+                fields += f", format = {toml_string(fmt)}"
+            lines += [f"{toml_string(key)} = {{ {fields} }}"]
+    return "\n".join(lines)
+
+
+def render_gateway_servers(entries: list[dict]) -> str:
+    chunks = [render_gateway_entry(entry) for entry in entries]
     return "\n\n".join(chunks) + ("\n" if chunks else "")
+
+
+def render_gateway(data: dict, runner_command: str) -> str:
+    entries = [gateway_entry_from_server(server, runner_command) for server in data["servers"]]
+    return render_gateway_servers(entries)
 
 
 def shell_allowlist(platform: str) -> list[str]:
@@ -752,7 +931,9 @@ def run_server(args: argparse.Namespace, data: dict) -> None:
         raise SystemExit(
             f"MCP {server['name']} is a remote HTTP server reached directly by LeanCTX; no local runner command exists"
         )
-    env = os.environ.copy()
+    # Gateway memento env vars belong to the gateway process only; the real
+    # upstream receives its own wired credential via service_secret_env below.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("LEAN_CTX_SECRET_")}
     forbidden = {
         secret.get("target", {}).get("name")
         for secret in server.get("secrets", [])
@@ -856,7 +1037,267 @@ def with_workspace_warnings(payload: dict) -> dict:
     return payload
 
 
+def workspace_lifecycle_lock(*, exclusive: bool = False, inheritable: bool = False) -> WorkspaceLifecycleLock:
+    return WorkspaceLifecycleLock(exclusive=exclusive, inheritable=inheritable)
+
+
+def _workspace_prune_directory() -> Path | None:
+    directory = harr_config_dir() / "workspaces"
+    try:
+        metadata = directory.lstat()
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise RuntimeError(f"Harr Workspace store path is not a real directory: {directory}")
+    if os.name == "posix" and (metadata.st_uid != os.getuid() or metadata.st_mode & 0o077):
+        raise RuntimeError(f"Harr Workspace store directory has unsafe owner or permissions: {directory}")
+    return directory
+
+
+def _workspace_prune_files(directory: Path) -> list[str]:
+    names: set[str] = set()
+    for entry in directory.iterdir():
+        if WORKSPACE_STORE_NAME.fullmatch(entry.name):
+            names.add(entry.name)
+            continue
+        match = WORKSPACE_SIDECAR_NAME.fullmatch(entry.name)
+        if match:
+            names.add(match.group(1))
+    return sorted(names)
+
+
+def _inspect_workspace_prune_file(path: Path) -> os.stat_result | None:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ValueError(f"managed store member is not a regular non-symlink file: {path.name}")
+    if os.name == "posix" and metadata.st_uid != os.getuid():
+        raise ValueError(f"managed store member has a different owner: {path.name}")
+    return metadata
+
+
+def _read_workspace_prune_json(path: Path, *, limit: int = 4 * 1024 * 1024) -> dict:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        metadata = os.fstat(fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError(f"managed store member is not a regular file: {path.name}")
+        if os.name == "posix" and metadata.st_uid != os.getuid():
+            raise ValueError(f"managed store member has a different owner: {path.name}")
+        if metadata.st_size > limit:
+            raise ValueError(f"managed store member is too large to inspect: {path.name}")
+        with os.fdopen(fd, "r", encoding="utf-8") as stream:
+            fd = -1
+            payload = stream.read(limit + 1)
+        if len(payload) > limit:
+            raise ValueError(f"managed store member is too large to inspect: {path.name}")
+        value = json.loads(payload)
+        if not isinstance(value, dict):
+            raise ValueError(f"Workspace store is not a JSON object: {path.name}")
+        return value
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def _workspace_primary_git_dir(metadata_path: Path, state: dict) -> Path | None:
+    try:
+        metadata = _read_workspace_prune_json(metadata_path)
+    except FileNotFoundError:
+        return None
+    versions = metadata.get("versions")
+    if metadata.get("schema_version") != 2 or not isinstance(versions, list):
+        raise ValueError(f"unsupported Workspace metadata: {metadata_path.name}")
+    matches = [
+        item for item in versions
+        if isinstance(item, dict)
+        and item.get("workspace_id") == state.get("id")
+        and item.get("revision") == state.get("revision")
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"Workspace metadata does not match the current store revision: {metadata_path.name}")
+    bindings = matches[0].get("checkout_bindings")
+    if not isinstance(bindings, dict):
+        raise ValueError(f"Workspace metadata has no checkout bindings: {metadata_path.name}")
+    primary = state.get("primary")
+    binding = bindings.get(primary) if isinstance(primary, str) else None
+    if binding is None:
+        return None
+    if not isinstance(binding, dict) or not isinstance(binding.get("git_dir"), str):
+        raise ValueError(f"Workspace primary checkout binding is invalid: {metadata_path.name}")
+    git_dir = Path(binding["git_dir"])
+    if not git_dir.is_absolute():
+        raise ValueError(f"Workspace primary Git directory is not absolute: {metadata_path.name}")
+    return git_dir
+
+
+def _path_entry_exists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _workspace_prune_plan(directory: Path | None, *, full_reset: bool) -> list[dict]:
+    if directory is None:
+        return []
+    plan: list[dict] = []
+    for name in _workspace_prune_files(directory):
+        store = directory / name
+        metadata_path = directory / f"{name}.meta"
+        lock_path = directory / f"{name}.lock"
+        files = [path for path in (store, metadata_path, lock_path) if _path_entry_exists(path)]
+        item = {"store": str(store), "files": [path.name for path in files]}
+        if not files:
+            continue
+        try:
+            for path in files:
+                _inspect_workspace_prune_file(path)
+        except (OSError, ValueError) as exc:
+            item.update(status="blocked", reason="unsafe-store-file", error=str(exc))
+            plan.append(item)
+            continue
+        if full_reset:
+            item.update(status="planned", reason="full-reset")
+            plan.append(item)
+            continue
+        if not store.exists():
+            item.update(status="planned", reason="orphaned-sidecar")
+            plan.append(item)
+            continue
+        try:
+            state = _read_workspace_prune_json(store)
+            primary = state.get("primary")
+            workspace_id = state.get("id")
+            revision = state.get("revision")
+            additional = state.get("additional")
+            if (
+                not isinstance(primary, str)
+                or not Path(primary).is_absolute()
+                or not isinstance(workspace_id, str)
+                or not workspace_id
+                or not isinstance(revision, int)
+                or isinstance(revision, bool)
+                or revision < 1
+                or not isinstance(additional, list)
+                or not all(isinstance(path, str) for path in additional)
+            ):
+                raise ValueError("Workspace store has invalid core fields")
+            if _path_entry_exists(Path(primary)):
+                item.update(status="retained", reason="primary-path-present")
+                plan.append(item)
+                continue
+            primary_git_dir = _workspace_primary_git_dir(metadata_path, state) if metadata_path.exists() else None
+            if primary_git_dir is not None and _path_entry_exists(primary_git_dir):
+                item.update(status="retained", reason="git-admin-directory-present")
+                plan.append(item)
+                continue
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            item.update(status="blocked", reason="workspace-state-unavailable", error=str(exc))
+            plan.append(item)
+            continue
+        item.update(status="planned", reason="primary-and-git-admin-missing")
+        plan.append(item)
+    return plan
+
+
+def _sync_workspace_prune_directory(directory: Path) -> None:
+    if os.name != "posix":
+        return
+    fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def workspace_prune_command(args: argparse.Namespace) -> None:
+    full_reset = bool(args.full_reset)
+    if args.paths:
+        raise SystemExit("workspace prune does not accept paths")
+    if args.dry_run:
+        try:
+            directory = _workspace_prune_directory()
+            plan = _workspace_prune_plan(directory, full_reset=full_reset)
+        except (OSError, RuntimeError) as exc:
+            print(json.dumps({
+                "mode": "all" if full_reset else "prune",
+                "dry_run": True,
+                "results": [{"status": "blocked", "reason": "unsafe-store-directory", "error": str(exc)}],
+            }, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from exc
+    else:
+        try:
+            with workspace_lifecycle_lock(exclusive=True):
+                directory = _workspace_prune_directory()
+                plan = _workspace_prune_plan(directory, full_reset=full_reset)
+                if full_reset and any(item["status"] == "blocked" for item in plan):
+                    for item in plan:
+                        if item["status"] == "planned":
+                            item.update(status="blocked", reason="full-reset-preflight-failed")
+                elif directory is not None:
+                    for item in plan:
+                        if item["status"] != "planned":
+                            continue
+                        store = Path(item["store"])
+                        deleted: list[str] = []
+                        try:
+                            for path in (store, Path(f"{store}.meta"), Path(f"{store}.lock")):
+                                if _path_entry_exists(path):
+                                    path.unlink()
+                                    deleted.append(path.name)
+                            item.update(status="removed", files=deleted)
+                        except OSError as exc:
+                            item.update(status="blocked", reason="delete-failed", error=str(exc), files=deleted)
+                    if any(item.get("status") == "removed" for item in plan):
+                        try:
+                            _sync_workspace_prune_directory(directory)
+                        except OSError as exc:
+                            plan.append({
+                                "status": "blocked",
+                                "reason": "directory-sync-failed",
+                                "error": str(exc),
+                            })
+        except WorkspaceLifecycleBusy as exc:
+            print(json.dumps({
+                "mode": "all" if full_reset else "prune",
+                "dry_run": False,
+                "results": [{"status": "blocked", "reason": "busy", "error": str(exc)}],
+            }, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from exc
+        except (OSError, RuntimeError) as exc:
+            print(json.dumps({
+                "mode": "all" if full_reset else "prune",
+                "dry_run": False,
+                "results": [{"status": "blocked", "reason": "unsafe-store-directory", "error": str(exc)}],
+            }, ensure_ascii=False, indent=2))
+            raise SystemExit(1) from exc
+    summary = {
+        status: sum(item.get("status") == status for item in plan)
+        for status in ("planned", "removed", "retained", "blocked")
+    }
+    print(json.dumps({
+        "mode": "all" if full_reset else "prune",
+        "dry_run": bool(args.dry_run),
+        "results": plan,
+        "summary": summary,
+    }, ensure_ascii=False, indent=2))
+    if any(item.get("status") == "blocked" for item in plan):
+        raise SystemExit(1)
+
+
 def workspace_command(args: argparse.Namespace) -> None:
+    if args.action == "prune":
+        if args.project is not None or args.expected_revision is not None:
+            raise SystemExit("--project and --expected-revision do not apply to workspace prune")
+        workspace_prune_command(args)
+        return
+    if args.dry_run or args.full_reset:
+        raise SystemExit("--dry-run and --all apply only to workspace prune")
     real = Path(args.real).expanduser().resolve()
     if not real.is_file():
         raise SystemExit(f"LeanCTX binary not found: {real}")
@@ -952,31 +1393,17 @@ def workspace_command(args: argparse.Namespace) -> None:
     print(json.dumps(with_workspace_warnings({"store": str(store), **updated}), ensure_ascii=False, indent=2))
 
 
-def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
-    env = os.environ.copy()
-    if leanctx_is_mcp(args.rest):
-        # rmcp logs whole initialize payloads at info, including base64 icons.
-        # These can overflow a host's nonblocking stderr and panic discovery.
-        # Keep normal server logs while allowing an explicit LeanCTX override.
-        env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
-        # The managed server-info icon lives beside the installed MCP runtime.
-        # Keep the source checkout fallback useful for direct development runs.
-        icon = HERE / "assets" / "harr.png"
-        if not icon.is_file():
-            checkout_icon = HERE.parents[1] / "harr.png"
-            if checkout_icon.is_file():
-                icon = checkout_icon
-        if icon.is_file():
-            env["HARR_MCP_ICON_PATH"] = str(icon)
-    if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
-        primary = workspace_root()
-        store = ensure_workspace_store(args.real, primary)
-        env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
-        # Workspace changes root authority, not the familiar Harr tool surface.
-        # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
-        # strict session; LeanCTX still enforces request-scoped Workspace roots.
-        env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
-        env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
+def _overlay_modules() -> tuple[object | None, object | None]:
+    """Lazy import of the project overlay modules; missing modules = legacy path."""
+    try:
+        import project_overlay as overlay
+        import profiles as profiles_mod
+    except ImportError:
+        return None, None
+    return overlay, profiles_mod
+
+
+def _export_registry_secrets(env: dict, data: dict) -> None:
     secret_root = harr_config_dir() / "secrets"
     for _, secret in secret_records(data):
         path = secret_root / secret["file"]
@@ -985,10 +1412,431 @@ def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
         value = path.read_text(encoding="utf-8").strip()
         if value:
             env[memento_var(secret["memento_id"])] = value
-    cmd = [args.real, *args.rest]
+
+
+def _export_secret_ids(env: dict, references: list[dict]) -> None:
+    """Export exactly the memento ids the session config wires — nothing else."""
+    secret_root = harr_config_dir() / "secrets"
+    for reference in references:
+        path = secret_root / str(reference["file"])
+        if not path.is_file():
+            continue
+        value = path.read_text(encoding="utf-8").strip()
+        if value:
+            env[memento_var(str(reference["memento_id"]))] = value
+
+
+def _session_project(data: dict) -> dict | None:
+    """Resolve the nearest project overlay for the session cwd.
+
+    Returns None when there is no manifest, the overlay modules are missing, or
+    the manifest is untrusted — each of those keeps the global behavior. An
+    invalid manifest raises ProjectOverlayError (fail-closed, safe ids only)."""
+    overlay, _ = _overlay_modules()
+    if overlay is None:
+        return None
+    manifest_path = overlay.find_manifest(Path.cwd())
+    if manifest_path is None:
+        return None
+    manifest = overlay.load_manifest(manifest_path)
+    root = Path(manifest["root"])
+    if not overlay.is_trusted(root, harr_config_dir(), manifest["digest"]):
+        print(
+            f"harr project overlay: untrusted {manifest_path}; approve with: harr mcp project trust",
+            file=sys.stderr,
+        )
+        return None
+    return {"overlay": overlay, "manifest": manifest, "root": root}
+
+
+def effective_servers(data: dict, session: dict) -> tuple[list[dict], list[dict]]:
+    """Merge the global selection with the trusted project overlay.
+
+    Returns (gateway entries, secret references). Secret bytes are never
+    copied; unknown providers, name conflicts, and unbound/disabled profiles
+    fail closed. v1 project instances select http providers only; a disable
+    entry turns off any inherited instance."""
+    overlay = session["overlay"]
+    manifest = session["manifest"]
+    profiles_mod = _overlay_modules()[1]
+    assert profiles_mod is not None
+    config_dir = harr_config_dir()
+    project = overlay.project_key(session["root"])
+    providers = data.get("providers", {})
+
+    merged: dict[str, dict] = {server["name"]: dict(server) for server in data["servers"]}
+    secret_refs: list[dict] = []
+
+    for name, inst in manifest["instances"].items():
+        profile_doc = None
+        if inst["profile"]:
+            profile_doc = profiles_mod.get_profile(profiles_mod.profiles_dir(config_dir), inst["profile"])
+            if profile_doc is None:
+                raise SystemExit(f"instance {name}: unknown profile {inst['profile']}")
+            if profile_doc.get("state") != "enabled":
+                raise SystemExit(f"instance {name}: profile {inst['profile']} is disabled")
+            if project not in profile_doc.get("bound_projects", []):
+                raise SystemExit(f"instance {name}: profile {inst['profile']} is not bound to this project")
+        if not inst["enabled"] and inst["provider"] is None:
+            merged.pop(name, None)
+            continue
+        provider = providers.get(inst["provider"] or "")
+        if provider is None:
+            raise SystemExit(f"instance {name}: unknown provider {inst['provider']}")
+        if name in merged:
+            raise SystemExit(f"instance {name}: name conflicts with an existing instance")
+        if provider.get("transport") != "http":
+            raise SystemExit(f"instance {name}: project selection supports http providers only")
+        entry: dict = {"name": name, "transport": "http", "enabled": True, "headers": {}}
+        if inst["profile"]:
+            entry["profile"] = inst["profile"]
+        if provider.get("profile_endpoint"):
+            if profile_doc is None:
+                raise SystemExit(f"instance {name}: provider requires a bound profile for its endpoint")
+            entry["url"] = profile_doc.get("endpoint")
+        else:
+            entry["url"] = provider.get("url")
+        if not entry["url"]:
+            raise SystemExit(f"instance {name}: provider has no endpoint")
+        if provider.get("oauth"):
+            entry["oauth"] = True
+        if profile_doc and profile_doc.get("secret"):
+            if entry.get("oauth"):
+                raise SystemExit(
+                    f"instance {name}: profile supplies a secret but the provider uses OAuth; "
+                    "bind it to a token-based provider (the gateway cannot carry both)"
+                )
+            entry["secret_headers"] = {
+                "Authorization": {
+                    "id": profile_doc["secret"]["memento_id"],
+                    "format": "Bearer {secret}",
+                }
+            }
+            secret_refs.append({
+                "memento_id": profile_doc["secret"]["memento_id"],
+                "file": profile_doc["secret"]["file"],
+            })
+        merged[name] = entry
+
+    for name, ext in manifest["extensions"].items():
+        if name in merged:
+            raise SystemExit(f"extension {name}: name conflicts with an existing instance")
+        merged[name] = {"name": name, "transport": "http", "enabled": True, "url": ext["url"], "headers": {}}
+
+    # Collect the surviving instances' secret references only after the
+    # overlay merge — a disabled instance must not export its secret.
+    seen_refs: set[tuple[str, str]] = set()
+    for server in merged.values():
+        for secret in server.get("secrets", []):
+            ref = {"memento_id": secret.get("memento_id"), "file": secret.get("file")}
+            key = (str(ref["memento_id"]), str(ref["file"]))
+            if key not in seen_refs:
+                seen_refs.add(key)
+                secret_refs.append(ref)
+
+    # Registry-shaped entries (global selection) render through the standard
+    # gateway entry path; overlay instances/extensions are already normalized.
+    rendered: list[dict] = []
+    for entry in merged.values():
+        if "runtime" in entry:
+            rendered.append(gateway_entry_from_server(entry, "harr-mcp-run"))
+        else:
+            rendered.append(entry)
+    return rendered, secret_refs
+
+
+GATEWAY_SESSION_FORMAT = 1
+SESSION_BASE_CONFIG = HERE.parent / "leanctx" / "config.base.toml"
+
+
+def harr_platform() -> str:
     if os.name == "nt":
-        raise SystemExit(subprocess.call(cmd, env=env))
-    os.execvpe(cmd[0], cmd, env)
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "linux"
+
+
+def _inherit_global_tuning() -> tuple[list[str], list[str]]:
+    """Carry allow_paths/shell_allowlist_extra from the global rendered config.
+
+    Session configs are rendered from the pristine base template; without this
+    they would silently drop the installer's PathJail readability allowances."""
+    try:
+        import tomllib
+    except ImportError:  # pragma: no cover (py<3.11 has no session configs)
+        return [], []
+    base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+    global_path = Path(base) / "lean-ctx" / "config.toml"
+    if not global_path.is_file():
+        return [], []
+    try:
+        doc = tomllib.loads(global_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return [], []
+    allow_paths: list[str] = []
+    raw_paths = doc.get("allow_paths")
+    if isinstance(raw_paths, list):
+        allow_paths = [str(item) for item in raw_paths if isinstance(item, str)]
+    allowlist: list[str] = []
+    for table in doc.values():
+        if isinstance(table, dict) and isinstance(table.get("shell_allowlist_extra"), list):
+            allowlist = [str(item) for item in table["shell_allowlist_extra"] if isinstance(item, str)]
+    return allow_paths, allowlist
+
+
+def _session_config(data: dict, session: dict) -> tuple[Path, list[dict]]:
+    """Render the per-project session gateway config.
+
+    The cache key hashes the registry, manifest digest, trust digest and
+    profile states — any instance-config or credential-binding change yields a
+    new config, so new sessions pick the change up deterministically."""
+    overlay = session["overlay"]
+    profiles_mod = _overlay_modules()[1]
+    assert profiles_mod is not None
+    entries, secret_refs = effective_servers(data, session)
+    registry_digest = hashlib.sha256(
+        json.dumps(data, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    fingerprint = profiles_mod.profile_fingerprint(profiles_mod.profiles_dir(harr_config_dir()))
+    trust_digest = overlay.trusted_digest(session["root"], harr_config_dir()) or ""
+    key_material = json.dumps(
+        [
+            GATEWAY_SESSION_FORMAT,
+            overlay.project_key(session["root"]),
+            registry_digest,
+            session["manifest"]["digest"],
+            trust_digest,
+            fingerprint,
+        ],
+        sort_keys=True,
+    )
+    key = hashlib.sha256(key_material.encode("utf-8")).hexdigest()[:16]
+    directory = harr_config_dir() / "mcp-sessions" / key
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        directory.chmod(0o700)
+    except OSError:
+        pass
+
+    text = Path(SESSION_BASE_CONFIG).read_text(encoding="utf-8")
+    allow_paths, allowlist = _inherit_global_tuning()
+    if not allowlist:
+        allowlist = shell_allowlist(harr_platform())
+    rendered_paths = ",\n".join(f"    {toml_string(item)}" for item in allow_paths)
+    rendered_allowlist = ",\n".join(f"    {toml_string(item)}" for item in allowlist)
+    text = text.replace("{{HARR_SHELL_ALLOWLIST_EXTRA}}", rendered_allowlist)
+    text = text.replace("{{HARR_ALLOW_PATHS}}", rendered_paths)
+    marker = "# {{HARR_GATEWAY_SERVERS}}"
+    if marker not in text:
+        raise SystemExit(f"LeanCTX base config has no marker: {marker}")
+    text = text.replace(marker, render_gateway_servers(entries).rstrip())
+    config_path = directory / "config.toml"
+    tmp = directory / ".config.toml.tmp"
+    tmp.write_text(text.rstrip() + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, config_path)
+    return config_path, secret_refs
+
+
+def resolve_command(args: argparse.Namespace, data: dict) -> None:
+    """Diagnostics for the project overlay resolution. Never contacts providers."""
+    overlay, _ = _overlay_modules()
+    output: dict = {
+        "project": str(Path.cwd().resolve()),
+        "manifest": None,
+        "trusted": False,
+        "instances": [],
+        "extensions": [],
+        "error": None,
+    }
+    if overlay is None:
+        output["error"] = "project overlay support is not installed"
+        print(json.dumps(output, indent=1))
+        return
+    manifest_path = overlay.find_manifest(Path.cwd())
+    if manifest_path is None:
+        print(json.dumps(output, indent=1))
+        return
+    output["manifest"] = str(manifest_path)
+    try:
+        manifest = overlay.load_manifest(manifest_path)
+    except overlay.ProjectOverlayError as exc:
+        output["error"] = str(exc)
+        print(json.dumps(output, indent=1))
+        return
+    manifest_root = Path(manifest["root"])
+    if not overlay.is_trusted(manifest_root, harr_config_dir(), manifest["digest"]):
+        output["hint"] = "approve with: harr mcp project trust"
+        print(json.dumps(output, indent=1))
+        return
+    output["trusted"] = True
+    entries, secret_refs = effective_servers(data, {"overlay": overlay, "manifest": manifest, "root": manifest_root})
+    rows = []
+    for entry in entries:
+        source = "global-selection"
+        profile = None
+        if entry["name"] in manifest["instances"]:
+            source = "project-overlay"
+            profile = manifest["instances"][entry["name"]].get("profile")
+        elif entry["name"] in manifest["extensions"]:
+            source = "project-extension"
+        rows.append({
+            "name": entry["name"],
+            "transport": entry.get("transport"),
+            "source": source,
+            "profile": profile,
+            "url": entry.get("url") or None,
+        })
+    output["instances"] = rows
+    output["extensions"] = [{"name": name, "url": ext["url"]} for name, ext in manifest["extensions"].items()]
+    output["secret_ids"] = sorted({str(ref["memento_id"]) for ref in secret_refs if ref.get("memento_id")})
+    print(json.dumps(output, indent=1))
+
+
+def project_command(args: argparse.Namespace, data: dict) -> None:
+    """User-local trust lifecycle for the nearest project overlay."""
+    overlay, _ = _overlay_modules()
+    if overlay is None:
+        raise SystemExit("project overlay support is not installed")
+    root = Path.cwd()
+    if args.action == "status":
+        manifest_path = overlay.find_manifest(root)
+        state: dict = {
+            "project": str(root.resolve()),
+            "project_key": overlay.project_key(root),
+            "manifest": str(manifest_path) if manifest_path else None,
+        }
+        if manifest_path is None:
+            state["status"] = "none"
+        else:
+            try:
+                manifest = overlay.load_manifest(manifest_path)
+            except overlay.ProjectOverlayError as exc:
+                state["status"] = "invalid"
+                state["error"] = str(exc)
+            else:
+                state["root"] = manifest["root"]
+                state["digest"] = manifest["digest"]
+                trusted = overlay.is_trusted(Path(manifest["root"]), harr_config_dir(), manifest["digest"])
+                state["status"] = "trusted" if trusted else "untrusted"
+        print(json.dumps(state, indent=1))
+        return
+    manifest_path = overlay.find_manifest(root)
+    if manifest_path is None:
+        raise SystemExit("no project overlay manifest found from cwd")
+    manifest = overlay.load_manifest(manifest_path)
+    manifest_root = Path(manifest["root"])
+    if args.action == "trust":
+        overlay.approve(manifest_root, harr_config_dir(), manifest["digest"])
+        print(f"project overlay trusted: {manifest_path} (digest {manifest['digest'][:12]}...)")
+        return
+    removed = overlay.revoke(manifest_root, harr_config_dir())
+    print("project overlay trust revoked" if removed else "project overlay trust was not set")
+
+
+def profile_command(args: argparse.Namespace) -> None:
+    """User-local credential profile lifecycle. Never handles secret bytes."""
+    overlay, profiles_mod = _overlay_modules()
+    if profiles_mod is None:
+        raise SystemExit("profile support is not installed")
+    directory = profiles_mod.profiles_dir(harr_config_dir())
+    if args.action == "list":
+        rows = profiles_mod.list_profiles(directory)
+        visible = ("provider", "kind", "endpoint", "state", "bound_projects", "secret")
+        print(json.dumps(
+            {pid: {key: value for key, value in doc.items() if key in visible} for pid, doc in rows.items()},
+            indent=1,
+        ))
+        return
+    if args.action == "set":
+        if args.kind == "http" and not args.endpoint:
+            raise SystemExit("http profiles require --endpoint")
+        if bool(args.secret_file) != bool(args.memento_id):
+            raise SystemExit("a profile secret requires both --secret-file and --memento-id")
+        profile: dict = {
+            "id": args.profile,
+            "provider": args.provider,
+            "kind": args.kind,
+            "endpoint": args.endpoint,
+            "state": "enabled",
+            "bound_projects": [],
+        }
+        if args.secret_file:
+            profile["secret"] = {"file": args.secret_file, "memento_id": args.memento_id}
+        roots = [Path(item).resolve() for item in (args.bind_project or [str(Path.cwd().resolve())])]
+        profile["bound_projects"] = [overlay.project_key(root) for root in roots]
+        path = profiles_mod.write_profile(directory, profile)
+        print(f"profile {args.profile} stored in {path} (0600)")
+        return
+    if args.action in {"enable", "disable"}:
+        doc = profiles_mod.set_state(directory, args.profile, f"{args.action}d")
+        print(f"profile {args.profile} is now {doc['state']}")
+        return
+    removed = profiles_mod.remove_profile(directory, args.profile)
+    print(f"profile {args.profile} removed" if removed else f"profile {args.profile} was not set")
+
+
+def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
+    env = os.environ.copy()
+    lifecycle_lock = None
+    try:
+        if leanctx_is_mcp(args.rest):
+            # rmcp logs whole initialize payloads at info, including base64 icons.
+            # These can overflow a host's nonblocking stderr and panic discovery.
+            # Keep normal server logs while allowing an explicit LeanCTX override.
+            env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
+            # The managed server-info icon lives beside the installed MCP runtime.
+            # Keep the source checkout fallback useful for direct development runs.
+            icon = HERE / "assets" / "harr.png"
+            if not icon.is_file():
+                checkout_icon = HERE.parents[1] / "harr.png"
+                if checkout_icon.is_file():
+                    icon = checkout_icon
+            if icon.is_file():
+                env["HARR_MCP_ICON_PATH"] = str(icon)
+        if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
+            lifecycle_lock = workspace_lifecycle_lock(inheritable=True).acquire()
+            primary = workspace_root()
+            store = ensure_workspace_store(args.real, primary)
+            env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
+            # Workspace changes root authority, not the familiar Harr tool surface.
+            # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
+            # strict session; LeanCTX still enforces request-scoped Workspace roots.
+            env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
+            env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
+        # Project overlay: a trusted manifest scopes this session's gateway
+        # config and secret export to its instances. Anything else (no
+        # manifest, untrusted, invalid, unsupported) keeps the global config.
+        session = None
+        overlay, _ = _overlay_modules()
+        if overlay is not None:
+            try:
+                session = _session_project(data)
+            except overlay.ProjectOverlayError as exc:
+                print(f"harr project overlay: rejected: {exc}", file=sys.stderr)
+                session = None
+        if session is None:
+            _export_registry_secrets(env, data)
+        else:
+            try:
+                config_path, secret_refs = _session_config(data, session)
+            except (overlay.ProjectOverlayError, SystemExit) as exc:
+                reason = str(exc) or exc.__class__.__name__
+                print(f"harr project overlay: rejected: {reason}", file=sys.stderr)
+                _export_registry_secrets(env, data)
+            else:
+                env["LEAN_CTX_CONFIG_DIR"] = str(config_path.parent)
+                _export_secret_ids(env, secret_refs)
+        cmd = [args.real, *args.rest]
+        if os.name == "nt":
+            raise SystemExit(subprocess.call(cmd, env=env))
+        os.execvpe(cmd[0], cmd, env)
+    finally:
+        # On POSIX a successful exec keeps this inherited descriptor locked until
+        # LeanCTX exits. On Windows subprocess.call returns only when it exits.
+        if lifecycle_lock is not None:
+            lifecycle_lock.release()
 
 
 def component_rows(args: argparse.Namespace, data: dict) -> None:
@@ -1074,18 +1922,36 @@ def main() -> None:
     p_exec.add_argument("real")
     p_exec.add_argument("rest", nargs=argparse.REMAINDER)
 
+    sub.add_parser("resolve")
+
+    p_project = sub.add_parser("project")
+    p_project.add_argument("action", choices=["status", "trust", "revoke"])
+
+    p_profile = sub.add_parser("profile")
+    p_profile.add_argument("action", choices=["list", "set", "enable", "disable", "remove"])
+    p_profile.add_argument("profile", nargs="?", default="")
+    p_profile.add_argument("--provider", help="Harr provider definition id this profile binds to")
+    p_profile.add_argument("--kind", choices=["http", "stdio"], default="http")
+    p_profile.add_argument("--endpoint", help="approved endpoint carried by the profile (https)")
+    p_profile.add_argument("--secret-file", help="plain file name inside the Harr secret store")
+    p_profile.add_argument("--memento-id", help="memento id the gateway references this secret by")
+    p_profile.add_argument("--bind-project", action="append", default=[], help="project path allowed to use this profile (repeatable; default: cwd)")
+
     p_workspace = sub.add_parser("workspace")
-    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync"])
+    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync", "prune"])
     p_workspace.add_argument("paths", nargs="*")
     p_workspace.add_argument("--real", required=True)
     p_workspace.add_argument("--project")
     p_workspace.add_argument("--expected-revision", type=int)
+    p_workspace.add_argument("--dry-run", action="store_true")
+    p_workspace.add_argument("--all", dest="full_reset", action="store_true")
 
     p_components = sub.add_parser("components")
     p_components.add_argument("--npm-prefix")
 
     args = parser.parse_args()
-    data = load_registry(args.registry)
+    is_workspace_prune = args.command == "workspace" and args.action == "prune"
+    data = {} if is_workspace_prune else load_registry(args.registry)
 
     if args.command == "names":
         for item in servers(data, args.lifecycle):
@@ -1116,8 +1982,28 @@ def main() -> None:
         if args.rest and args.rest[0] == "--":
             args.rest = args.rest[1:]
         exec_leanctx(args, data)
+    elif args.command == "resolve":
+        resolve_command(args, data)
+    elif args.command == "project":
+        project_command(args, data)
+    elif args.command == "profile":
+        if args.action == "set":
+            if not args.profile:
+                raise SystemExit("profile set requires a profile id")
+            if not args.provider:
+                raise SystemExit("profile set requires --provider")
+        elif args.action != "list" and not args.profile:
+            raise SystemExit(f"profile {args.action} requires a profile id")
+        profile_command(args)
     elif args.command == "workspace":
-        workspace_command(args)
+        if args.action == "prune":
+            workspace_command(args)
+        else:
+            try:
+                with workspace_lifecycle_lock():
+                    workspace_command(args)
+            except WorkspaceLifecycleBusy as exc:
+                raise SystemExit(str(exc)) from exc
     elif args.command == "components":
         component_rows(args, data)
 

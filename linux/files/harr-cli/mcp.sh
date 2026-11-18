@@ -125,6 +125,23 @@ cmd_status() {
   printf '\n== MCP services ==\n\n'; cmd_mcp_status_all
 }
 
+cmd_mcp_project() {
+  local action="${1:-status}"
+  [[ "$action" == status || "$action" == trust || "$action" == revoke ]] || die 'usage: harr mcp project {status|trust|revoke}'
+  require_mcp_manager
+  mcp_manager project "$action"
+}
+
+cmd_mcp_profile() {
+  local action="${1:-list}"
+  shift || true
+  case "$action" in
+    list) mcp_manager profile list ;;
+    set|enable|disable|remove) require_mcp_manager; mcp_manager profile "$action" "$@" ;;
+    *) die 'usage: harr mcp profile {list|set ID --provider P [--kind http] [--endpoint URL] [--secret-file F --memento-id M] [--bind-project PATH]|enable ID|disable ID|remove ID}' ;;
+  esac
+}
+
 cmd_mcp() {
   local command="${1:-status}"
   shift || true
@@ -136,6 +153,9 @@ cmd_mcp() {
     start|stop|restart|enable|disable) [[ $# -eq 1 ]] || die "usage: harr mcp $command NAME|all"; cmd_mcp_lifecycle "$command" "$1" ;;
     status) cmd_mcp_status "$@" ;;
     logs) cmd_mcp_logs "$@" ;;
+    resolve) [[ $# -gt 1 ]] && die 'usage: harr mcp resolve'; require_mcp_manager; mcp_manager resolve ;;
+    project) cmd_mcp_project "$@" ;;
+    profile) cmd_mcp_profile "$@" ;;
     help|-h|--help) mcp_usage ;;
     *) die "unknown mcp command: $command (see harr mcp help)" ;;
   esac
