@@ -88,6 +88,8 @@ def validate_sync_paths(state: dict, raw_paths: list[str]) -> list[str]:
             raise ValueError(f"refusing user home as Workspace root: {target}")
         if target != primary and primary.is_relative_to(target):
             raise ValueError(f"refusing broad parent of Workspace primary: {target}")
+        if str(target) in accepted:
+            raise ValueError(f"refusing duplicate Workspace path in one request: {target}")
         accepted.append(str(target))
     return accepted
 
@@ -110,7 +112,7 @@ def tools() -> list[dict]:
         },
         {
             "name": "workspace_sync",
-            "description": "Add already-known working directories from the current agent session to Harr Workspace. Add-only; never removes roots. Rejects filesystem root, user HOME and broad parents of the primary root.",
+            "description": "Add already-known working directories from the current agent session to Harr Workspace. Add-only; never removes roots. Rejects filesystem root, user HOME and broad parents of the primary root. This does not grant access to an already-running rootless LeanCTX process; restart/reconnect LeanCTX with HARR_WORKSPACE_ROOT set to the explicit primary root.",
             "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
             "inputSchema": {
                 "type": "object",
@@ -119,6 +121,49 @@ def tools() -> list[dict]:
                     "paths": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32},
                 },
                 "required": ["project", "paths"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "workspace_owner_get",
+            "description": "Read the cooperative owner note of a registered Workspace checkout. Read-only; never creates or reconciles a Workspace.",
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+            "inputSchema": {
+                "type": "object",
+                "properties": {"project": {"type": "string"}, "root": {"type": "string"}},
+                "required": ["project", "root"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "workspace_owner_claim",
+            "description": "Claim or update the cooperative owner note of a registered checkout for one task identity. If another task holds it, returns confirmation_required: ask the user first, then re-claim with take_over_from set to the shown owner_id. This is a note, not a lease or lock.",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "root": {"type": "string"},
+                    "owner_id": {"type": "string", "description": "Stable task identifier reused across calls of this task"},
+                    "owner_label": {"type": "string"},
+                    "take_over_from": {"type": "string", "description": "owner_id shown by the previous claim/get; asserts the user already agreed to the transfer"},
+                },
+                "required": ["project", "root", "owner_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "workspace_owner_release",
+            "description": "Remove your own owner note from a registered checkout at the end of a task. Another task's note is never removed.",
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "root": {"type": "string"},
+                    "owner_id": {"type": "string"},
+                },
+                "required": ["project", "root", "owner_id"],
                 "additionalProperties": False,
             },
         },
@@ -148,6 +193,72 @@ def tool_result(payload: dict, text: str) -> dict:
     return {"content": [{"type": "text", "text": text + warning_text(payload)}], "structuredContent": payload}
 
 
+def owner_get(project_raw: str, root_raw: str) -> dict:
+    project = canonical_dir(project_raw, "project")
+    root = str(Path(root_raw).expanduser().resolve(strict=False))
+    return run_harr(project, "owner", "get", root, "--project", str(project))
+
+
+def owner_claim(
+    project_raw: str,
+    root_raw: str,
+    owner_id: str,
+    owner_label: str | None,
+    take_over_from: str | None,
+) -> dict:
+    project = canonical_dir(project_raw, "project")
+    root = str(Path(root_raw).expanduser().resolve(strict=False))
+    args = ["owner", "claim", root, "--project", str(project), "--owner-id", str(owner_id)]
+    if owner_label:
+        args += ["--owner-label", str(owner_label)]
+    if take_over_from:
+        args += ["--take-over-from", str(take_over_from)]
+    return run_harr(project, *args)
+
+
+def owner_release(project_raw: str, root_raw: str, owner_id: str) -> dict:
+    project = canonical_dir(project_raw, "project")
+    root = str(Path(root_raw).expanduser().resolve(strict=False))
+    return run_harr(project, "owner", "release", root, "--project", str(project), "--owner-id", str(owner_id))
+
+
+def owner_text(payload: dict) -> str:
+    owner = payload.get("owner") or {}
+    status = payload.get("status")
+    if status == "claimed":
+        return f"Owner note claimed for {payload.get('root')}."
+    if status == "reclaimed":
+        return f"Owner note updated for {payload.get('root')} (same task identity)."
+    if status == "confirmation_required":
+        current = owner.get("owner_id")
+        label = owner.get("owner_label") or current
+        seen = owner.get("last_seen_at")
+        return (
+            f"Checkout {payload.get('root')} is already noted for task '{label}' "
+            f"(owner_id={current}, last seen {seen}). Ask the user before taking over; "
+            f"then re-claim with take_over_from={current}."
+        )
+    if status == "transferred":
+        note = payload.get("note") or ""
+        return note or f"Owner note transferred for {payload.get('root')}."
+    if status == "owner_changed":
+        current = owner.get("owner_id")
+        return (
+            f"The owner note changed while you were asking: it now belongs to "
+            f"owner_id={current} ({owner.get('owner_label')}). Re-run get and ask the user again."
+        )
+    if status == "released":
+        return f"Owner note removed from {payload.get('root')}."
+    if status == "not_owner":
+        return (
+            f"owner_id does not own the note on {payload.get('root')}; "
+            "only the owning task may release it."
+        )
+    if status == "absent":
+        return f"No owner note on {payload.get('root')}."
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def dispatch(request: dict) -> None:
     request_id = request.get("id")
     if request_id is None:
@@ -169,6 +280,30 @@ def dispatch(request: dict) -> None:
                 state = workspace_sync(args.get("project"), args.get("paths"))
                 sync = state.get("sync") or {}
                 emit_result(request_id, tool_result(state, f"Harr Workspace sync added {len(sync.get('added') or [])} root(s)"))
+            elif name == "workspace_owner_get":
+                payload = owner_get(args.get("project"), args.get("root"))
+                owner = payload.get("owner") or {}
+                if owner:
+                    text = (
+                        f"Checkout {payload.get('root')} is noted for task "
+                        f"'{owner.get('owner_label') or owner.get('owner_id')}' "
+                        f"(owner_id={owner.get('owner_id')}, last seen {owner.get('last_seen_at')})."
+                    )
+                else:
+                    text = f"No owner note on {payload.get('root')}."
+                emit_result(request_id, tool_result(payload, text))
+            elif name == "workspace_owner_claim":
+                payload = owner_claim(
+                    args.get("project"),
+                    args.get("root"),
+                    args.get("owner_id"),
+                    args.get("owner_label"),
+                    args.get("take_over_from"),
+                )
+                emit_result(request_id, tool_result(payload, owner_text(payload)))
+            elif name == "workspace_owner_release":
+                payload = owner_release(args.get("project"), args.get("root"), args.get("owner_id"))
+                emit_result(request_id, tool_result(payload, owner_text(payload)))
             else:
                 emit_error(request_id, "unknown tool", -32601)
         elif method == "ping":

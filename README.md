@@ -192,7 +192,16 @@ The user choice is stored separately from the catalog:
 
 The effective registry is the single source for the active LeanCTX gateway, runtime packages, secrets/status, service lifecycle, global routing policy and installed Harr skill/reference set. Disabling an MCP preserves its existing env/secret files so it can be re-enabled without re-entering configuration.
 
-Harr also owns LeanCTX Workspace state per project. For a Git checkout, the nearest `.git` root is the primary Workspace root; outside Git, the current directory is used. Persistent stores live under `~/.config/harr/workspaces/` and are selected automatically when Harr launches LeanCTX as MCP. Harr enables strict Workspace authority for those MCP launches; ordinary LeanCTX CLI commands such as `lean-ctx config validate` are not forced into Workspace mode.
+Harr also owns LeanCTX Workspace state per project and selects the MCP authority mode before any lock or store is touched. `HARR_WORKSPACE_MODE` picks the resolver:
+
+- `auto` (default): only a valid explicit `HARR_WORKSPACE_ROOT` grants a workspace; without one the MCP starts **rootless** — no cwd, `.git`, client roots or tool arguments grant authority, the initial tool surface is exactly `ctx_tools` and `ctx_workspace_get`, and registering folders later does not change a running process (restart with the explicit root to gain project authority).
+- `strict`: the explicit root, or the existing resolver (nearest `.git`, else the current directory) — validated by the Workspace layer as before.
+- `none`: forced rootless; any `HARR_WORKSPACE_ROOT` is a fatal conflict.
+- `legacy`: the explicit pre-Workspace compatibility branch (no capability probe, no store setup; only the new mode variable is removed). It is never chosen automatically.
+
+Before any Workspace side effect Harr probes the paired LeanCTX with `lean-ctx harr-capabilities --json` and refuses an old or partially capable runtime with a clear error — there is no legacy fallback and no capability cache. An explicitly set but invalid root, an unknown mode, or a `none`+root combination also fail closed.
+
+Persistent stores live under `~/.config/harr/workspaces/` and are selected automatically when Harr launches LeanCTX as MCP with workspace authority; ordinary LeanCTX CLI commands such as `lean-ctx config validate` are not forced into Workspace mode.
 
 Additional roots can be changed live without restarting Codex or the LeanCTX MCP process:
 
@@ -209,6 +218,17 @@ harr workspace prune --all --dry-run
 `harr workspace sync PATH...` is an add-only helper for agent sessions: it canonicalizes the supplied working folders, skips the primary root, existing roots and duplicate inputs, and adds only the missing roots. On Linux, Harr installs the same `$harr-workspace` skill for Codex, OpenCode and ZCode, and the direct `harr-workspace` control MCP for Codex and OpenCode; ZCode registers no direct Workspace MCP and syncs through the `harr workspace` CLI in its native shell, so you can ask any of the three clients to "sync/add your working folders to Harr". The skill uses only workspace/root paths already known to that session; it does not scan `$HOME` or guess sibling repositories.
 
 The CLI and the already-running MCP share the same revisioned Workspace store, so a successful add becomes visible to the next MCP request and a remove revokes access on the next request.
+
+**Cooperative owner notes.** Before starting work in a checkout you can read or take a lightweight ownership note; at the end of the task you can release your own note:
+
+```bash
+harr workspace owner get /abs/path/to/checkout
+harr workspace owner claim /abs/path/to/checkout --owner-id <task-id> --owner-label "my task"
+harr workspace owner claim /abs/path/to/checkout --owner-id <task-id> --take-over-from <shown-owner-id>
+harr workspace owner release /abs/path/to/checkout --owner-id <task-id>
+```
+
+A claim against another task's note returns `confirmation_required` with the current owner; after the user agrees, re-claim with `take_over_from` set to the shown `owner_id`. The note is advisory — not a lease, lock or heartbeat — and the same surface is available through the direct Workspace MCP as `workspace_owner_get`, `workspace_owner_claim` and `workspace_owner_release`. Owner notes apply only to exactly registered Workspace roots and live in `<config>/harr/worktree-owners.json`; they never grant file authority.
 
 `harr workspace prune` removes a registration only when both its primary path and its recorded Git administrative directory are gone. It also removes orphaned `.meta` and `.lock` sidecars. An existing checkout path is retained even when its filesystem identity changed; use `harr workspace prune --all` for an intentional full reset, then run Harr from the primary project and use `harr workspace sync PATH...` to rebuild additional roots. `--dry-run` prints the planned actions as JSON without changing files. The lifecycle lock is kept outside the store directory; applying prune returns `busy` while Harr-managed Workspace operations or strict LeanCTX MCP sessions are active.
 
@@ -536,6 +556,17 @@ Then it restores the exact pre-Harr global snapshot, removes paths Harr created 
 
 
 
+### MCP launch from hosts with global working directories (OpenCode, ZCode, and others)
+
+Harr resolves the LeanCTX MCP authority mode before locks, stores or runtime state are touched. The default `auto` mode grants a workspace **only** from a valid explicit `HARR_WORKSPACE_ROOT`; a user-level MCP host launched from `$HOME` or an application directory otherwise starts rootless instead of inheriting an unsafe cwd-derived root.
+
+- Set `HARR_WORKSPACE_ROOT` in the MCP server environment to the **absolute directory of the intended project** (for example `/home/user/Projects/my-repo`) to get strict workspace authority. Hosts that support per-project MCP definitions should scope this setting to the project. Do not set one fixed project root in a global multi-project MCP if sessions should be isolated by project.
+- Without an explicit root the MCP starts rootless: the initial tool surface is exactly `ctx_tools` and `ctx_workspace_get` (`ctx_workspace_get` answers `no-workspace` without opening a store), resources are empty, and paths are denied with `workspace required`. Client roots, initialize arguments and later `roots/list_changed` notifications cannot raise authority; the gateway exposes only downstream servers explicitly configured with `workspace_required = false` (Harr ships that flag only for independently verified GitLab, Grafana, Kibana, Jira and Redash integrations).
+- To gain project authority, register the known folders through the direct Workspace control plane (`harr workspace sync` or `workspace_sync`), then restart/reconnect LeanCTX with the explicit primary root. Registering roots never changes an already-running rootless process. For a global multi-project host, bind the root per project/session instead of setting one fixed global root.
+- `HARR_WORKSPACE_MODE=strict` keeps the old resolver (explicit root, else nearest `.git`, else the current directory candidate with the existing safety validation); `none` forbids `HARR_WORKSPACE_ROOT` outright; `legacy` is the explicit pre-Workspace compatibility branch and never parses the new resolver. An empty or unknown mode, an explicitly invalid root, or `none` with a root fail closed.
+
+Before any launch into a new mode pair Harr runs the capability probe (`lean-ctx harr-capabilities --json`) against the exact binary and refuses a runtime that does not report schema 1, the `lean-ctx` runtime name and the required capabilities (`authority-mode-v1`, `no-workspace-v1`, `workspace-sibling-checkouts-v1`). The failure happens before the lifecycle lock or any Workspace store mutation, with no fallback and no cache.
+
 ### Installed layout
 
 Linux:
@@ -552,7 +583,7 @@ Linux:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.11.0-harr-unified.6/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-unified.8/lean-ctx
 
 ~/.local/share/harr/npm/
 ~/.local/share/harr-state/pre-harr/
@@ -596,7 +627,7 @@ macOS:
   cli/
   leanctx/
   state/
-  vendor/lean-ctx/3.11.0-harr-unified.6/lean-ctx
+  vendor/lean-ctx/3.11.0-harr-unified.8/lean-ctx
 
 ~/.config/harr/
   mcp-selection.json
@@ -617,7 +648,7 @@ Windows:
   libexec\
     common\
     windows\
-    vendor\lean-ctx\3.11.0-harr-unified.6\lean-ctx.exe
+    vendor\lean-ctx\3.11.0-harr-unified.8\lean-ctx.exe
   share\npm\
   logs\<service-mcp>.log
 

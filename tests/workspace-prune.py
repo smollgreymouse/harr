@@ -225,6 +225,9 @@ with tempfile.TemporaryDirectory(prefix="harr-workspace-prune-") as raw:
             "import json, sys, time\n"
             "from pathlib import Path\n"
             "args=sys.argv[1:]\n"
+            "if args[:2]==['harr-capabilities','--json']:\n"
+            " print(json.dumps({'schema_version':1,'runtime':'lean-ctx','capabilities':['authority-mode-v1','no-workspace-v1','workspace-sibling-checkouts-v1']}))\n"
+            " sys.exit(0)\n"
             "if args and args[0]=='workspace-admin':\n"
             " op=args[1]; store=Path(args[2])\n"
             " if op=='create':\n"
@@ -238,24 +241,31 @@ with tempfile.TemporaryDirectory(prefix="harr-workspace-prune-") as raw:
             "  if op=='show': print(json.dumps(state))\n"
             " sys.exit(0)\n"
             "if args and args[0]=='mcp':\n"
-            " print('mcp-ready',flush=True); time.sleep(1.5); sys.exit(0)\n"
+            " print('mcp-ready',flush=True); sys.stdin.readline(); sys.exit(0)\n"
             "sys.exit(2)\n",
             encoding="utf-8",
         )
         fake.chmod(0o700)
         env = os.environ.copy()
         env["HARR_CONFIG_DIR"] = str(config)
-        env.pop("HARR_WORKSPACE_MODE", None)
+        env["HARR_WORKSPACE_MODE"] = "strict"
+        env["HARR_WORKSPACE_ROOT"] = str(repo)
         live = subprocess.Popen(
             [sys.executable, str(MANAGER_PATH), "--registry", str(ROOT / "common" / "mcp" / "registry.json"),
              "exec-leanctx", str(fake), "--", "mcp"],
-            cwd=repo, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=repo, env=env, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         assert live.stdout is not None
         assert live.stdout.readline().strip() == "mcp-ready"
-        code, busy = run_prune(config, full_reset=True)
-        assert code == 1 and busy["results"][0]["reason"] == "busy"
-        assert live.wait(timeout=10) == 0
+        try:
+            code, busy = run_prune(config, full_reset=True)
+            assert code == 1 and busy["results"][0]["reason"] == "busy", (code, busy)
+        finally:
+            if live.poll() is None:
+                assert live.stdin is not None
+                live.stdin.write("stop\n")
+                live.stdin.flush()
+                assert live.wait(timeout=10) == 0
 
     # Full reset clears all managed registrations, including a changed checkout
     # identity and malformed JSON, without touching unrelated files.

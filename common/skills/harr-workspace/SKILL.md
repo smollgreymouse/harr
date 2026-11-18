@@ -1,6 +1,6 @@
 ---
 name: harr-workspace
-description: Synchronize the current agent session's already-known working folders with the Harr/LeanCTX Workspace. Use when the user asks to add, import, attach, or sync this Codex/OpenCode session's roots, or when the agent creates a Git worktree/checkout that it will work in.
+description: Synchronize the current agent session's already-known working folders with the Harr/LeanCTX Workspace, including explicit folders supplied after a rootless OpenCode/ZCode start. Use when the user asks to add, import, attach, or sync this session's roots, or when the agent creates a Git worktree/checkout that it will work in.
 ---
 <!-- harr-managed-skill-v1 -->
 
@@ -18,6 +18,10 @@ Use only directories that are already explicit in the current session context:
 - the exact path returned by a successful Git worktree/checkout creation performed for the current user-authorized task.
 
 Do **not** discover candidates by walking `$HOME`, listing sibling repositories, searching mounted filesystems, parsing unrelated process state, or guessing paths that were not already known to this session.
+
+## Starting from a rootless global MCP
+
+OpenCode/ZCode global MCP sessions start rootless when the Harr launcher has no explicit `HARR_WORKSPACE_ROOT`. If the user later provides the project path, that exact path is now known to the session and can be passed as `project` to `workspace_get` / `workspace_sync`; the direct Workspace control plane can initialize its store and register additional known folders. This sync does not grant access to the already-running rootless LeanCTX process. Restart/reconnect LeanCTX with `HARR_WORKSPACE_ROOT` set to the explicit primary project path before using LeanCTX on those folders. Prefer per-project/session binding when the host supports it; do not put one project's root into a global multi-project MCP entry.
 
 If the host exposes only the current working directory and no additional roots, sync only that directory and report that no other session roots were available.
 
@@ -59,6 +63,16 @@ paths = [/absolute/current/project, /absolute/extra/root, ...]
 
 4. Read the Workspace again with `harr-workspace::workspace_get` and report which roots were added or skipped. If Harr returns Workspace `warnings`, surface them to the user together with any provided `remove_command`; do not remove a warned root automatically.
 
+## Cooperative owner notes
+
+Before you start editing inside a registered checkout, read its owner note and, when starting real changes, claim it for your task identity; at the end of the task release your own note:
+
+- `harr-workspace::workspace_owner_get` with `project` (registered root) and `root` (the exact checkout path);
+- `harr-workspace::workspace_owner_claim` with `project`, `root` and a stable `owner_id` for this task (plus an optional human-readable `owner_label`);
+- `harr-workspace::workspace_owner_release` with your own `owner_id` when done.
+
+If the note belongs to another task, the claim returns `confirmation_required` with the current owner. Ask the user, and only after they agree re-claim with `take_over_from` set to the shown `owner_id`; if the answer says `owner_changed`, re-run get and ask again. The note is a courtesy marker — not a lease, lock or proof that the other task stopped — and releasing is only possible for your own `owner_id`.
+
 ### CLI fallback
 
 For a non-sandboxed host that does not have the direct MCP registration, the equivalent commands are:
@@ -66,6 +80,9 @@ For a non-sandboxed host that does not have the direct MCP registration, the equ
 ```text
 harr workspace show
 harr workspace sync /absolute/current/project /absolute/extra/root ...
+harr workspace owner get /absolute/checkout
+harr workspace owner claim /absolute/checkout --owner-id <task-id> --owner-label <label>
+harr workspace owner release /absolute/checkout --owner-id <task-id>
 harr workspace show
 ```
 
@@ -74,4 +91,4 @@ harr workspace show
 - Never remove a Workspace root unless the user separately asks for removal.
 - Never add `$HOME`, `/`, broad parent directories, or unrelated repositories merely because they are readable.
 - Do not claim that adding a root grants the agent OS/sandbox permissions. It only authorizes that root inside Harr-managed LeanCTX; the client may still be unable to read/write it because of its own sandbox.
-- Do not restart Codex/OpenCode or LeanCTX after a successful sync; the Harr Workspace store is live and the next LeanCTX request sees the new roots.
+- When LeanCTX is already bound to the same primary root, do not restart Codex/OpenCode or LeanCTX after a successful sync; the live Workspace store makes the added roots available to the next request. A rootless LeanCTX process remains rootless after sync and must be restarted/reconnected with the explicit primary root before it can access those folders.

@@ -13,6 +13,7 @@ import stat
 import subprocess
 import tempfile
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -237,6 +238,11 @@ def gateway_entry_from_server(server: dict, runner_command: str) -> dict:
     name = server["name"]
     transport = server.get("transport")
     entry: dict = {"name": name, "transport": transport, "enabled": True}
+    # Rootless scope policy projection: only entries explicitly marked
+    # `workspace_required = false` in the registry are reachable without
+    # project authority. Everything else keeps LeanCTX's trusted default.
+    if server.get("workspace_required") is False:
+        entry["workspace_required"] = False
     if transport == "stdio":
         entry["command"] = runner_command
         entry["args"] = [name]
@@ -285,6 +291,8 @@ def render_gateway_entry(entry: dict) -> str:
     name = entry["name"]
     transport = entry["transport"]
     lines = ["[[gateway.servers]]", f"name = {toml_string(name)}", f"transport = {toml_string(transport)}", "enabled = true"]
+    if entry.get("workspace_required") is False:
+        lines.append("workspace_required = false")
     if transport == "stdio":
         rendered_args = ", ".join(toml_string(item) for item in entry.get("args", []))
         lines += [f"command = {toml_string(entry['command'])}", f"args = [{rendered_args}]", 'url = ""', "", "[gateway.servers.env]", "", "[gateway.servers.headers]"]
@@ -412,6 +420,28 @@ def workspace_root(cwd: Path | None = None) -> Path:
         if (candidate / ".git").exists():
             return candidate
     return current
+
+
+def mcp_workspace_root() -> Path | None:
+    """Validate the explicit ``HARR_WORKSPACE_ROOT`` override only.
+
+    This resolver never scans the launch cwd: user-level MCP hosts may start
+    servers from HOME or an application directory, and cwd-derived authority is
+    the ``strict`` mode's job (``workspace_root()``). An explicitly set but
+    invalid root is a fatal error — it must never silently downgrade the launch
+    to rootless.
+    """
+    override = os.environ.get("HARR_WORKSPACE_ROOT")
+    if override is None:
+        return None
+    if not override.strip():
+        raise SystemExit("HARR_WORKSPACE_ROOT must be a non-empty absolute project directory")
+    candidate = Path(override).expanduser()
+    if not candidate.is_absolute():
+        raise SystemExit("HARR_WORKSPACE_ROOT must be an absolute project directory")
+    if not candidate.is_dir():
+        raise SystemExit(f"HARR_WORKSPACE_ROOT is not an existing directory: {candidate}")
+    return candidate.resolve()
 
 
 def workspace_store_dir() -> Path:
@@ -576,6 +606,151 @@ def ensure_workspace_store(real: str | Path, primary: Path) -> Path:
 
 def leanctx_is_mcp(rest: list[str]) -> bool:
     return not rest or rest[0] == "mcp"
+
+
+LEANCTX_REQUIRED_CAPABILITIES = frozenset({
+    "authority-mode-v1",
+    "no-workspace-v1",
+    "workspace-sibling-checkouts-v1",
+})
+LEANCTX_CAPABILITY_OUTPUT_LIMIT = 16 * 1024
+
+
+def verify_leanctx_capabilities(real: str | Path) -> Path:
+    """Verify the exact LeanCTX runtime before any Harr Workspace side effect."""
+    binary = Path(real).expanduser().resolve(strict=False)
+    # The probe must see the runtime as the MCP child will be launched, minus
+    # any stale launcher-owned authority variables from the parent environment:
+    # they belong to this launcher, not to the capability check.
+    probe_env = os.environ.copy()
+    for key in LEANCTX_LAUNCHER_AUTHORITY_VARS:
+        probe_env.pop(key, None)
+    try:
+        result = subprocess.run(
+            [str(binary), "harr-capabilities", "--json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=probe_env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(f"LeanCTX capability probe timed out: {binary}") from exc
+    except OSError as exc:
+        raise SystemExit(f"cannot run LeanCTX capability probe at {binary}: {exc}") from exc
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        raise SystemExit(f"LeanCTX capability probe failed: {detail}")
+    if (
+        len(result.stdout.encode("utf-8")) > LEANCTX_CAPABILITY_OUTPUT_LIMIT
+        or len(result.stderr.encode("utf-8")) > LEANCTX_CAPABILITY_OUTPUT_LIMIT
+    ):
+        raise SystemExit("LeanCTX capability probe output exceeded 16 KiB")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"LeanCTX returned invalid capability JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit("LeanCTX capability response must be a JSON object")
+    if type(payload.get("schema_version")) is not int or payload["schema_version"] != 1:
+        raise SystemExit("LeanCTX capability response has an unsupported schema_version")
+    if payload.get("runtime") != "lean-ctx":
+        raise SystemExit("LeanCTX capability response has an invalid runtime name")
+    capabilities = payload.get("capabilities")
+    if not isinstance(capabilities, list) or any(not isinstance(item, str) for item in capabilities):
+        raise SystemExit("LeanCTX capability response has an invalid capabilities list")
+    missing = sorted(LEANCTX_REQUIRED_CAPABILITIES.difference(capabilities))
+    if missing:
+        raise SystemExit("LeanCTX runtime is missing required capabilities: " + ", ".join(missing))
+    return binary
+
+
+LEANCTX_LAUNCHER_AUTHORITY_VARS = (
+    "LEAN_CTX_AUTHORITY_MODE",
+    "LEAN_CTX_WORKSPACE_FILE",
+    "LEAN_CTX_STRICT_WORKSPACE",
+    "LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS",
+)
+
+
+def resolve_mcp_authority() -> tuple[str, Path | None]:
+    """Resolve the launcher authority mode for a managed MCP launch.
+
+    Fixed contract:
+    - absent / ``auto``: only a valid explicit ``HARR_WORKSPACE_ROOT`` grants a
+      workspace; without one the launch is rootless (``none``). The launch cwd,
+      ``.git`` markers, client roots and tool arguments never contribute.
+    - ``strict``: the explicit root, or the existing ``workspace_root()``
+      resolver (nearest ``.git``, else the cwd candidate) followed by the
+      existing canonical/safety validation in the Workspace layer. An
+      unavailable or unsafe candidate errors — it never downgrades.
+    - ``none``: rootless; any ``HARR_WORKSPACE_ROOT`` is a fatal conflict.
+    - ``legacy``: the explicit pre-Workspace compatibility branch. It never
+      parses ``HARR_WORKSPACE_ROOT`` through this resolver and is never chosen
+      as a fallback.
+
+    Empty or unknown ``HARR_WORKSPACE_MODE`` values are fatal, as is an
+    explicitly set but invalid root.
+    """
+    configured = os.environ.get("HARR_WORKSPACE_MODE", "auto").strip().lower()
+    if configured not in {"auto", "strict", "none", "legacy"}:
+        raise SystemExit("HARR_WORKSPACE_MODE must be one of: auto, strict, none, legacy")
+
+    if configured == "legacy":
+        return "legacy", None
+
+    if configured == "none":
+        if os.environ.get("HARR_WORKSPACE_ROOT") is not None:
+            raise SystemExit("HARR_WORKSPACE_MODE=none cannot be combined with HARR_WORKSPACE_ROOT")
+        return "none", None
+
+    root = mcp_workspace_root()
+    if configured == "strict":
+        if root is not None:
+            return "workspace", root
+        # Existing resolver: nearest .git, else the cwd candidate. The candidate
+        # is validated later by the Workspace layer (canonical/safety), so an
+        # unsafe or unavailable one errors instead of downgrading to rootless.
+        return "workspace", workspace_root()
+    return ("workspace", root) if root is not None else ("none", None)
+
+
+def build_leanctx_authority_env(
+    base_env: dict[str, str], mode: str, workspace_file: Path | None = None
+) -> dict[str, str]:
+    """Build the child environment with launcher-owned authority variables set.
+
+    ``base_env`` is not mutated. For ``auto|strict|none`` every launcher-owned
+    authority variable is removed first, then only the ones this mode grants
+    are set. ``legacy`` removes only the new ``LEAN_CTX_AUTHORITY_MODE`` and
+    keeps every pre-Workspace variable (including ``HARR_WORKSPACE_ROOT``)
+    exactly as the parent passed them.
+    """
+    env = dict(base_env)
+    if mode == "legacy":
+        env.pop("LEAN_CTX_AUTHORITY_MODE", None)
+        return env
+    if mode not in {"workspace", "none"}:
+        raise SystemExit(f"unknown LeanCTX authority mode: {mode}")
+    for key in LEANCTX_LAUNCHER_AUTHORITY_VARS:
+        env.pop(key, None)
+    if mode == "workspace":
+        if workspace_file is None:
+            raise SystemExit("workspace authority requires a launcher-bound Workspace store")
+        env["LEAN_CTX_AUTHORITY_MODE"] = "workspace"
+        env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
+        # Workspace changes root authority, not the familiar Harr tool surface.
+        # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
+        # strict session; LeanCTX still enforces request-scoped Workspace roots.
+        env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
+        env["LEAN_CTX_WORKSPACE_FILE"] = str(workspace_file)
+    else:
+        env["LEAN_CTX_AUTHORITY_MODE"] = "none"
+    return env
 
 
 def npm_bin_dir() -> Path:
@@ -1041,6 +1216,299 @@ def workspace_lifecycle_lock(*, exclusive: bool = False, inheritable: bool = Fal
     return WorkspaceLifecycleLock(exclusive=exclusive, inheritable=inheritable)
 
 
+WORKTREE_OWNERS_SCHEMA_VERSION = 1
+
+
+class WorktreeOwnerLock:
+    """Short exclusive lock for one owner-registry read-modify-write.
+
+    Deliberately separate from ``WorkspaceLifecycleLock``: a strict MCP server
+    holds the lifecycle lock shared for its whole runtime, so an exclusive
+    owner claim on it would wedge against every active session. This lock is
+    acquired for a single registry update and released immediately.
+    """
+
+    def __init__(self) -> None:
+        self.path = harr_config_dir() / "worktree-owners.lock"
+        self.fd: int | None = None
+
+    def __enter__(self) -> "WorktreeOwnerLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        flags = os.O_RDWR | os.O_CREAT
+        if os.name == "posix":
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+        self.fd = os.open(self.path, flags, 0o600)
+        if os.name == "posix":
+            os.fchmod(self.fd, 0o600)
+            import fcntl
+
+            fcntl.flock(self.fd, fcntl.LOCK_EX)
+        elif os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(self.fd, msvcrt.LK_LOCK, 1)
+        else:
+            os.close(self.fd)
+            self.fd = None
+            raise RuntimeError(f"worktree owner locking is unsupported on {os.name}")
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        if self.fd is not None:
+            if os.name == "nt":
+                import msvcrt
+
+                try:
+                    msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+            os.close(self.fd)
+            self.fd = None
+        return False
+
+
+def owner_registry_paths() -> tuple[Path, Path]:
+    directory = harr_config_dir()
+    return directory / "worktree-owners.json", directory / "worktree-owners.lock"
+
+
+def owner_record_key(checkout_key: str, checkout_generation: str | None) -> str:
+    payload = json.dumps(
+        [checkout_key, checkout_generation], ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def read_owner_registry() -> dict:
+    """Read the cooperative owner registry; a missing file is an empty one.
+
+    A corrupt file or an unknown schema is never treated as empty: the caller
+    must fix the registry instead of silently losing ownership notes.
+    """
+    path, _ = owner_registry_paths()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {"schema_version": WORKTREE_OWNERS_SCHEMA_VERSION, "owners": {}}
+    except OSError as exc:
+        raise SystemExit(f"cannot read worktree owner registry {path}: {exc}") from exc
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"corrupt worktree owner registry {path}: {exc}") from exc
+    if (
+        not isinstance(value, dict)
+        or type(value.get("schema_version")) is not int
+        or value["schema_version"] != WORKTREE_OWNERS_SCHEMA_VERSION
+    ):
+        raise SystemExit(f"unsupported worktree owner registry schema in {path}")
+    owners = value.get("owners")
+    if not isinstance(owners, dict):
+        raise SystemExit(f"corrupt worktree owner registry {path}: owners must be an object")
+    return {"schema_version": WORKTREE_OWNERS_SCHEMA_VERSION, "owners": owners}
+
+
+def write_owner_registry_atomic(registry: dict) -> None:
+    path, _ = owner_registry_paths()
+    directory = path.parent
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    payload = json.dumps(registry, ensure_ascii=False, indent=2) + "\n"
+    fd, tmp_name = tempfile.mkstemp(prefix=".worktree-owners-", suffix=".tmp", dir=str(directory))
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+        path.chmod(0o600)
+    except BaseException:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def resolve_registered_owner_binding(
+    real: str | Path, project: str | None, root: str
+) -> tuple[str, dict]:
+    """Read-only lookup of the effective active Workspace binding for ``root``.
+
+    Never creates, reconciles, syncs or repairs a Workspace, and never reads
+    the Rust sidecar directly: the state comes from ``workspace-admin show``.
+    The given root must exactly match a registered root of the selected
+    Workspace — a sibling, descendant or unregistered path is an error, and a
+    stale or inactive binding never grants anything.
+    """
+    if project is not None and not str(project).strip():
+        raise SystemExit("--project must be a directory inside the Workspace primary root")
+    primary = workspace_root(Path(project).expanduser() if project else None)
+    store = workspace_store_path(primary)
+    if not store.exists():
+        matched = find_workspace_store_by_checkout(real, primary)
+        if matched is None:
+            raise SystemExit(
+                f"no Harr Workspace store is registered for project {primary}; "
+                "register it first with 'harr workspace sync'"
+            )
+        store = matched
+    state = read_workspace_state(real, store)
+
+    configured_roots = []
+    if isinstance(state.get("primary"), str):
+        configured_roots.append(state["primary"])
+    additional = state.get("additional")
+    if isinstance(additional, list):
+        configured_roots.extend(entry for entry in additional if isinstance(entry, str))
+
+    candidate = str(Path(root).expanduser().resolve(strict=False))
+    if candidate not in configured_roots:
+        raise SystemExit(
+            f"Workspace root {candidate} is not exactly registered in {store}; "
+            "owner notes apply only to registered roots, never to siblings or descendants"
+        )
+
+    bindings = state.get("checkout_bindings")
+    binding = bindings.get(candidate) if isinstance(bindings, dict) else None
+    if not isinstance(binding, dict):
+        raise SystemExit(
+            f"Workspace root {candidate} has no persisted checkout binding in {store}"
+        )
+
+    statuses: dict[str, str] = {}
+    primary_status = state.get("primary_status")
+    if isinstance(primary_status, dict):
+        statuses[primary_status.get("configured", state["primary"])] = str(
+            primary_status.get("state", "")
+        )
+    additional_statuses = state.get("additional_statuses")
+    if isinstance(additional_statuses, list):
+        for status in additional_statuses:
+            if isinstance(status, dict) and isinstance(status.get("configured"), str):
+                statuses[status["configured"]] = str(status.get("state", ""))
+
+    if statuses.get(candidate) != "active":
+        raise SystemExit(
+            f"Workspace root {candidate} is not an effective active binding "
+            f"(state: {statuses.get(candidate, 'unknown')})"
+        )
+    return candidate, binding
+
+
+def workspace_owner_command(args: argparse.Namespace) -> None:
+    """Cooperative per-checkout owner note: get, claim, release.
+
+    The marker is a note, not a lease: no expiry, no heartbeat, no fencing.
+    ``take_over_from`` asserts the user already agreed to the transfer; the
+    comparison is on owner ID under the short registry lock, never on time.
+    """
+    real = Path(args.real).expanduser().resolve()
+    if not real.is_file():
+        raise SystemExit(f"LeanCTX binary not found: {real}")
+    if len(args.paths) != 2 or args.paths[0] not in {"get", "claim", "release"}:
+        raise SystemExit(
+            "workspace owner requires an operation (get|claim|release) and exactly one root path"
+        )
+    operation, raw_root = args.paths
+    binding_root, binding = resolve_registered_owner_binding(real, args.project, raw_root)
+    checkout_key = binding.get("checkout_key")
+    if not isinstance(checkout_key, str) or not checkout_key:
+        raise SystemExit(f"Workspace binding for {binding_root} has no checkout key")
+    generation = binding.get("checkout_generation")
+    key = owner_record_key(checkout_key, generation if isinstance(generation, str) else None)
+
+    if operation == "get":
+        registry = read_owner_registry()
+        record = registry["owners"].get(key)
+        print(json.dumps({
+            "root": binding_root,
+            "checkoutKey": checkout_key,
+            "checkoutGeneration": generation,
+            "owner": record if isinstance(record, dict) else None,
+        }, ensure_ascii=False, indent=2))
+        return
+
+    owner_id = (args.owner_id or "").strip()
+    if not owner_id:
+        raise SystemExit(f"workspace owner {operation} requires --owner-id")
+    owner_label: str | None = None
+    take_over_from: str | None = None
+    if operation == "claim":
+        owner_label = (args.owner_label or "").strip() or owner_id
+        take_over_from = (args.take_over_from or "").strip() or None
+
+    with WorktreeOwnerLock():
+        registry = read_owner_registry()
+        owners = registry["owners"]
+        current = owners.get(key)
+        if current is not None and not isinstance(current, dict):
+            raise SystemExit(f"corrupt worktree owner record for {binding_root} in registry")
+
+        if operation == "release":
+            if current is None:
+                result = {"status": "absent", "root": binding_root, "owner": None}
+            elif current.get("owner_id") != owner_id:
+                result = {"status": "not_owner", "root": binding_root, "owner": current}
+            else:
+                del owners[key]
+                write_owner_registry_atomic(registry)
+                result = {"status": "released", "root": binding_root, "owner": None}
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        if current is None:
+            record = {
+                "checkout_key": checkout_key,
+                "checkout_generation": generation,
+                "owner_id": owner_id,
+                "owner_label": owner_label,
+                "last_seen_at": now,
+            }
+            owners[key] = record
+            write_owner_registry_atomic(registry)
+            result = {"status": "claimed", "root": binding_root, "owner": record}
+        elif current.get("owner_id") == owner_id:
+            # Same owner updating its note: comparing IDs, not timestamps, so
+            # an update never creates a takeover conflict with itself.
+            record = {**current, "owner_label": owner_label, "last_seen_at": now}
+            owners[key] = record
+            write_owner_registry_atomic(registry)
+            result = {"status": "reclaimed", "root": binding_root, "owner": record}
+        elif take_over_from is None:
+            result = {
+                "status": "confirmation_required",
+                "root": binding_root,
+                "owner": current,
+            }
+        elif current.get("owner_id") == take_over_from:
+            record = {
+                "checkout_key": checkout_key,
+                "checkout_generation": generation,
+                "owner_id": owner_id,
+                "owner_label": owner_label,
+                "last_seen_at": now,
+            }
+            owners[key] = record
+            write_owner_registry_atomic(registry)
+            result = {
+                "status": "transferred",
+                "root": binding_root,
+                "owner": record,
+                "previousOwner": current,
+                "note": (
+                    f"Worktree ранее был отмечен за задачей "
+                    f"'{current.get('owner_label') or current.get('owner_id')}'. "
+                    "С вашего согласия отметка передана текущей задаче."
+                ),
+            }
+        else:
+            result = {"status": "owner_changed", "root": binding_root, "owner": current}
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def _workspace_prune_directory() -> Path | None:
     directory = harr_config_dir() / "workspaces"
     try:
@@ -1296,6 +1764,12 @@ def workspace_command(args: argparse.Namespace) -> None:
             raise SystemExit("--project and --expected-revision do not apply to workspace prune")
         workspace_prune_command(args)
         return
+    if args.action == "owner":
+        # Owner notes branch before any path that calls ensure_workspace_store():
+        # a get/claim against a missing or inactive binding must stay a
+        # read-only error, never create or reconcile a Workspace.
+        workspace_owner_command(args)
+        return
     if args.dry_run or args.full_reset:
         raise SystemExit("--dry-run and --all apply only to workspace prune")
     real = Path(args.real).expanduser().resolve()
@@ -1365,14 +1839,6 @@ def workspace_command(args: argparse.Namespace) -> None:
             result = workspace_admin(real, "add", str(store), target_text, str(state["revision"]))
             if result.returncode != 0:
                 message = result.stderr.strip() or result.stdout.strip() or f"workspace add failed: {target_text}"
-                lowered = message.lower()
-                if (
-                    "sibling worktree" in lowered
-                    or "worktree topology" in lowered
-                    or "same local git" in lowered
-                ):
-                    skipped.append({"path": target_text, "reason": "same-repository-worktree"})
-                    continue
                 raise SystemExit(message)
             state = json.loads(result.stdout)
             existing.add(target_text)
@@ -1775,39 +2241,59 @@ def profile_command(args: argparse.Namespace) -> None:
         return
     removed = profiles_mod.remove_profile(directory, args.profile)
     print(f"profile {args.profile} removed" if removed else f"profile {args.profile} was not set")
+def prepare_mcp_child_logging_env(env: dict[str, str]) -> None:
+    """Apply the managed-MCP logging and icon preparation in place.
+
+    Shared by every managed launch branch (including ``legacy``): rmcp logs
+    whole initialize payloads at info, including base64 icons, which can
+    overflow a host's nonblocking stderr and panic discovery. Keep normal
+    server logs while allowing an explicit LeanCTX override.
+    """
+    env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
+    # The managed server-info icon lives beside the installed MCP runtime.
+    # Keep the source checkout fallback useful for direct development runs.
+    icon = HERE / "assets" / "harr.png"
+    if not icon.is_file():
+        checkout_icon = HERE.parents[1] / "harr.png"
+        if checkout_icon.is_file():
+            icon = checkout_icon
+    if icon.is_file():
+        env["HARR_MCP_ICON_PATH"] = str(icon)
 
 
 def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
     env = os.environ.copy()
     lifecycle_lock = None
+    is_mcp = leanctx_is_mcp(args.rest)
+    leanctx_binary: Path | None = None
+    authority_mode: str | None = None
+    primary: Path | None = None
     try:
-        if leanctx_is_mcp(args.rest):
-            # rmcp logs whole initialize payloads at info, including base64 icons.
-            # These can overflow a host's nonblocking stderr and panic discovery.
-            # Keep normal server logs while allowing an explicit LeanCTX override.
-            env.setdefault("LEAN_CTX_LOG", f"{env.get('RUST_LOG') or 'info'},rmcp=warn")
-            # The managed server-info icon lives beside the installed MCP runtime.
-            # Keep the source checkout fallback useful for direct development runs.
-            icon = HERE / "assets" / "harr.png"
-            if not icon.is_file():
-                checkout_icon = HERE.parents[1] / "harr.png"
-                if checkout_icon.is_file():
-                    icon = checkout_icon
-            if icon.is_file():
-                env["HARR_MCP_ICON_PATH"] = str(icon)
-        if leanctx_is_mcp(args.rest) and env.get("HARR_WORKSPACE_MODE", "strict") != "legacy":
-            lifecycle_lock = workspace_lifecycle_lock(inheritable=True).acquire()
-            primary = workspace_root()
-            store = ensure_workspace_store(args.real, primary)
-            env["LEAN_CTX_STRICT_WORKSPACE"] = "1"
-            # Workspace changes root authority, not the familiar Harr tool surface.
-            # Preserve the pre-Workspace Codex/OpenCode tools in every Harr-managed
-            # strict session; LeanCTX still enforces request-scoped Workspace roots.
-            env["LEAN_CTX_STRICT_WORKSPACE_LEGACY_TOOLS"] = "1"
-            env["LEAN_CTX_WORKSPACE_FILE"] = str(store)
-        # Project overlay: a trusted manifest scopes this session's gateway
-        # config and secret export to its instances. Anything else (no
-        # manifest, untrusted, invalid, unsupported) keeps the global config.
+        if is_mcp:
+            # Mode selection happens first. Explicitly chosen `legacy` is the
+            # pre-Workspace compatibility branch: no resolver, probe, lock,
+            # store or reconcile. It removes only the new mode variable and
+            # passes every other authority variable through unchanged.
+            authority_mode, primary = resolve_mcp_authority()
+            if authority_mode == "legacy":
+                env.pop("LEAN_CTX_AUTHORITY_MODE", None)
+                prepare_mcp_child_logging_env(env)
+            else:
+                # Verify the paired runtime before acquiring locks or touching
+                # a Workspace store. Use this exact absolute path for probe and
+                # exec; the probe runs with launcher-owned authority variables
+                # cleared so a stale parent env cannot influence it.
+                leanctx_binary = verify_leanctx_capabilities(args.real)
+                if authority_mode == "workspace":
+                    assert primary is not None
+                    lifecycle_lock = workspace_lifecycle_lock(inheritable=True).acquire()
+                    store = ensure_workspace_store(leanctx_binary, primary)
+                    env = build_leanctx_authority_env(env, "workspace", workspace_file=store)
+                else:
+                    env = build_leanctx_authority_env(env, "none")
+                prepare_mcp_child_logging_env(env)
+        # Project overlays remain scoped to the current session and export only
+        # the secrets referenced by that effective configuration.
         session = None
         overlay, _ = _overlay_modules()
         if overlay is not None:
@@ -1828,7 +2314,7 @@ def exec_leanctx(args: argparse.Namespace, data: dict) -> None:
             else:
                 env["LEAN_CTX_CONFIG_DIR"] = str(config_path.parent)
                 _export_secret_ids(env, secret_refs)
-        cmd = [args.real, *args.rest]
+        cmd = [str(leanctx_binary) if leanctx_binary is not None else args.real, *args.rest]
         if os.name == "nt":
             raise SystemExit(subprocess.call(cmd, env=env))
         os.execvpe(cmd[0], cmd, env)
@@ -1938,13 +2424,17 @@ def main() -> None:
     p_profile.add_argument("--bind-project", action="append", default=[], help="project path allowed to use this profile (repeatable; default: cwd)")
 
     p_workspace = sub.add_parser("workspace")
-    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync", "prune"])
+    p_workspace.add_argument("action", choices=["show", "list", "add", "remove", "sync", "prune", "owner"])
     p_workspace.add_argument("paths", nargs="*")
     p_workspace.add_argument("--real", required=True)
     p_workspace.add_argument("--project")
     p_workspace.add_argument("--expected-revision", type=int)
     p_workspace.add_argument("--dry-run", action="store_true")
     p_workspace.add_argument("--all", dest="full_reset", action="store_true")
+    # Cooperative owner note (`workspace owner get|claim|release <root>`).
+    p_workspace.add_argument("--owner-id")
+    p_workspace.add_argument("--owner-label")
+    p_workspace.add_argument("--take-over-from")
 
     p_components = sub.add_parser("components")
     p_components.add_argument("--npm-prefix")
