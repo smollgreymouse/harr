@@ -140,7 +140,7 @@ function Render-Policy([string]$Agent) {
     $output = [IO.Path]::GetTempFileName()
     try {
         Write-Utf8 $input $text
-        [void](Invoke-Python @($Assets, 'filter-text', '--catalog', $McpCatalog, '--registry', $McpEffective, '--input', $input, '--output', $output))
+        [void](Invoke-Python @($Assets, 'filter-text', '--catalog', $McpCatalog, '--registry', $McpEffective, '--host', $Agent, '--input', $input, '--output', $output))
         return Get-Content -Raw -LiteralPath $output
     } finally { Remove-Item $input,$output -Force -ErrorAction SilentlyContinue }
 }
