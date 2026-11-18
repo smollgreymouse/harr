@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "config": {
+    "providerConfigRules": {
+      "providerRules": []
+    },
+    "modelConfigRules": {
+      "providerModelRules": [],
+      "manualProviderModelRules": []
+    },
+    "defaultModelSelection": {
+      "providerId": "account:zai-start-plan",
+      "modelId": "GLM-5.3-Flash",
+      "options": {
+        "reasoningLevel": "max"
+      }
+    }
+  }
+}

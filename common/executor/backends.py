@@ -207,7 +207,7 @@ def load_einherjar_config(path: Path | None = None) -> dict:
 
 
 def get_builtin_backend_names() -> list[str]:
-    return ["gigacode", "opencode", "codex"]
+    return ["gigacode", "opencode", "codex", "zcode"]
 
 
 def get_backend_adapter(name: str, config: dict | None = None) -> BackendAdapter:
@@ -220,6 +220,9 @@ def get_backend_adapter(name: str, config: dict | None = None) -> BackendAdapter
     if name == "codex":
         from common.executor.adapters.codex import CodexAdapter
         return CodexAdapter()
+    if name == "zcode":
+        from common.executor.adapters.zcode import ZCodeAdapter
+        return ZCodeAdapter()
     if config is None:
         raise ValueError(f"unknown Einherjar backend: {name}")
     from common.executor.adapters.command_template import CommandTemplateAdapter
