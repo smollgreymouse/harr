@@ -12,11 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "common" / "hosts" / "zcode-config.py"
 LEANCTX = "/tmp/harr-test-lean-ctx"
+LEANCTX_PATH = str(Path(LEANCTX).expanduser())
 LAUNCHER = ROOT / "common" / "hosts" / "leanctx-mcp-host.py"
 
 
 def managed_entry() -> dict:
-    return {"type": "stdio", "command": sys.executable, "args": [str(LAUNCHER), "zcode", LEANCTX]}
+    return {"type": "stdio", "command": sys.executable, "args": [str(LAUNCHER), "zcode", LEANCTX_PATH]}
 
 
 def run(env: dict[str, str], *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -62,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix="harr-zcode-config-") as raw:
 
     # The previous Harr direct registration is adoptable but reported stale.
     data = json.loads(config_path.read_text(encoding="utf-8"))
-    data["mcp"]["servers"]["lean-ctx"] = {"type": "stdio", "command": LEANCTX, "args": ["mcp"]}
+    data["mcp"]["servers"]["lean-ctx"] = {"type": "stdio", "command": LEANCTX_PATH, "args": ["mcp"]}
     config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     failed = run(env, "status", check=False)
     assert failed.returncode == 1 and "legacy unprofiled" in failed.stdout
