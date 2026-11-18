@@ -123,6 +123,19 @@ int runSelfTest()
     if (!harr::isKnownAgent("codex") || !harr::isKnownAgent("zcode") || harr::isKnownAgent("gpt")) return 19;
     if (harr::agentIds().size() != 2 || harr::agentDisplayName("zcode") != "ZCode") return 20;
     {
+        // The zcode exec-command contract is checked against a stub binary so
+        // the self-test stays hermetic on machines without zcode installed.
+        const QString stubZcode = temp.filePath("fake-zcode");
+        {
+            QFile stub(stubZcode);
+            if (!stub.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 25;
+            stub.write("#!/bin/sh\nexit 0\n");
+            stub.close();
+            if (!stub.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                     | QFileDevice::ExeOwner))
+                return 26;
+        }
+        qputenv("ZCODE_BIN", stubZcode.toLocal8Bit());
         const harr::AgentExecRequest execReq{
             "sess-1", "do things", "/tmp/wk", "account:zai/GLM-5.3-Flash",
             {}, {}, "yolo", {}, false};
@@ -138,6 +151,7 @@ int runSelfTest()
         if (!harr::agentService("zcode")->listModels(&catalogError).isEmpty()
             || catalogError.isEmpty()
             || !catalogError.contains("public CLI")) return 24;
+        qunsetenv("ZCODE_BIN");
     }
 
     {
