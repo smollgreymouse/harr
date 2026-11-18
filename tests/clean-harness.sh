@@ -275,6 +275,11 @@ grep -Fq '[mcp_servers.harr-workspace]' "${CODEX_HOME}/config.toml"
 grep -Fq '[mcp_servers.harr-workspace-app]' "${CODEX_HOME}/config.toml"
 grep -Fq "${CODEX_HOME}/skills/asa" "${XDG_CONFIG_HOME}/lean-ctx/config.toml"
 
+# Host-specific skill variants must not make other hosts look modified.
+"${ROOT}/linux/harr" agents status >"${TMP}/agents.after-harness-enable"
+awk '$1 == "codex" { found=1; if ($5 != "managed" || $7 != "managed") exit 1 } END { if (!found) exit 1 }' "${TMP}/agents.after-harness-enable"
+awk '$1 == "opencode" { found=1; if ($7 != "managed") exit 1 } END { if (!found) exit 1 }' "${TMP}/agents.after-harness-enable"
+
 # Explicit disable removes only the new orchestration feature and persists.
 "${ROOT}/linux/harr" agents orchestration disable
 [[ ! -e "${CODEX_HOME}/skills/asa" ]]

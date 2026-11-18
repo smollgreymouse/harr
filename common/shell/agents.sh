@@ -327,14 +327,12 @@ skill_state() {
     render_harr_skill "$expected"
     [[ -r "$variant" ]] && install -m 0644 "$variant" "${expected}/SKILL.md"
     compare="$expected"
-  elif [[ -r "$variant" ]]; then
+  else
     expected="$(mktemp -d)"
     cp -a "${source_dir}/." "$expected/"
     rm -f "${expected}"/SKILL.*.md
-    install -m 0644 "$variant" "${expected}/SKILL.md"
+    [[ -r "$variant" ]] && install -m 0644 "$variant" "${expected}/SKILL.md"
     compare="$expected"
-  else
-    compare="$source_dir"
   fi
   if diff -qr "$compare" "$target_dir" >/dev/null 2>&1; then printf 'managed';
   elif [[ -r "$target" ]] && grep -qF "$HARR_SKILL_MARKER" "$target" 2>/dev/null; then printf 'modified';
