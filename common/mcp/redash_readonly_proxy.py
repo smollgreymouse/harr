@@ -13,15 +13,10 @@ ALLOWED = frozenset({
     'execute_parameterized_query', 'execute_adhoc_query',
 })
 
-ADHOC_SOURCE_ID = 20
-
 EXECUTION_TOOL_NOTES = {
     'execute_query': 'Runs the saved query and returns its result rows.',
     'execute_parameterized_query': 'Runs the parameterized query and returns its result rows.',
-    'execute_adhoc_query': (
-        'Runs SQL and returns result rows. Harr routes this tool only to PerfDSP PROD '
-        '(dataSourceId 20) and always applies Redash auto-limit.'
-    ),
+    'execute_adhoc_query': 'Runs SQL against a selected Redash data source and returns result rows.',
 }
 
 QUERY_METADATA_NOTES = {
@@ -75,16 +70,6 @@ def main(argv):
                                 if isinstance(description, str) and description
                                 else execution_note
                             )
-                        if tool.get('name') == 'execute_adhoc_query':
-                            tool = dict(tool)
-                            schema = dict(tool.get('inputSchema') or {})
-                            properties = dict(schema.get('properties') or {})
-                            source = dict(properties.get('dataSourceId') or {})
-                            source['enum'] = [ADHOC_SOURCE_ID]
-                            source['description'] = 'PerfDSP PROD Redash data source (id 20).'
-                            properties['dataSourceId'] = source
-                            schema['properties'] = properties
-                            tool['inputSchema'] = schema
                         note = QUERY_METADATA_NOTES.get(tool.get('name'))
                         if note:
                             tool = dict(tool)
@@ -114,19 +99,6 @@ def main(argv):
                     if 'id' in obj:
                         send(sys.stdout.buffer, {'jsonrpc': '2.0', 'id': obj['id'], 'error': {'code': -32601, 'message': 'Redash tool denied by Harr read-only policy'}})
                     continue
-                if params.get('name') == 'execute_adhoc_query':
-                    arguments = params.get('arguments')
-                    if not isinstance(arguments, dict) or type(arguments.get('dataSourceId')) is not int or arguments['dataSourceId'] != ADHOC_SOURCE_ID:
-                        if 'id' in obj:
-                            send(sys.stdout.buffer, {'jsonrpc': '2.0', 'id': obj['id'], 'error': {'code': -32602, 'message': 'execute_adhoc_query is restricted to PerfDSP PROD (dataSourceId 20)'}})
-                        continue
-                    params = dict(params)
-                    arguments = dict(arguments)
-                    arguments['dataSourceId'] = ADHOC_SOURCE_ID
-                    arguments['applyAutoLimit'] = True
-                    params['arguments'] = arguments
-                    obj = dict(obj)
-                    obj['params'] = params
             elif method in ('resources/read', 'prompts/get', 'completion/complete'):
                 if 'id' in obj:
                     send(sys.stdout.buffer, {'jsonrpc': '2.0', 'id': obj['id'], 'error': {'code': -32601, 'message': 'Redash access denied by Harr read-only policy'}})

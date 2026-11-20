@@ -45,20 +45,19 @@ for line in sys.stdin:
         names = [t['name'] for t in listed['result']['tools']]
         assert names == ['get_query','execute_query','execute_parameterized_query','execute_adhoc_query']
         adhoc = next(t for t in listed['result']['tools'] if t['name']=='execute_adhoc_query')
-        assert adhoc['inputSchema']['properties']['dataSourceId']['enum'] == [20]
+        assert 'enum' not in adhoc['inputSchema']['properties']['dataSourceId']
         for method,name in [('tools/call','update_query'),('tools/call','list_unknown'),('resources/read',None)]:
             result=send({'jsonrpc':'2.0','id':2,'method':method,'params':{'name':name}})
             assert result['error']['code']==-32601, result
         ok=send({'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'get_query'}})
         assert ok['result']['content'][0]['text']=='backend reached'
-        denied=send({'jsonrpc':'2.0','id':4,'method':'tools/call','params':{'name':'execute_adhoc_query','arguments':{'query':'SELECT 1','dataSourceId':10}}})
-        assert denied['error']['code']==-32602, denied
-        ok=send({'jsonrpc':'2.0','id':5,'method':'tools/call','params':{'name':'execute_adhoc_query','arguments':{'query':'SELECT start_date FROM campaign','dataSourceId':20,'applyAutoLimit':False}}})
-        assert ok['result']['content'][0]['text']=='backend reached'
-        forwarded=json.loads(call_log.read_text().splitlines()[-1])
-        assert forwarded['params']['name']=='execute_adhoc_query'
-        assert forwarded['params']['arguments']['dataSourceId']==20
-        assert forwarded['params']['arguments']['applyAutoLimit'] is True
+        for request_id,source_id in ((4,10),(5,20),(6,49)):
+            args={'query':'SELECT 1','dataSourceId':source_id,'applyAutoLimit':False}
+            ok=send({'jsonrpc':'2.0','id':request_id,'method':'tools/call','params':{'name':'execute_adhoc_query','arguments':args}})
+            assert ok['result']['content'][0]['text']=='backend reached'
+            forwarded=json.loads(call_log.read_text().splitlines()[-1])
+            assert forwarded['params']['name']=='execute_adhoc_query'
+            assert forwarded['params']['arguments']==args
     finally:
         p.stdin.close();p.wait(timeout=5)
 print('Redash read-only proxy + registry: PASS')

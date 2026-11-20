@@ -396,7 +396,7 @@
     {
       "name": "redash",
       "label": "Redash",
-      "description": "Read-only Redash access: saved queries, dashboards, data sources, schemas, visualizations, saved-query execution and SQL result rows from PerfDSP PROD.",
+      "description": "Read-only Redash access: saved queries, dashboards, data sources, schemas, visualizations, saved-query execution and SQL result rows from any data source available to the Redash token.",
       "required": false,
       "workspace_required": false,
       "transport": "stdio",
