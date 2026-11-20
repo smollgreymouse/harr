@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-BIN=${HARR_CODEX_SCHEDULER_BIN:-"$ROOT/build/harr-codex-scheduler"}
+BIN=${HARR_SCHEDULER_BIN:-"$ROOT/build/harr-scheduler"}
 [[ -x "$BIN" ]] || { echo "test_cli: binary not found: $BIN" >&2; exit 1; }
 
 TMP=$(mktemp -d)
@@ -94,7 +94,7 @@ fi
 
 export AT_BIN="$TMP/bin/at" CODEX_BIN="$TMP/bin/codex" TTY_PATH="$TMP/tty"
 export FAKE_CODEX_CWD="$TMP/work" FAKE_CODEX_ARGS="$TMP/codex.args"
-export HARR_CODEX_SCHEDULER_BIN="$BIN"
+export HARR_SCHEDULER_BIN="$BIN"
 
 run_wrapper() {
   local selector=$1 expected_model=$2
@@ -186,5 +186,129 @@ if "$ROOT/bin/codex-schedule" --model gpt-5.6-sol --reasoning high --speed stand
   exit 1
 fi
 grep -Fq -- '--cwd mismatch' "$TMP/mismatch.out"
+
+# --- ZCode agent (public CLI contract only) --------------------------------
+mkdir -p "$TMP/zwork"
+git init -q "$TMP/zwork"
+
+# Fake zcode CLI: emits NDJSON on --json and honours the documented
+# standalone flags. It must never be called with app-server.
+cat > "$TMP/bin/zcode" <<'EOF_ZCODE'
+#!/bin/sh
+set -eu
+for arg in "$@"; do
+  [ "$arg" != "app-server" ] || { echo 'zcode: app-server is not part of the public CLI' >&2; exit 2; }
+done
+prompt=''; resume=''; mode=''; cwd=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --prompt) prompt=$2; shift 2;;
+    --resume) resume=$2; shift 2;;
+    --mode) mode=$2; shift 2;;
+    --cwd) cwd=$2; shift 2;;
+    --json) shift;;
+    *) shift;;
+  esac
+done
+[ -n "$prompt" ] || { echo 'zcode: --prompt is required' >&2; exit 2; }
+[ -n "$cwd" ] || { echo 'zcode: --cwd is required' >&2; exit 2; }
+[ -n "$mode" ] || mode=yolo
+if [ -n "${FAKE_ZCODE_FAIL:-}" ]; then
+  echo 'zcode fake failure' >&2
+  exit "$FAKE_ZCODE_FAIL"
+fi
+printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess_zfake"}'
+printf '%s\n' '{"type":"assistant","message":{"text":"z fake partial"}}'
+printf '%s\n' '{"type":"result","session_id":"sess_zfake","result":"z fake answer","is_error":false}'
+EOF_ZCODE
+chmod +x "$TMP/bin/zcode"
+export ZCODE_BIN="$TMP/bin/zcode"
+
+# Catalog/session surfaces without a public CLI/API stay explicitly blocked.
+if $BIN session-list --agent zcode >/tmp/zlist.out 2>&1; then
+  echo 'zcode session-list must be unavailable' >&2
+  exit 1
+fi
+grep -q 'public CLI' /tmp/zlist.out
+if $BIN session-cwd --agent zcode --session sess_zfake >/tmp/zcwd.out 2>&1; then
+  echo 'zcode session-cwd must be unavailable' >&2
+  exit 1
+fi
+grep -q 'public CLI' /tmp/zcwd.out
+
+ZTS=$(date -d '+1 day' +%Y%m%d%H%M)
+# Resume turn: --resume + --cwd + --mode + --json on the direct CLI command.
+"$ROOT/bin/harr-schedule" --agent zcode --mode build --timestamp "$ZTS" --session sess_zfake \
+  --prompt 'Z task' --cwd "$TMP/zwork" --output "$TMP/zout.log"
+grep -Fq "'--resume'" "$TMP/at.job"
+grep -Fq "'sess_zfake'" "$TMP/at.job"
+grep -Fq "'--cwd'" "$TMP/at.job"
+grep -Fq "'--mode'" "$TMP/at.job"
+grep -Fq "'build'" "$TMP/at.job"
+grep -Fq "'--json'" "$TMP/at.job"
+if grep -Fq "'app-server'" "$TMP/at.job"; then
+  echo 'zcode at job must not use app-server' >&2
+  exit 1
+fi
+sh "$TMP/at.job" >/dev/null
+grep -Fq 'sess_zfake' "$TMP/zout.log"
+
+# New turn without a session: no --resume, but --prompt/--cwd/--mode/--json stay.
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" \
+  --prompt 'Z fresh' --cwd "$TMP/zwork" --output "$TMP/zfresh.log"
+grep -Fq "'--prompt'" "$TMP/at.job"
+if grep -Fq "'--resume'" "$TMP/at.job"; then
+  echo 'new zcode turn must not pass --resume' >&2
+  exit 1
+fi
+
+# Runner-driven resume turn: NDJSON result parsing, answer + state persistence.
+ZTASK="$TMP/state/tasks/z-task.json"
+cat > "$ZTASK" <<EOF_ZTASK
+{"id":"z-task","status":"scheduled","agent":"zcode","mode":"yolo","cancel_requested":false,"log":"$TMP/state/jobs/z-task.jsonl"}
+EOF_ZTASK
+"$ROOT/bin/harr-schedule" --agent zcode --mode yolo --timestamp "$ZTS" --session sess_zfake \
+  --prompt 'Z task 2' --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-task.jsonl" \
+  --save-answer "$TMP/zanswer.md" --task-state "$ZTASK"
+sh "$TMP/at.job" >/dev/null
+grep -Eq '"status"[[:space:]]*:[[:space:]]*"completed"' "$ZTASK"
+grep -Fq 'z fake answer' "$TMP/state/jobs/z-task.jsonl"
+grep -Fxq 'z fake answer' "$TMP/zanswer.md"
+
+# Non-zero CLI exit must fail the task and surface the exit status.
+ZFAIL="$TMP/state/tasks/z-fail.json"
+cat > "$ZFAIL" <<EOF_ZFAIL
+{"id":"z-fail","status":"scheduled","agent":"zcode","cancel_requested":false,"log":"$TMP/state/jobs/z-fail.jsonl"}
+EOF_ZFAIL
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --prompt 'Z boom' \
+  --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-fail.jsonl" --task-state "$ZFAIL"
+FAKE_ZCODE_FAIL=3 sh "$TMP/at.job" >/dev/null 2>&1 || true
+grep -Eq '"status"[[:space:]]*:[[:space:]]*"failed"' "$ZFAIL"
+grep -Eq 'agent exited with status 3' "$ZFAIL"
+
+# Cancel: a requested cancel turns the finished run into a cancelled task.
+ZCANCEL="$TMP/state/tasks/z-cancel.json"
+cat > "$ZCANCEL" <<EOF_ZCANCEL
+{"id":"z-cancel","status":"running","agent":"zcode","pid":null,"cancel_requested":true,"log":"$TMP/state/jobs/z-cancel.jsonl"}
+EOF_ZCANCEL
+"$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --prompt 'Z cancel' \
+  --cwd "$TMP/zwork" --log-json "$TMP/state/jobs/z-cancel.jsonl" --task-state "$ZCANCEL"
+sh "$TMP/at.job" >/dev/null
+grep -Eq '"status"[[:space:]]*:[[:space:]]*"cancelled"' "$ZCANCEL"
+
+# Mode validation is agent-aware; bogus modes never reach at.
+assert_rejected_before_at bad_zcode_mode --agent zcode --mode bogus --session sess_zfake \
+  --prompt p --cwd "$TMP/zwork" --timestamp "$ZTS" --output "$TMP/out.log"
+grep -Fq 'unsupported mode' "$TMP/bad_zcode_mode.out"
+
+# Without --cwd (and without a public session API) scheduling is refused.
+if "$ROOT/bin/harr-schedule" --agent zcode --timestamp "$ZTS" --session sess_zfake \
+  --prompt p --output "$TMP/out.log" >"$TMP/zcwd-missing.out" 2>&1; then
+  echo 'zcode schedule without verified cwd must fail' >&2
+  exit 1
+fi
+grep -q 'public CLI' "$TMP/zcwd-missing.out"
+
+unset ZCODE_BIN
 
 echo 'native C++ CLI scheduler tests passed'

@@ -13,8 +13,8 @@ class TaskStore;
 
 class QuickScheduleDialog : public QDialog {
 public:
-    QuickScheduleDialog(TaskStore *store, const QJsonObject &session, const QString &model,
-                        QWidget *parent = nullptr);
+    QuickScheduleDialog(TaskStore *store, const QJsonObject &session, const QString &agent,
+                        const QString &model, QWidget *parent = nullptr);
     QJsonObject scheduledTask() const;
 
 private:
@@ -23,6 +23,7 @@ private:
 
     TaskStore *m_store{};
     QJsonObject m_session;
+    QString m_agent;
     QString m_model;
     QJsonObject m_task;
     QDateTime m_when;

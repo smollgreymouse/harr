@@ -1,3 +1,4 @@
+#include "AgentService.h"
 #include "Common.h"
 #include "MainWindow.h"
 #include "Scheduler.h"
@@ -6,7 +7,9 @@
 #include "Widgets.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QTextStream>
 #include <QtCore/QTimer>
@@ -117,6 +120,56 @@ int runSelfTest()
 
     if (QIcon(":/harr/icon.png").isNull() || QIcon(":/harr/icon.png").pixmap(64, 64).isNull()) return 18;
 
+    if (!harr::isKnownAgent("codex") || !harr::isKnownAgent("zcode") || harr::isKnownAgent("gpt")) return 19;
+    if (harr::agentIds().size() != 2 || harr::agentDisplayName("zcode") != "ZCode") return 20;
+    {
+        // The zcode exec-command contract is checked against a stub binary so
+        // the self-test stays hermetic on machines without zcode installed.
+        const QString stubZcode = temp.filePath("fake-zcode");
+        {
+            QFile stub(stubZcode);
+            if (!stub.open(QIODevice::WriteOnly | QIODevice::Truncate)) return 25;
+            stub.write("#!/bin/sh\nexit 0\n");
+            stub.close();
+            if (!stub.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                     | QFileDevice::ExeOwner))
+                return 26;
+        }
+        qputenv("ZCODE_BIN", stubZcode.toLocal8Bit());
+        const harr::AgentExecRequest execReq{
+            "sess-1", "do things", "/tmp/wk", "account:zai/GLM-5.3-Flash",
+            {}, {}, "yolo", {}, false};
+        QString agentError;
+        const QStringList command = harr::agentService("zcode")->execCommand(execReq, &agentError);
+        if (command.isEmpty()) return 21;
+        if (command.indexOf("agent-exec") >= 0 || !command.contains("--prompt")
+            || !command.contains("do things") || !command.contains("--resume")
+            || !command.contains("sess-1") || !command.contains("--cwd")
+            || !command.contains("/tmp/wk") || !command.contains("--mode")
+            || !command.contains("yolo") || !command.contains("--json")) return 22;
+        QString catalogError;
+        if (!harr::agentService("zcode")->listModels(&catalogError).isEmpty()
+            || catalogError.isEmpty()
+            || !catalogError.contains("public CLI")) return 24;
+        qunsetenv("ZCODE_BIN");
+    }
+
+    {
+        // 0.3.x task state migrates once into the harr-scheduler root.
+        const QString legacyBase = temp.path() + "/legacy-xdg";
+        QDir().mkpath(legacyBase + "/harr-codex-scheduler/tasks");
+        qputenv("XDG_STATE_HOME", legacyBase.toLocal8Bit());
+        const bool written = harr::writeJsonAtomic(
+            legacyBase + "/harr-codex-scheduler/tasks/old.json",
+            QJsonObject{{"id", "old"}, {"status", "draft"}});
+        harr::TaskStore migratedStore;
+        const bool loaded = migratedStore.load("old").has_value();
+        const bool oldGone = !QFileInfo::exists(legacyBase + "/harr-codex-scheduler/tasks/old.json");
+        qunsetenv("XDG_STATE_HOME");
+        if (!written || !loaded || !oldGone
+            || migratedStore.root() != legacyBase + "/harr-scheduler") return 23;
+    }
+
     harr::MainWindow window(&store);
     window.hide();
 
@@ -131,7 +184,7 @@ int runSelfTest()
     QTextStream(stdout) << "C++ scheduler self-test passed\n";
     return 0;
 }
-}
+} // namespace
 
 int main(int argc, char **argv)
 {

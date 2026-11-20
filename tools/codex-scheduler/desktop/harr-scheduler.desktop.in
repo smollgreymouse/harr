@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Harr Codex Scheduler
-Comment=Schedule Codex CLI turns and view their output
+Name=Harr Scheduler
+Comment=Schedule agent CLI turns and view their output
 Exec=@SCHEDULER_DESKTOP_EXECUTABLE@
-Icon=harr-codex-scheduler
+Icon=harr-scheduler
 Terminal=false
 Categories=Development;Utility;
 StartupNotify=true

@@ -6,9 +6,11 @@
 namespace harr {
 
 struct ScheduleRequest {
+    QString agent = "codex";
     QString model;
     QString reasoning = "high";
     QString speed = "standard";
+    QString mode;
     QString atSpec;
     QString timestamp;
     QString session;
@@ -19,7 +21,7 @@ struct ScheduleRequest {
     QString saveAnswer;
     QString taskState;
     QString ttyPath;
-    QString codexBin;
+    QString agentBin;
     QString atBin;
 };
 
