@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed stdio MCP proxy for Redash metadata-only access."""
+"""Fail-closed stdio MCP proxy for Redash read access."""
 import json
 import subprocess
 import sys
@@ -9,8 +9,15 @@ ALLOWED = frozenset({
     'list_queries', 'get_query', 'get_query_parameters', 'list_data_sources',
     'get_schema', 'list_dashboards', 'get_dashboard', 'get_dashboard_by_slug',
     'get_dashboard_layout', 'get_visualization', 'get_dashboard_parameters',
-    'get_widget_parameter_mappings',
+    'get_widget_parameter_mappings', 'execute_query',
+    'execute_parameterized_query', 'execute_adhoc_query',
 })
+
+EXECUTION_TOOL_NOTES = {
+    'execute_query': 'Runs the saved query and returns its result rows.',
+    'execute_parameterized_query': 'Runs the parameterized query and returns its result rows.',
+    'execute_adhoc_query': 'Runs SQL against a selected Redash data source and returns result rows.',
+}
 
 QUERY_METADATA_NOTES = {
     'list_queries': (
@@ -54,6 +61,15 @@ def main(argv):
                     for tool in tools:
                         if not isinstance(tool, dict) or not allowed(tool.get('name')):
                             continue
+                        execution_note = EXECUTION_TOOL_NOTES.get(tool.get('name'))
+                        if execution_note:
+                            tool = dict(tool)
+                            description = tool.get('description')
+                            tool['description'] = (
+                                f'{description} {execution_note}'
+                                if isinstance(description, str) and description
+                                else execution_note
+                            )
                         note = QUERY_METADATA_NOTES.get(tool.get('name'))
                         if note:
                             tool = dict(tool)
