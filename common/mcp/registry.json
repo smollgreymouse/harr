@@ -396,7 +396,7 @@
     {
       "name": "redash",
       "label": "Redash",
-      "description": "metadata-only Redash queries, dashboards and schemas (no SQL execution or writes)",
+      "description": "Read-only Redash metadata: saved queries, dashboards, data sources, schemas and visualizations. Harr deliberately excludes SQL execution, query refresh, and query-result row retrieval.",
       "required": false,
       "workspace_required": false,
       "transport": "stdio",
