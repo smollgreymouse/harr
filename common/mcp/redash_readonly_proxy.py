@@ -12,6 +12,18 @@ ALLOWED = frozenset({
     'get_widget_parameter_mappings',
 })
 
+QUERY_METADATA_NOTES = {
+    'list_queries': (
+        'Lists saved query definitions only; it does not execute queries, refresh results, or return result rows.'
+    ),
+    'get_query': (
+        'Returns saved query metadata and SQL definition only; it does not execute SQL, refresh results, or return result rows.'
+    ),
+    'get_query_parameters': (
+        'Returns saved query parameter metadata only; it does not execute SQL or return result rows.'
+    ),
+}
+
 
 def allowed(name):
     return isinstance(name, str) and name in ALLOWED
@@ -38,7 +50,20 @@ def main(argv):
             if isinstance(obj, dict) and isinstance(obj.get('result'), dict):
                 tools = obj['result'].get('tools')
                 if isinstance(tools, list):
-                    obj['result']['tools'] = [t for t in tools if isinstance(t, dict) and allowed(t.get('name'))]
+                    visible = []
+                    for tool in tools:
+                        if not isinstance(tool, dict) or not allowed(tool.get('name')):
+                            continue
+                        note = QUERY_METADATA_NOTES.get(tool.get('name'))
+                        if note:
+                            tool = dict(tool)
+                            description = tool.get('description')
+                            if isinstance(description, str) and description:
+                                tool['description'] = f'{description} {note}'
+                            else:
+                                tool['description'] = note
+                        visible.append(tool)
+                    obj['result']['tools'] = visible
             send(sys.stdout.buffer, obj)
 
     thread = threading.Thread(target=responses, daemon=True)
