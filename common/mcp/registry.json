@@ -396,7 +396,7 @@
     {
       "name": "redash",
       "label": "Redash",
-      "description": "Read-only Redash metadata: saved queries, dashboards, data sources, schemas and visualizations. Harr deliberately excludes SQL execution, query refresh, and query-result row retrieval.",
+      "description": "Read-only Redash access: saved queries, dashboards, data sources, schemas, visualizations, saved-query execution and SQL result rows from PerfDSP PROD.",
       "required": false,
       "workspace_required": false,
       "transport": "stdio",
@@ -429,7 +429,9 @@
       ],
       "doctor": {
         "required_tools": [
-          "get_query"
+          "get_query",
+          "execute_query",
+          "execute_adhoc_query"
         ],
         "probe": {
           "kind": "catalog-only",
