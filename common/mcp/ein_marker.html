@@ -5,14 +5,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <style>
-:root{color-scheme:light dark}*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:transparent;color:inherit;font-family:inherit;font-size:13px}
+:root{color-scheme:light dark;--harr-text-primary:#202124;--harr-text-secondary:#4b5563}
+:root[data-theme="light"]{color-scheme:light;--harr-text-primary:#202124;--harr-text-secondary:#4b5563}
+:root[data-theme="dark"]{color-scheme:dark;--harr-text-primary:#f3f4f6;--harr-text-secondary:#d1d5db}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){color-scheme:dark;--harr-text-primary:#f3f4f6;--harr-text-secondary:#d1d5db}}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:transparent;color:var(--color-text-primary,var(--harr-text-primary));font-family:inherit;font-size:13px}
 body{padding:2px 4px;visibility:hidden}
 #card{display:flex;align-items:center;gap:8px;border:1px solid color-mix(in srgb,currentColor 17%,transparent);border-radius:8px;padding:5px 8px;min-height:36px}
 .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.55;flex:0 0 auto}
 .done .dot,.failed .dot{opacity:1}
 .main{min-width:0;flex:1}.title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sub{opacity:.58;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.sub{color:var(--color-text-secondary,var(--harr-text-secondary));opacity:.9;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .badge{font-size:10px;border:1px solid color-mix(in srgb,currentColor 17%,transparent);border-radius:999px;padding:2px 6px;opacity:.72;flex:0 0 auto}
 .done .badge,.failed .badge{opacity:1}
 </style>
@@ -40,6 +44,16 @@ function request(method,params){
     pending.set(id,{resolve,reject,timer});
     parent.postMessage({jsonrpc:'2.0',id,method,params},'*');
   });
+}
+function applyHostContext(ctx={}){
+  const root=document.documentElement;
+  if(ctx.theme==='light'||ctx.theme==='dark'){
+    root.dataset.theme=ctx.theme;
+    root.style.colorScheme=ctx.theme;
+  }
+  const variables=ctx.styles?.variables;
+  if(variables&&typeof variables==='object')for(const [name,value] of Object.entries(variables))
+    if(/^--[a-zA-Z0-9_-]+$/.test(name)&&typeof value==='string')root.style.setProperty(name,value);
 }
 async function appTool(name,args={}){
   const r=await request('tools/call',{name,arguments:args});
@@ -150,6 +164,9 @@ window.addEventListener('message',ev=>{
     const p=pending.get(o.id);pending.delete(o.id);clearTimeout(p.timer);
     o.error?p.reject(Error(o.error.message||'request failed')):p.resolve(o.result);return;
   }
+  if(o.method==='ui/notifications/host-context-changed'){
+    applyHostContext(o.params||{});return;
+  }
   if(o.method==='ui/notifications/tool-input'){
     const a=o.params?.arguments||o.params?.toolInput||o.params;
     if(a&&typeof a.action==='string'){toolAction=a.action;maybeAttach()}
@@ -172,7 +189,8 @@ window.addEventListener('pagehide',()=>{stopped=true;lifecycle('pagehide')});
 document.addEventListener('visibilitychange',()=>lifecycle(document.hidden?'hidden':'visible'));
 (async()=>{
   try{
-    await request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'harr-ein-marker',version:'1.0'},capabilities:{},appCapabilities:{}});
+    const init=await request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'harr-ein-marker',version:'1.0'},capabilities:{},appCapabilities:{}});
+    applyHostContext(init?.hostContext||{});
     parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');
     initialized=true;
     new ResizeObserver(()=>reportHeight()).observe(el('card'));

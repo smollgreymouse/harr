@@ -41,6 +41,10 @@ async function runEinMonitorPanel(file) {
   });
   const document = {
     hidden: false,
+    documentElement: {
+      dataset: {},
+      style: { properties: {}, setProperty(name, value) { this.properties[name] = value; } },
+    },
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, element());
       return elements.get(id);
@@ -53,7 +57,9 @@ async function runEinMonitorPanel(file) {
     postMessage(message) {
       if (message.method === "ui/notifications/initialized" || message.id === undefined) return;
       if (message.method === "ui/initialize") {
-        queueMicrotask(() => listeners.get("message")({ data: { id: message.id, result: {} } }));
+        queueMicrotask(() => listeners.get("message")({ data: { id: message.id, result: {
+          hostContext: { theme: "dark", styles: { variables: { "--color-text-primary": "#f3f4f6" } } },
+        } } }));
         return;
       }
       if (message.method === "ui/message") uiMessages++;
@@ -75,6 +81,12 @@ async function runEinMonitorPanel(file) {
   });
   vm.runInContext(script, context, { filename: file });
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(document.documentElement.dataset.theme, "dark", "monitor panel applies initial host theme");
+  assert.equal(document.documentElement.style.colorScheme, "dark");
+  assert.equal(document.documentElement.style.properties["--color-text-primary"], "#f3f4f6");
+  listeners.get("message")({ data: { method: "ui/notifications/host-context-changed", params: { theme: "light", styles: { variables: { "--color-text-primary": "#202124" } } } } });
+  assert.equal(document.documentElement.dataset.theme, "light", "monitor panel applies host theme changes");
+  assert.equal(document.documentElement.style.properties["--color-text-primary"], "#202124");
   listeners.get("message")({ data: {
     method: "ui/notifications/tool-input",
     params: { structuredContent: {
@@ -97,6 +109,8 @@ async function runEinMonitorPanel(file) {
 (async () => {
   const file = "common/mcp/ein_app/panel.html";
   const html = fs.readFileSync(file, "utf8");
+  assert.match(html, /:root\[data-theme="light"\]/, "monitor panel defines explicit light theme colors");
+  assert.match(html, /:root\[data-theme="dark"\]/, "monitor panel defines explicit dark theme colors");
   const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   assert.ok(script, `${file}: script block missing`);
   new vm.Script(script, { filename: file });
