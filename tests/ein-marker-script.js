@@ -8,6 +8,8 @@ const vm = require("node:vm");
 const source = fs.readFileSync("common/mcp/ein_marker.html", "utf8");
 const script = source.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, "marker script block missing");
+assert.match(source, /:root\[data-theme="light"\]/, "marker defines explicit light theme colors");
+assert.match(source, /:root\[data-theme="dark"\]/, "marker defines explicit dark theme colors");
 new vm.Script(script, { filename: "common/mcp/ein_marker.html" });
 
 async function createHarness({ messageFailures = 0, waitSnapshot, waitPending = false } = {}) {
@@ -17,12 +19,17 @@ async function createHarness({ messageFailures = 0, waitSnapshot, waitPending = 
   const messages = [];
   let timerId = 0;
   const elements = new Map();
+  const documentElement = {
+    dataset: {},
+    style: { properties: {}, setProperty(name, value) { this.properties[name] = value; } },
+  };
   const makeElement = () => ({
     style: {}, className: "", textContent: "",
     getBoundingClientRect: () => ({ height: 36 }),
   });
   const document = {
     hidden: false,
+    documentElement,
     body: { style: {} },
     getElementById(id) { if (!elements.has(id)) elements.set(id, makeElement()); return elements.get(id); },
     addEventListener() {},
@@ -35,7 +42,10 @@ async function createHarness({ messageFailures = 0, waitSnapshot, waitPending = 
     postMessage(message) {
       if (message.id === undefined) { messages.push(message); return; }
       if (message.method === undefined) { messages.push(message); return; }
-      if (message.method === "ui/initialize") { answer(message, {}); return; }
+      if (message.method === "ui/initialize") {
+        answer(message, { hostContext: { theme: "dark", styles: { variables: { "--color-text-primary": "#f3f4f6" } } } });
+        return;
+      }
       if (message.method === "ui/message") {
         messages.push(message);
         if (messageFailures > 0) { messageFailures--; answer(message, null, "simulated delivery failure"); }
@@ -93,6 +103,12 @@ function toolStart(harness, action = "start", sessionId = "session-1", jobId = "
   const success = await createHarness({
     waitSnapshot: (args) => ({ session_id: args.session_id, job_id: args.job_id, terminal: true, status: "DONE", handoff: { status: "DONE", summary: "fixture" } }),
   });
+  assert.equal(success.document.documentElement.dataset.theme, "dark", "marker applies initial host theme");
+  assert.equal(success.document.documentElement.style.colorScheme, "dark");
+  assert.equal(success.document.documentElement.style.properties["--color-text-primary"], "#f3f4f6");
+  success.dispatch({ method: "ui/notifications/host-context-changed", params: { theme: "light", styles: { variables: { "--color-text-primary": "#202124" } } } });
+  assert.equal(success.document.documentElement.dataset.theme, "light", "marker applies host theme changes");
+  assert.equal(success.document.documentElement.style.properties["--color-text-primary"], "#202124");
   toolStart(success);
   await flush();
   assert.equal(success.calls.filter((call) => call.tool === "ein_marker_claim_ui").length, 1);
