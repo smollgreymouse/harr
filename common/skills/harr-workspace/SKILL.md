@@ -31,6 +31,8 @@ After a successful `git worktree add` / `harr git worktree add`, if the agent wi
 
 Use the **existing** direct `harr-workspace::workspace_get` and add-only `harr-workspace::workspace_sync`; pass `project` as the original, already-registered project root and `paths` as the new checkout path. Then confirm through `workspace_get` that the exact root is active. Do not derive `project` from the new, not-yet-authorized checkout or route Workspace control through `ctx_shell`. Do not sync `/tmp` or another broad parent in place of the exact checkout.
 
+After the root is confirmed active, initialize CodeGraph for that checkout as described in [CodeGraph for newly attached roots](#codegraph-for-newly-attached-roots), before the first CodeGraph query for it.
+
 If registration or verification fails, report the blocker and do not investigate the checkout with native search/read/shell as a fallback. An existing root remains unchanged. Do not register new worktrees unrelated to the authorized task.
 
 ## Execution boundary
@@ -61,7 +63,18 @@ paths = [/absolute/current/project, /absolute/extra/root, ...]
 
 `workspace_sync` only **adds** missing roots. It never removes existing roots. The server rejects filesystem root, the user home directory, and broad parents of the Workspace primary root. Harr canonicalizes paths, skips the primary root, already-present roots and duplicate inputs, and performs revisioned additions against the live Workspace store.
 
-4. Read the Workspace again with `harr-workspace::workspace_get` and report which roots were added or skipped. If Harr returns Workspace `warnings`, surface them to the user together with any provided `remove_command`; do not remove a warned root automatically.
+4. Read the Workspace again with `harr-workspace::workspace_get` and confirm which roots are active. If Harr returns Workspace `warnings`, surface them to the user together with any provided `remove_command`; do not remove a warned root automatically.
+
+5. For each newly added code root, initialize CodeGraph as described below before the first CodeGraph query. Then report which roots were added or skipped and the initialization outcome.
+
+## CodeGraph for newly attached roots
+
+Whenever `workspace_sync` adds a code subproject root or a newly created Git worktree, initialize CodeGraph after `workspace_get` confirms that exact root is active and before the first CodeGraph query for it:
+
+- Run `codegraph init` via `ctx_shell` with the exact new root as the working directory.
+- A Git worktree needs its own index. Reuse an existing usable index when that exact directory already has one.
+- If initialization fails, report the CodeGraph error and keep the confirmed Workspace registration in place.
+- If the session started rootless, reconnect LeanCTX to the selected project before initializing CodeGraph.
 
 ## Cooperative owner notes
 
