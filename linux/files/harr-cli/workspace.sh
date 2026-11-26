@@ -17,6 +17,9 @@ Usage:
   harr workspace remove PATH [--expected-revision N]
   harr workspace sync PATH [PATH ...]
   harr workspace prune [--dry-run] [--all]
+  harr workspace owner get ROOT --project PROJECT
+  harr workspace owner claim ROOT --project PROJECT --owner-id ID [--owner-label LABEL] [--take-over-from ID]
+  harr workspace owner release ROOT --project PROJECT --owner-id ID
 
 Workspace is selected from the current Git repository root (or current directory
 outside Git). Changes are live for already-running Harr-managed LeanCTX MCP sessions.
@@ -35,6 +38,7 @@ cmd_workspace() {
       if [[ $# -eq 3 && "$2" != "--expected-revision" ]]; then workspace_usage >&2; return 2; fi
       ;;
     sync) [[ $# -ge 1 ]] || { workspace_usage >&2; return 2; } ;;
+    owner) [[ $# -ge 2 ]] || { workspace_usage >&2; return 2; } ;;
     prune)
       for option in "$@"; do
         case "$option" in
