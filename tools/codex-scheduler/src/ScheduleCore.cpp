@@ -1,5 +1,5 @@
 #include "Scheduler.h"
-#include "CodexService.h"
+#include "AgentService.h"
 #include "Common.h"
 
 #include <QtCore/QCoreApplication>
@@ -49,8 +49,21 @@ static bool validateAtSpec(const QString &value, QString *error)
 ScheduleResult scheduleJob(ScheduleRequest req)
 {
     ScheduleResult result;
-    if (req.model.isEmpty() || req.session.trimmed().isEmpty() || req.prompt.trimmed().isEmpty()) {
-        result.output = "--model, --session and --prompt are required";
+    if (req.agent.trimmed().isEmpty()) req.agent = defaultAgentId();
+    AgentService *service = agentService(req.agent);
+    if (!service) {
+        result.output = "unsupported agent: " + req.agent;
+        return result;
+    }
+    const AgentCapabilities caps = service->capabilities();
+
+    QStringList missing;
+    if (caps.modelRequired && req.model.isEmpty()) missing << QStringLiteral("--model");
+    if (caps.sessionRequired && req.session.trimmed().isEmpty())
+        missing << QStringLiteral("--session");
+    if (req.prompt.trimmed().isEmpty()) missing << QStringLiteral("--prompt");
+    if (!missing.isEmpty()) {
+        result.output = missing.join(", ") + QStringLiteral(" are required");
         return result;
     }
     if (req.atSpec.isEmpty() == req.timestamp.isEmpty()) {
@@ -61,12 +74,17 @@ ScheduleResult scheduleJob(ScheduleRequest req)
         result.output = "--task-state requires --log-json";
         return result;
     }
-    if (!QStringList{"minimal", "low", "medium", "high", "xhigh"}.contains(req.reasoning)) {
+    if (caps.reasoning && !QStringList{"minimal", "low", "medium", "high", "xhigh"}.contains(req.reasoning)) {
         result.output = "unsupported reasoning: " + req.reasoning;
         return result;
     }
-    if (req.speed != "standard" && req.speed != "fast") {
+    if (caps.speed && req.speed != "standard" && req.speed != "fast") {
         result.output = "unsupported speed: " + req.speed;
+        return result;
+    }
+    if (caps.mode && !req.mode.isEmpty()
+        && !QStringList{"build", "edit", "plan", "yolo", "guarded"}.contains(req.mode)) {
+        result.output = "unsupported mode: " + req.mode;
         return result;
     }
 
@@ -77,15 +95,9 @@ ScheduleResult scheduleJob(ScheduleRequest req)
         return result;
     }
 
-    if (req.codexBin.isEmpty()) req.codexBin = CodexService::codexExecutable();
     if (req.atBin.isEmpty()) {
         req.atBin = qEnvironmentVariable("AT_BIN");
         if (req.atBin.isEmpty()) req.atBin = QStandardPaths::findExecutable("at");
-    }
-    if (req.codexBin.isEmpty()) {
-        result.exitCode = 127;
-        result.output = "codex executable not found";
-        return result;
     }
     if (req.atBin.isEmpty()) {
         result.exitCode = 127;
@@ -94,8 +106,14 @@ ScheduleResult scheduleJob(ScheduleRequest req)
     }
 
     QString resolveError;
-    auto resolved = CodexService::resolveCwd(req.session, &resolveError, req.codexBin, true);
-    QString cwd = resolved.value_or(QString{});
+    QString cwd;
+    {
+        auto sessionInfo = service->readSession(req.session.trimmed(), &resolveError);
+        if (sessionInfo) {
+            auto resolved = service->validateSessionCwd(*sessionInfo, &resolveError, true);
+            if (resolved) cwd = *resolved;
+        }
+    }
     if (!req.manualCwd.isEmpty()) {
         QFileInfo manualInfo(req.manualCwd);
         const QString manual = manualInfo.canonicalFilePath();
@@ -120,14 +138,23 @@ ScheduleResult scheduleJob(ScheduleRequest req)
         return result;
     }
 
-    const QString serviceTier = req.speed == "fast" ? "fast" : "default";
-    QStringList codexArgs{
-        "exec", "-m", req.model,
-        "-c", QString("service_tier=\"%1\"").arg(serviceTier),
-        "-c", QString("model_reasoning_effort=\"%1\"").arg(req.reasoning)
-    };
-    if (!req.logJson.isEmpty()) codexArgs << "--json";
-    codexArgs << "resume" << req.session << req.prompt;
+    AgentExecRequest execReq;
+    execReq.session = req.session.trimmed();
+    execReq.prompt = req.prompt.trimmed();
+    execReq.workspace = cwd;
+    execReq.model = req.model.trimmed();
+    execReq.reasoning = req.reasoning;
+    execReq.speed = req.speed;
+    execReq.mode = req.mode;
+    execReq.agentBin = req.agentBin;
+    execReq.emitEvents = !req.logJson.isEmpty();
+    QString execError;
+    const QStringList command = service->execCommand(execReq, &execError);
+    if (command.isEmpty()) {
+        result.exitCode = 127;
+        result.output = execError;
+        return result;
+    }
 
     QString job = "cd " + shellQuote(cwd) + " || exit 125; ";
     if (!req.logJson.isEmpty()) {
@@ -144,12 +171,9 @@ ScheduleResult scheduleJob(ScheduleRequest req)
             req.taskState = QFileInfo(req.taskState).absoluteFilePath();
             runner << "--task-state" << req.taskState;
         }
-        runner << "--" << req.codexBin;
-        runner << codexArgs;
+        runner << "--" << command;
         for (const QString &arg : runner) job += shellQuote(arg) + " ";
     } else {
-        QStringList command{req.codexBin};
-        command << codexArgs;
         for (const QString &arg : command) job += shellQuote(arg) + " ";
         if (!req.output.isEmpty()) {
             QDir().mkpath(QFileInfo(req.output).absolutePath());
@@ -212,9 +236,11 @@ int runScheduleCli(const QStringList &args)
             dst = args[++i];
             return true;
         };
-        if (arg == "--model") { if (!next(req.model)) return 2; }
+        if (arg == "--agent") { if (!next(req.agent)) return 2; }
+        else if (arg == "--model") { if (!next(req.model)) return 2; }
         else if (arg == "--reasoning") { if (!next(req.reasoning)) return 2; }
         else if (arg == "--speed") { if (!next(req.speed)) return 2; }
+        else if (arg == "--mode") { if (!next(req.mode)) return 2; }
         else if (arg == "--at") { if (!next(req.atSpec)) return 2; }
         else if (arg == "--timestamp") { if (!next(req.timestamp)) return 2; }
         else if (arg == "--session") { if (!next(req.session)) return 2; }
@@ -225,10 +251,10 @@ int runScheduleCli(const QStringList &args)
         else if (arg == "--save-answer") { if (!next(req.saveAnswer)) return 2; }
         else if (arg == "--task-state") { if (!next(req.taskState)) return 2; }
         else if (arg == "--tty") { if (!next(req.ttyPath)) return 2; }
-        else if (arg == "--codex-bin") { if (!next(req.codexBin)) return 2; }
+        else if (arg == "--agent-bin" || arg == "--codex-bin") { if (!next(req.agentBin)) return 2; }
         else if (arg == "--at-bin") { if (!next(req.atBin)) return 2; }
         else if (arg == "-h" || arg == "--help") {
-            QTextStream(stdout) << "Usage: harr-codex-scheduler schedule --model MODEL (--at SPEC | --timestamp CCYYMMDDhhmm) --session ID --prompt TEXT [options]\n";
+            QTextStream(stdout) << "Usage: harr-scheduler schedule [--agent codex|zcode] --model MODEL (--at SPEC | --timestamp CCYYMMDDhhmm) --session ID --prompt TEXT [options]\n";
             return 0;
         } else {
             QTextStream(stderr) << "codex-schedule: unknown argument: " << arg << '\n';
@@ -247,14 +273,21 @@ int runScheduleCli(const QStringList &args)
 int runSessionListCli(const QStringList &args)
 {
     int limit = 50;
-    QString codex;
+    QString agent = defaultAgentId();
+    QString agentBin;
     for (int i = 0; i < args.size(); ++i) {
         if (args[i] == "--limit" && i + 1 < args.size()) limit = args[++i].toInt();
-        else if (args[i] == "--codex-bin" && i + 1 < args.size()) codex = args[++i];
+        else if (args[i] == "--agent" && i + 1 < args.size()) agent = args[++i];
+        else if (args[i] == "--codex-bin" && i + 1 < args.size()) agentBin = args[++i];
         else return 2;
     }
+    AgentService *service = agentService(agent);
+    if (!service) {
+        QTextStream(stderr) << "unsupported agent: " << agent << '\n';
+        return 2;
+    }
     QString error;
-    const auto sessions = CodexService::listSessions(&error, limit, codex);
+    const auto sessions = service->listSessions(&error, limit, agentBin);
     if (!error.isEmpty() && sessions.isEmpty()) {
         QTextStream(stderr) << error << '\n';
         return 2;
@@ -267,16 +300,29 @@ int runSessionListCli(const QStringList &args)
 
 int runSessionCwdCli(const QStringList &args)
 {
-    QString session, codex;
+    QString session;
+    QString agent = defaultAgentId();
+    QString agentBin;
     bool requireGit = true;
     for (int i = 0; i < args.size(); ++i) {
         if (args[i] == "--session" && i + 1 < args.size()) session = args[++i];
-        else if (args[i] == "--codex-bin" && i + 1 < args.size()) codex = args[++i];
+        else if (args[i] == "--agent" && i + 1 < args.size()) agent = args[++i];
+        else if (args[i] == "--codex-bin" && i + 1 < args.size()) agentBin = args[++i];
         else if (args[i] == "--no-git-check") requireGit = false;
         else return 2;
     }
+    AgentService *service = agentService(agent);
+    if (!service) {
+        QTextStream(stderr) << "unsupported agent: " << agent << '\n';
+        return 2;
+    }
     QString error;
-    auto cwd = CodexService::resolveCwd(session, &error, codex, requireGit);
+    auto sessionInfo = service->readSession(session, &error, agentBin);
+    if (!sessionInfo) {
+        QTextStream(stderr) << error << '\n';
+        return 2;
+    }
+    auto cwd = service->validateSessionCwd(*sessionInfo, &error, requireGit);
     if (!cwd) {
         QTextStream(stderr) << error << '\n';
         return 2;

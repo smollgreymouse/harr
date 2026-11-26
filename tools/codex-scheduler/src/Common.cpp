@@ -90,7 +90,14 @@ QString stateRootPath()
 {
     QString base = qEnvironmentVariable("XDG_STATE_HOME");
     if (base.isEmpty()) base = QDir::home().filePath(".local/state");
-    return QDir(base).filePath("harr-codex-scheduler");
+    return QDir(base).filePath("harr-scheduler");
+}
+
+QString legacyStateRootPath()
+{
+    QString base = qEnvironmentVariable("XDG_STATE_HOME");
+    if (base.isEmpty()) base = QDir::home().filePath(".local/state");
+    return QDir(base).filePath(LEGACY_STATE_DIR);
 }
 
 static QString textFromContent(const QJsonValue &content)
@@ -119,6 +126,24 @@ QVector<TranscriptEvent> parseCodexJsonLine(const QByteArray &raw)
     if (err.error != QJsonParseError::NoError || !doc.isObject()) return {{"status", QString::fromUtf8(line)}};
     const auto payload = doc.object();
     const QString eventType = payload.value("type").toString();
+    // zcode --json NDJSON: assistant records stream the reply; the terminal
+    // {"type":"result", ...} record carries the final response text.
+    if (eventType == QLatin1String("assistant")) {
+        auto value = payload.value("message");
+        if (!value.isObject()) value = payload.value("text");
+        const QString text = textFromContent(value);
+        if (!text.isEmpty()) return {{"assistant", text}};
+    }
+    if (eventType == QLatin1String("result")) {
+        auto value = payload.value("result");
+        if (value.isUndefined() || value.isNull()) value = payload.value("text");
+        if (value.isUndefined() || value.isNull()) value = payload.value("response");
+        if (value.isUndefined() || value.isNull()) value = payload.value("message");
+        const QString text = value.isString() ? value.toString() : textFromContent(value);
+        if (payload.value("is_error").toBool(false))
+            return {{"error", text.isEmpty() ? QStringLiteral("zcode turn failed") : text}};
+        if (!text.isEmpty()) return {{"assistant", text}};
+    }
     if (payload.value("item").isObject()) {
         const auto item = payload.value("item").toObject();
         const QString itemType = item.value("type").toString();

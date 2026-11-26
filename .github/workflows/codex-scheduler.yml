@@ -38,7 +38,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           HARR_CODEX_THEME: dark
-        run: tools/codex-scheduler/build/harr-codex-scheduler self-test
+        run: tools/codex-scheduler/build/harr-scheduler self-test
 
       - name: Native CLI and job runner contract
         env:
@@ -56,32 +56,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          deb=$(realpath tools/codex-scheduler/dist/harr-codex-scheduler_*_*.deb)
+          deb=$(realpath tools/codex-scheduler/dist/harr-scheduler_*_*.deb)
           sudo apt-get install -y "$deb"
-          test -x /usr/bin/harr-codex-scheduler
+          test -x /usr/bin/harr-scheduler
+          test -x /usr/bin/harr-schedule
           test -x /usr/bin/codex-scheduler-ui
           test -x /usr/bin/codex-schedule
           test -x /usr/bin/sol
           test -x /usr/bin/terra
           test -x /usr/bin/luna
-          test -f /usr/share/applications/harr-codex-scheduler.desktop
-          if find /usr/bin /usr/share/doc/harr-codex-scheduler -maxdepth 2 -type f \( -name '*.py' -o -name '*.pyc' \) | grep -q .; then
+          # Upgrade-path contract: queued at jobs still call the 0.3.x path,
+          # so the postinst compatibility symlink must exist after install.
+          test -L /usr/bin/harr-codex-scheduler
+          test "$(readlink /usr/bin/harr-codex-scheduler)" = "harr-scheduler"
+          test -f /usr/share/applications/harr-scheduler.desktop
+          if find /usr/bin /usr/share/doc/harr-scheduler -maxdepth 2 -type f \( -name '*.py' -o -name '*.pyc' \) | grep -q .; then
             echo 'Python leaked into installed native package' >&2
             exit 1
           fi
-          QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark /usr/bin/harr-codex-scheduler self-test
+          QT_QPA_PLATFORM=offscreen HARR_CODEX_THEME=dark /usr/bin/harr-scheduler self-test
           set +e
           output=$(/usr/bin/terra 2>&1)
           rc=$?
           set -e
           test "$rc" -eq 2
           grep -q 'Usage: terra' <<<"$output"
-          dpkg-query -W -f='${db:Status-Status}\n' harr-codex-scheduler | grep -qx installed
+          dpkg-query -W -f='${db:Status-Status}\n' harr-scheduler | grep -qx installed
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: harr-codex-scheduler-pr
+          name: harr-scheduler-pr
           path: |
             tools/codex-scheduler/dist/*.deb
             tools/codex-scheduler/dist/*.tar.gz

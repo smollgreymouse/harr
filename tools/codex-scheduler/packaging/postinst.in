@@ -3,4 +3,10 @@ set -e
 if command -v systemctl >/dev/null 2>&1; then
     systemctl enable --now atd.service >/dev/null 2>&1 || true
 fi
+# The 0.3.x package installed /usr/bin/harr-codex-scheduler, and at jobs
+# queued before the rename still invoke that path. Keep a compatibility
+# symlink so pending scheduled turns survive the package upgrade.
+if [ ! -e /usr/bin/harr-codex-scheduler ]; then
+    ln -sf harr-scheduler /usr/bin/harr-codex-scheduler
+fi
 exit 0

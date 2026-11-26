@@ -9,7 +9,8 @@ class QApplication;
 
 namespace harr {
 
-inline constexpr auto APP_NAME = "Harr Codex Scheduler";
+inline constexpr auto APP_NAME = "Harr Scheduler";
+inline constexpr auto LEGACY_STATE_DIR = "harr-codex-scheduler";
 inline constexpr qint64 RESET_OFFSET_SECONDS = 5 * 60 * 60 + 2 * 60;
 
 struct TranscriptEvent {
@@ -29,6 +30,7 @@ bool isActiveStatus(const QString &status);
 bool isFinishedStatus(const QString &status);
 QDateTime defaultRunTime();
 QString stateRootPath();
+QString legacyStateRootPath();
 QVector<TranscriptEvent> parseCodexJsonLine(const QByteArray &raw);
 void applyTheme(QApplication &app);
 

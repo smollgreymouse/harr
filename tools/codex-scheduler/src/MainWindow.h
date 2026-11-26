@@ -44,6 +44,7 @@ public:
     QString tabTooltip(const QJsonObject &task) const;
     TaskStore *store() const;
     const QVector<QJsonObject> &sessions() const;
+    const QVector<QJsonObject> &sessionsFor(const QString &agent) const;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -80,8 +81,8 @@ private:
     QLabel *m_emptyHint{};
     QMenu *m_tasksMenu{};
     QHash<QString, TaskPage *> m_pages;
-    QVector<QJsonObject> m_models;
-    QVector<QJsonObject> m_sessions;
+    QHash<QString, QVector<QJsonObject>> m_modelsByAgent;
+    QHash<QString, QVector<QJsonObject>> m_sessionsByAgent;
     QTimer *m_reconcileTimer{};
     QTimer *m_modelTimer{};
     QTimer *m_sessionTimer{};

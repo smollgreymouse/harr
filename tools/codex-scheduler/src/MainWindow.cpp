@@ -1,5 +1,5 @@
 #include "MainWindow.h"
-#include "CodexService.h"
+#include "AgentService.h"
 #include "Common.h"
 #include "QuickSchedule.h"
 #include "TaskPage.h"
@@ -132,7 +132,15 @@ MainWindow::MainWindow(TaskStore *store)
 MainWindow::~MainWindow() = default;
 
 TaskStore *MainWindow::store() const { return m_store; }
-const QVector<QJsonObject> &MainWindow::sessions() const { return m_sessions; }
+
+const QVector<QJsonObject> &MainWindow::sessionsFor(const QString &agent) const
+{
+    static const QVector<QJsonObject> empty;
+    const auto it = m_sessionsByAgent.constFind(agent);
+    return it == m_sessionsByAgent.constEnd() ? empty : it.value();
+}
+
+const QVector<QJsonObject> &MainWindow::sessions() const { return sessionsFor(defaultAgentId()); }
 
 void MainWindow::buildSidebar()
 {
@@ -303,13 +311,20 @@ void MainWindow::openTask(const QString &id, bool makeCurrent)
     auto task = m_store->load(id);
     if (!task) return;
 
-    auto *page = new TaskPage(m_store, *task, [this](const QString &changed) { taskChanged(changed); }, m_tabs);
+    auto *page = new TaskPage(m_store, *task,
+                              [this](const QString &changed) { taskChanged(changed); },
+                              [this](const QString &agent) { return m_modelsByAgent.value(agent); },
+                              [this](const QString &agent) { return m_sessionsByAgent.value(agent); },
+                              m_tabs);
     m_pages.insert(id, page);
     const int index = m_tabs->addTab(page, tabTitle(*task));
     m_tabs->setTabToolTip(index, tabTooltip(*task));
     m_tabs->tabBar()->setTabButton(index, QTabBar::RightSide, new TabCloseButton(m_tabs, page));
-    if (!m_models.isEmpty()) page->setModelChoices(m_models);
-    if (!m_sessions.isEmpty()) page->setSessionChoices(m_sessions, true);
+    const QString agent = page->currentAgent();
+    const auto models = m_modelsByAgent.value(agent);
+    const auto sessions = m_sessionsByAgent.value(agent);
+    if (!models.isEmpty()) page->setModelChoices(models);
+    if (!sessions.isEmpty()) page->setSessionChoices(sessions, true);
     if (makeCurrent) m_tabs->setCurrentIndex(index);
     updateEmpty();
     saveUi();
@@ -508,7 +523,7 @@ void MainWindow::rebuildTasksMenu()
     clearMenuAndOwnedSubmenus(m_tasksMenu);
     auto *newAction = m_tasksMenu->addAction("＋ New task");
     connect(newAction, &QAction::triggered, this, [this] { newTask(); });
-    auto *refresh = m_tasksMenu->addAction("↻ Refresh Codex sessions");
+    auto *refresh = m_tasksMenu->addAction("↻ Refresh agent sessions");
     connect(refresh, &QAction::triggered, this, [this] { refreshSessions(); });
     m_tasksMenu->addSeparator();
 
@@ -535,23 +550,28 @@ void MainWindow::rebuildTrayMenu()
     m_trayMenu->addSeparator();
 
     auto *sessionsMenu = m_trayMenu->addMenu("Schedule for session");
-    if (m_sessions.isEmpty()) {
-        auto *empty = sessionsMenu->addAction("No active Codex sessions loaded");
-        empty->setEnabled(false);
-    } else {
+    for (const QString &agent : agentIds()) {
+        const auto sessions = m_sessionsByAgent.value(agent);
+        auto *agentMenu = sessionsMenu->addMenu(agentDisplayName(agent));
+        if (sessions.isEmpty()) {
+            auto *empty = agentMenu->addAction(QString("No active %1 sessions").arg(agentDisplayName(agent)));
+            empty->setEnabled(false);
+            continue;
+        }
         QHash<QString, int> counts;
-        for (const auto &session : m_sessions) counts[sessionTitle(session)]++;
-        for (const auto &session : m_sessions) {
+        for (const auto &session : sessions) counts[sessionTitle(session)]++;
+        for (const auto &session : sessions) {
             if (session.value("archived").toBool(false)) continue;
             QString label = sessionTitle(session);
             if (counts.value(label) > 1 && !session.value("cwd").toString().isEmpty()) {
                 label += " · " + QFileInfo(session.value("cwd").toString()).fileName();
             }
             if (label.size() > 64) label = label.left(63) + "…";
-            auto *action = sessionsMenu->addAction(label);
+            auto *action = agentMenu->addAction(label);
             action->setToolTip(session.value("id").toString() + "\n" + session.value("cwd").toString());
-            connect(action, &QAction::triggered, this, [this, session] {
-                QuickScheduleDialog dialog(m_store, session, defaultModelId(m_models), this);
+            connect(action, &QAction::triggered, this, [this, agent, session] {
+                QuickScheduleDialog dialog(m_store, session, agent,
+                                           defaultModelId(m_modelsByAgent.value(agent)), this);
                 if (dialog.exec() != QDialog::Accepted || dialog.scheduledTask().isEmpty()) return;
                 refreshAll();
                 const auto task = dialog.scheduledTask();
@@ -594,25 +614,39 @@ void MainWindow::rebuildTrayMenu()
 
 void MainWindow::refreshModels()
 {
-    QString error;
-    auto models = CodexService::listModels(&error);
-    if (!models.isEmpty() || error.isEmpty()) m_models = models;
-    if (error.isEmpty()) {
-        m_sidebarStatus->setToolTip(QString("%1 Codex models loaded").arg(m_models.size()));
-        for (auto *page : m_pages) page->setModelChoices(m_models);
-    } else if (m_models.isEmpty()) {
-        m_sidebarStatus->setToolTip(error);
+    for (const QString &agent : agentIds()) {
+        AgentService *service = agentService(agent);
+        if (!service) continue;
+        QString error;
+        auto models = service->listModels(&error);
+        if (!models.isEmpty() || error.isEmpty()) m_modelsByAgent.insert(agent, models);
     }
+    const QString codexAgent = defaultAgentId();
+    if (m_modelsByAgent.value(codexAgent).isEmpty())
+        m_sidebarStatus->setToolTip("agent model catalogs are empty");
+    else
+        m_sidebarStatus->setToolTip(QString("%1 codex models loaded")
+                                        .arg(m_modelsByAgent.value(codexAgent).size()));
+    for (auto *page : m_pages) page->setModelChoices(m_modelsByAgent.value(page->currentAgent()));
 }
 
 void MainWindow::refreshSessions()
 {
-    QString error;
-    auto sessions = CodexService::listSessions(&error, 50);
-    if (!sessions.isEmpty() || error.isEmpty()) m_sessions = sessions;
-    if (error.isEmpty()) m_sidebarStatus->setToolTip(QString("%1 active Codex sessions loaded").arg(m_sessions.size()));
-    else m_sidebarStatus->setToolTip(error);
-    for (auto *page : m_pages) page->setSessionChoices(m_sessions, true);
+    int total = 0;
+    for (const QString &agent : agentIds()) {
+        AgentService *service = agentService(agent);
+        if (!service) continue;
+        QString error;
+        auto sessions = service->listSessions(&error, 50);
+        if (!sessions.isEmpty() || error.isEmpty()) m_sessionsByAgent.insert(agent, sessions);
+        total += sessions.size();
+    }
+    if (total > 0)
+        m_sidebarStatus->setToolTip(QString("%1 active sessions loaded across agents").arg(total));
+    else
+        m_sidebarStatus->setToolTip("no active sessions loaded");
+    for (auto *page : m_pages)
+        page->setSessionChoices(m_sessionsByAgent.value(page->currentAgent()), true);
 }
 
 void MainWindow::recordAndNotifyStatusChanges(const QVector<QJsonObject> &tasks)

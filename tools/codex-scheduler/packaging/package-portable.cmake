@@ -4,7 +4,7 @@ if(NOT DEFINED PORTABLE_SOURCE_DIR OR NOT DEFINED PORTABLE_BINARY OR
     message(FATAL_ERROR "Portable package variables are required")
 endif()
 
-set(NAME "harr-codex-scheduler-${PORTABLE_VERSION}-linux-${PORTABLE_ARCH}")
+set(NAME "harr-scheduler-${PORTABLE_VERSION}-linux-${PORTABLE_ARCH}")
 set(STAGE_PARENT "${CMAKE_CURRENT_BINARY_DIR}/portable")
 set(STAGE_ROOT "${STAGE_PARENT}/${NAME}")
 set(OUTPUT "${PORTABLE_OUTPUT_DIR}/${NAME}.tar.gz")
@@ -18,24 +18,25 @@ file(REMOVE "${OUTPUT}")
 file(MAKE_DIRECTORY "${STAGE_ROOT}/bin" "${PORTABLE_OUTPUT_DIR}")
 
 file(INSTALL DESTINATION "${STAGE_ROOT}" TYPE PROGRAM FILES "${PORTABLE_BINARY}")
-foreach(BIN_FILE codex-schedule codex-scheduler-ui sol terra luna)
+foreach(BIN_FILE harr-schedule codex-schedule codex-scheduler-ui sol terra luna)
     file(INSTALL DESTINATION "${STAGE_ROOT}/bin" TYPE PROGRAM
          FILES "${PORTABLE_SOURCE_DIR}/bin/${BIN_FILE}")
 endforeach()
 file(INSTALL DESTINATION "${STAGE_ROOT}" TYPE FILE
      FILES "${PORTABLE_SOURCE_DIR}/README.md" "${PORTABLE_SOURCE_DIR}/VERSION")
-file(WRITE "${STAGE_ROOT}/INSTALL.txt" [=[Harr Codex Scheduler portable C++ bundle
+file(WRITE "${STAGE_ROOT}/INSTALL.txt" [=[Harr Scheduler portable C++ bundle
 
 Runtime requirements on Ubuntu/Debian:
   sudo apt install at git libqt6core6t64 libqt6gui6t64 libqt6widgets6t64
   sudo systemctl enable --now atd
 
-OpenAI Codex CLI must be installed and available as `codex` in PATH.
+Agent CLIs must be installed and available in PATH: codex (codex tasks), zcode (zcode tasks).
 
 Run without installing:
-  ./harr-codex-scheduler
+  ./harr-scheduler
 
 CLI selectors:
+  ./bin/harr-schedule --agent codex|zcode ...
   ./bin/sol
   ./bin/terra
   ./bin/luna

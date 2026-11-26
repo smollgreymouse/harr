@@ -1,4 +1,5 @@
 #include "QuickSchedule.h"
+#include "AgentService.h"
 #include "Common.h"
 #include "Scheduler.h"
 #include "TaskStore.h"
@@ -16,11 +17,13 @@
 namespace harr {
 
 QuickScheduleDialog::QuickScheduleDialog(TaskStore *store, const QJsonObject &session,
-                                         const QString &model, QWidget *parent)
-    : QDialog(parent), m_store(store), m_session(session), m_model(model),
+                                         const QString &agent, const QString &model,
+                                         QWidget *parent)
+    : QDialog(parent), m_store(store), m_session(session),
+      m_agent(isKnownAgent(agent) ? agent : defaultAgentId()), m_model(model),
       m_when(defaultRunTime())
 {
-    setWindowTitle("Schedule Codex task");
+    setWindowTitle(QString("Schedule %1 task").arg(agentDisplayName(m_agent)));
     setModal(true);
     resize(460, 280);
 
@@ -44,7 +47,7 @@ QuickScheduleDialog::QuickScheduleDialog(TaskStore *store, const QJsonObject &se
     root->addLayout(timeRow);
 
     m_prompt = new QTextEdit(this);
-    m_prompt->setPlaceholderText("What should Codex do?");
+    m_prompt->setPlaceholderText(QString("What should %1 do?").arg(agentDisplayName(m_agent)));
     m_prompt->setMinimumHeight(130);
     root->addWidget(m_prompt, 1);
 
@@ -82,8 +85,10 @@ void QuickScheduleDialog::scheduleNow()
         return;
     }
 
-    if (m_model.isEmpty()) {
-        QMessageBox::warning(this, APP_NAME, "No Codex model is available.");
+    if (m_model.isEmpty() && agentService(m_agent)
+                                 && agentService(m_agent)->capabilities().modelRequired) {
+        QMessageBox::warning(this, APP_NAME,
+                             QString("No %1 model is available.").arg(agentDisplayName(m_agent)));
         return;
     }
 
@@ -92,6 +97,7 @@ void QuickScheduleDialog::scheduleNow()
     const QString logPath = task.value("log").toString();
 
     ScheduleRequest req;
+    req.agent = m_agent;
     req.model = m_model;
     req.reasoning = "high";
     req.speed = "standard";
@@ -109,8 +115,9 @@ void QuickScheduleDialog::scheduleNow()
     }
 
     QJsonObject patch{
-        {"status", "scheduled"}, {"model", req.model}, {"reasoning", req.reasoning},
-        {"speed", req.speed}, {"session", sessionId}, {"prompt", prompt},
+        {"status", "scheduled"}, {"agent", m_agent}, {"model", req.model},
+        {"reasoning", req.reasoning}, {"speed", req.speed}, {"mode", req.mode},
+        {"session", sessionId}, {"prompt", prompt},
         {"scheduled", m_when.toString(Qt::ISODate)}, {"cwd", result.cwd},
         {"log", logPath}, {"answer", QJsonValue::Null}, {"cancel_requested", false},
         {"error", QJsonValue::Null}

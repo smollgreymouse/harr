@@ -51,6 +51,15 @@ std::optional<QJsonObject> readJsonObject(const QString &path)
 
 TaskStore::TaskStore(QString root) : m_root(root.isEmpty() ? stateRootPath() : std::move(root))
 {
+    // 0.3.x kept task state under the harr-codex-scheduler directory; move
+    // it once so upgrading users keep their tasks, jobs and UI state.
+    if (root.isEmpty() && !QFileInfo::exists(m_root)) {
+        const QString legacy = legacyStateRootPath();
+        if (QFileInfo::exists(legacy)) {
+            QDir().mkpath(QFileInfo(m_root).absolutePath());
+            QDir().rename(legacy, m_root);
+        }
+    }
     QDir().mkpath(tasksDir());
     QDir().mkpath(jobsDir());
 }
@@ -67,7 +76,8 @@ QJsonObject TaskStore::newDraft()
     const QString now = utcNow();
     QJsonObject task{
         {"id", id}, {"status", "draft"}, {"created_at", now}, {"updated_at", now},
-        {"model", ""}, {"reasoning", "high"}, {"speed", "standard"},
+        {"agent", "codex"},
+        {"model", ""}, {"reasoning", "high"}, {"speed", "standard"}, {"mode", ""},
         {"session", ""}, {"scheduled", QJsonValue::Null}, {"cwd", QJsonValue::Null}, {"prompt", ""},
         {"at_job", QJsonValue::Null}, {"pid", QJsonValue::Null},
         {"log", QDir(jobsDir()).filePath(id + ".jsonl")}, {"answer", QJsonValue::Null},
